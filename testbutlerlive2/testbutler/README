@@ -1,0 +1,2 @@
+This directory contains the host-side server code to execute test suites via
+the am instrument command, interacting with the TestButler system on the phone
