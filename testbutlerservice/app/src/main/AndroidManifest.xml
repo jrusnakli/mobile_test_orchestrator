@@ -1,0 +1,27 @@
+<manifest
+    package="com.linkedin.android.testbutler"
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- Normal permissions -->
+
+    <application
+        android:allowBackup="true"
+        android:label="@string/app_name">
+
+        <service
+            android:name=".ButlerService"
+            android:exported="true"
+            android:enabled="true"
+            tools:ignore="ExportedService">
+            <intent-filter>
+                <action android:name="com.linkedin.android.testbutler.COMMAND_RESPONSE" />
+                <action android:name="com.linkedin.android.testbutler.SEND_TEST_COMMAND" />
+
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </service>
+
+    </application>
+
+</manifest>
