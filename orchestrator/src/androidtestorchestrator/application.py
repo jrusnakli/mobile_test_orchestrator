@@ -263,7 +263,7 @@ class ServiceApplication(Application):
         options = ["\"%s\"" % item for item in options]
         if intent:
             options = ["-a", intent] + options
-        self.device.execute_remote_cmd("shell", "am", "startservice", "-n", activity, *options, capture_stdout=False)
+        self.device.execute_remote_cmd("shell", "am", "start-foreground-service", "-n", activity, *options, capture_stdout=False)
 
 
 class TestApplication(Application):

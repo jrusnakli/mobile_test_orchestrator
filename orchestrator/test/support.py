@@ -190,7 +190,9 @@ def apk(dir: str, count: int, q: multiprocessing.Queue, target: str = "assembleD
         else:
             suffix = ""
         apk_path = os.path.join(dir, "app", "build", "outputs", "apk",
-                                "app-debug%s.apk" % suffix)
+                                "debug", "app-debug%s.apk" % suffix)
+        if not os.path.exists(apk_path):
+            apk_path = os.path.join(dir, "app", "build", "outputs", "apk", "app-debug%s.apk" % suffix)
         if not os.path.exists(apk_path):
             raise Exception("Failed to find built apk %s" % apk_path)
         for _ in range(count):
