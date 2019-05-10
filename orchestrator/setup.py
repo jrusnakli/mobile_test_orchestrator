@@ -99,7 +99,7 @@ def build_signed_app():
     if completed.returncode != 0:
         raise Exception("Failed to build app")
     unsigned_apk = os.path.join(BUTLER_SERVICE_SRC_DIR, "app", "build", "outputs", "apk",
-                                "app-release-unsigned.apk")
+                                "release", "app-release-unsigned.apk")
     if not os.path.exists(unsigned_apk):
         raise Exception("Build succeeded but no unsigned apk at %s??" % unsigned_apk)
     release_apk = sign_apk(unsigned_apk)
