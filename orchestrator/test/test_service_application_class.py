@@ -33,7 +33,7 @@ class TestServiceApplication:
             return False
 
     def test_start(self, device: Device, test_butler_service: str):
-        app = ServiceApplication.install(test_butler_service, device)
+        app = ServiceApplication.from_apk(test_butler_service, device)
         try:
 
             device_log = DeviceLog(device)

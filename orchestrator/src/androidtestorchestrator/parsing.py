@@ -14,6 +14,7 @@ with suppress(ModuleNotFoundError):
     from dataclasses import dataclass  # for Python 3.6, but not in Python 3.7 where dataclass is builtin
 
 log = logging.getLogger(__name__)
+log.setLevel(logging.INFO)
 
 
 class LineParser(ABC):
@@ -168,6 +169,7 @@ class InstrumentationOutputParser(LineParser):
         """
         if not line:
             return
+        log.info(f"Instrumentation parsing line: {line}")
         if line.startswith("INSTRUMENTATION_STATUS_CODE:"):
             if not self._test_result:
                 raise Exception("test start code received but not in test execution block!")

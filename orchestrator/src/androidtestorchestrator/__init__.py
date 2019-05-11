@@ -323,10 +323,12 @@ class AndroidTestOrchestrator:
                 try:
                     for local_path, remote_path in test_suite.uploadables:
                         device_storage.push(local_path=local_path, remote_path=remote_path)
-                    async for line in test_application.run(*test_suite.arguments):
-                        instrumentation_parser.parse_line(line)
+                    async with await test_application.run(*test_suite.arguments) as lines:
+                        async for line in lines:
+                            instrumentation_parser.parse_line(line)
                 except Exception as e:
-                    test_listener.test_suite_errored(test_suite.name, 1, trace(e))
+                    print(trace(e))
+                    test_listener.test_suite_errored(test_suite.name, 1, str(e))
                 finally:
                     test_listener.test_suite_ended(test_suite.name,
                                                    instrumentation_parser.total_test_count,
@@ -384,7 +386,7 @@ class AndroidTestOrchestrator:
         device_restoration = self._DeviceRestoration(test_application.device)
         device_storage = DeviceStorage(test_application.device)
 
-        self._test_butler_service = ServiceApplication.install(self._test_butler_apk_path, test_application.device)
+        self._test_butler_service = ServiceApplication.from_apk(self._test_butler_apk_path, test_application.device)
 
         # add testbutler tag for processing
         if self._test_butler_service:

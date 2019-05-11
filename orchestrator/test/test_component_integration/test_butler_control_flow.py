@@ -25,7 +25,7 @@ def install_butler(device: Device, test_butler_service: str):
     fixture to install test butler service, prepare logcat
     :return: logcat process and iterator over stdout
     """
-    service = ServiceApplication.install(test_butler_service, device)
+    service = ServiceApplication.from_apk(test_butler_service, device)
     DeviceLog(device).clear()
     return service
 

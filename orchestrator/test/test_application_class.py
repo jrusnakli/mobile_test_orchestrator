@@ -6,6 +6,7 @@
 ##########
 import time
 
+import asyncio
 import pytest
 
 from androidtestorchestrator import Device
@@ -16,7 +17,7 @@ from androidtestorchestrator.application import Application
 class TestApplication:
 
     def test_install_uninstall(self, device: Device, support_app: str):
-        app = Application.install(support_app, device)
+        app = Application.from_apk(support_app, device)
         try:
             assert app.package_name == "com.linkedin.mdctest"
             output = device.execute_remote_cmd("shell", "dumpsys", "package", app.package_name, capture_stdout=True,
@@ -29,7 +30,7 @@ class TestApplication:
             assert app.package_name not in device.list_installed_packages()
 
     def test_grant_permissions(self, device: Device, support_test_app: str):
-        app = Application.install(support_test_app, device)
+        app = Application.from_apk(support_test_app, device)
         try:
             permission = "android.permission.WRITE_EXTERNAL_STORAGE"
             app.grant_permissions([permission])
@@ -73,7 +74,7 @@ class TestApplication:
             return False
 
     def test_start_stop(self, device: Device, support_app: str):  # noqa
-        app = Application.install(support_app, device)
+        app = Application.from_apk(support_app, device)
         try:
             app.start(".MainActivity")
             time.sleep(3)  # Have to give time to "come up" :-(
@@ -84,7 +85,7 @@ class TestApplication:
             app.uninstall()
 
     def test_monkey(self, device, support_app):  # noqa
-        app = Application.install(support_app, device)
+        app = asyncio.get_event_loop().run_until_complete(Application.from_apk_async(support_app, device))
         try:
             app.monkey()
             time.sleep(3)
@@ -95,14 +96,9 @@ class TestApplication:
             app.uninstall()
 
     def test_clear_data(self, device, support_app):  # noqa
-        app = Application.install(support_app, device)
+        app = Application.from_apk(support_app, device)
         app.clear_data()  # should not raise exception
-
-    def test__verify_install(self, device):
-        with pytest.raises(Exception) as exc_info:
-            Application._verify_install("some.apk", "no.such.package", device)
-        assert "Failed to verify installation of app 'no.such.package'" in str(exc_info.value)
 
     def test_version_invalid_package(self, device):
         with pytest.raises(Exception):
-            Application.install("no.such.package", device)
+            Application.from_apk("no.such.package", device)

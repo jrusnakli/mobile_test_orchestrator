@@ -10,6 +10,7 @@ from contextlib import suppress, asynccontextmanager
 from typing import List, Iterable, Tuple, Dict, Optional, AsyncContextManager, Union, Callable, IO
 
 log = logging.getLogger(__name__)
+log.setLevel(logging.INFO)
 
 # in seconds:
 TIMEOUT_ADB_CMD = 10
@@ -248,7 +249,9 @@ class Device(object):
         # provide a cleaner and more direct API (e.g. TestApplication.run and DeviceLog.logcat
         # will call this function to do the heavy lifting, but they provide a clean external-facing interface
         # to perform those functions)
-        proc = await asyncio.subprocess.create_subprocess_exec(*self.formulate_adb_cmd(*args),
+        cmd = self.formulate_adb_cmd(*args)
+        print("Executing: %s" % " ".join(cmd))
+        proc = await asyncio.subprocess.create_subprocess_exec(*cmd,
                                                                stdout=asyncio.subprocess.PIPE,
                                                                stderr=asyncio.subprocess.PIPE,
                                                                loop=loop,

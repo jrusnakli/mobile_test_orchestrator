@@ -14,9 +14,9 @@ def android_test_app(device,
                      support_app: str,
                      support_test_app: str,
                      test_butler_service: str):
-    app_for_test = TestApplication.install(support_test_app, device)
-    support_app = Application.install(support_app, device)
-    butler_service = ServiceApplication.install(test_butler_service, device)
+    app_for_test = TestApplication.from_apk(support_test_app, device)
+    support_app = Application.from_apk(support_app, device)
+    butler_service = ServiceApplication.from_apk(test_butler_service, device)
 
     def fin():
         """
@@ -73,9 +73,16 @@ class TestAndroidTestOrchestrator(object):
         test_count = 0
         test_suite_count = 0
         expected_test_suite = None
-        expected_test_class = None
+        current_test_suite = None
 
         class TestExpectations(TestListener):
+
+            def __init__(self):
+                self.expected_test_class = {
+                    'test_suite1': "com.linkedin.mdctest.TestButlerTest",
+                    'test_suite2': "com.linkedin.mdctest.TestButlerTest",
+                    'test_suite3': "com.linkedin.mdctest.TestButlerStressTest"
+                }
 
             def test_suite_errored(self, test_suite_name: str, status_code: int, exc_msg: str=""):
                 assert False, "did not expect test process to error with error code %d; \n%s" % \
@@ -89,11 +96,9 @@ class TestAndroidTestOrchestrator(object):
                 nonlocal test_count
                 nonlocal expected_test_suite
                 assert test_suite_name == expected_test_suite
-                assert total_test_count == test_count
 
             def test_ended(self, test_name: str, test_class: str, test_no: int, duration: float, msg: str = ""):
-                nonlocal test_count
-                nonlocal expected_test_class
+                nonlocal test_count, current_test_suite
                 test_count += 1
                 assert test_name in ["testTestButlerSetImmersiveModeConfirmation",
                                      "testTestButlerRotation",
@@ -103,14 +108,13 @@ class TestAndroidTestOrchestrator(object):
                                      "testTestButlerSetLocationModeHigh",
                                      "testTestButlerStress"
                                      ]
-                assert test_class == expected_test_class
+                assert test_class == self.expected_test_class[current_test_suite]
 
             def test_failed(self, test_name: str, test_class: str, test_no: int, stack: str,
                             msg: str = ""):
-                nonlocal test_count
-                nonlocal expected_test_class
+                nonlocal test_count, current_test_suite
                 test_count += 1
-                assert test_class == expected_test_class
+                assert test_class == self.expected_test_class[current_test_suite]
 
             def test_ignored(self, test_name: str, test_class: str, test_no: int, msg: str = ""):
                 nonlocal test_count
@@ -119,15 +123,15 @@ class TestAndroidTestOrchestrator(object):
 
             def test_suite_started(self, test_suite_name: str):
                 nonlocal test_count, test_suite_count
-                nonlocal expected_test_suite, expected_test_class
+                nonlocal expected_test_suite
+                nonlocal current_test_suite
+                current_test_suite = test_suite_name
+                print("Started test suite %s" % test_suite_name)
                 test_count = 0  # reset
                 test_suite_count += 1
                 expected_test_suite = "test_suite%d" % test_suite_count
                 assert test_suite_name == expected_test_suite
-                if test_suite_count <= 2:
-                    expected_test_class = "com.linkedin.mdctest.TestButlerTest"
-                else:
-                    expected_test_class = "com.linkedin.mdctest.TestButlerStressTest"
+
 
         def test_generator():
             yield (TestSuite(name='test_suite1',

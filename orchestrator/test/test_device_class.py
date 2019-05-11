@@ -49,17 +49,17 @@ class TestAndroidDevice:
         device.set_system_property("debug.mock2", "\"\"\"\"")
 
     def test_install_uninstall_app(self, device: Device, support_app: str):
-        app = Application.install(support_app, device)
+        app = Application.from_apk(support_app, device)
         app.uninstall()
         assert app.package_name not in device.list_installed_packages()
 
-        app = Application.install(support_app, device)
+        app = Application.from_apk(support_app, device)
         assert app.package_name in device.list_installed_packages()
         app.uninstall()
         assert app.package_name not in device.list_installed_packages()
 
     def test_list_packages(self, device: Device, support_app: str):
-        app = Application.install(support_app, device)
+        app = Application.from_apk(support_app, device)
         pkgs = device.list_installed_packages()
         assert app.package_name in pkgs
 
@@ -89,7 +89,7 @@ class TestAndroidDevice:
 
     @pytest.mark.skipif(True, reason="Test butler does not currently support system setting of locale")
     def test_get_set_locale(self, device: Device, local_changer_apk):  # noqa
-        app = Application.install(local_changer_apk, device)
+        app = Application.from_apk(local_changer_apk, device)
         app.grant_permissions([" android.permission.CHANGE_CONFIGURATION"])
         device.set_locale("en_US")
         assert device.get_locale() == "en_US"
@@ -97,7 +97,7 @@ class TestAndroidDevice:
         assert device.get_locale() == "fr_FR"
 
     def test_grant_permissions(self, device: Device, support_app: str):
-        app = Application.install(support_app, device)
+        app = Application.from_apk(support_app, device)
         try:
 
             app.grant_permissions(["android.permission.WRITE_EXTERNAL_STORAGE"])
@@ -108,8 +108,8 @@ class TestAndroidDevice:
                             device: Device,
                             test_butler_service: str,
                             support_app: str):  # noqa
-        app = Application.install(support_app, device)
-        butler_app = ServiceApplication.install(test_butler_service, device)
+        app = Application.from_apk(support_app, device)
+        butler_app = ServiceApplication.from_apk(test_butler_service, device)
 
         try:
             app.start(activity=".MainActivity")
@@ -138,7 +138,7 @@ class TestAndroidDevice:
         assert device.check_network_connection("localhost", count=3) == 0
 
     def test_oneshot_cpu_mem(self, device: Device, support_app: str):
-        app = Application.install(support_app, device)
+        app = Application.from_apk(support_app, device)
         app.monkey()
         time.sleep(1)
         cpu, mem = device.oneshot_cpu_mem(app.package_name)

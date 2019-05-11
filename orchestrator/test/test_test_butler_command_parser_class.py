@@ -13,8 +13,8 @@ from androidtestorchestrator.device import Device
 @pytest.fixture()
 def test_setup(request, device: Device, test_butler_service: str, support_test_app: str
                ) -> Tuple[ServiceApplication, Application]:
-    butler_service = ServiceApplication.install(test_butler_service, device)
-    app = Application.install(support_test_app, device)
+    butler_service = ServiceApplication.from_apk(test_butler_service, device)
+    app = Application.from_apk(support_test_app, device)
 
     def fin():
         butler_service.uninstall()
@@ -100,8 +100,8 @@ class SettingAndPropertyListener(TestButlerCommandParser.DeviceChangeListener):
 class TestTestButlerCommandParser(object):
 
     def test_parse_line(self, device: Device, test_butler_service: str, support_test_app: str):
-        butler_service = ServiceApplication.install(test_butler_service, device)
-        app = Application.install(support_test_app, device)
+        butler_service = ServiceApplication.from_apk(test_butler_service, device)
+        app = Application.from_apk(support_test_app, device)
         # start with a known confirmed value
         device.set_device_setting(namespace="system", key="volume_music", value=SettingAndPropertyListener.START_VALUE)
         assert device.get_device_setting(namespace="system", key="volume_music") == \
