@@ -16,6 +16,8 @@
 package com.linkedin.android.testbutler;
 
 import android.app.IntentService;
+import android.app.Notification;
+import android.app.Service;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.res.Configuration;
@@ -23,6 +25,7 @@ import android.os.IBinder;
 import android.os.RemoteException;
 import android.provider.Settings;
 import android.support.annotation.Nullable;
+import android.support.v4.app.JobIntentService;
 import android.util.Log;
 
 import java.lang.InterruptedException;
@@ -30,6 +33,7 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Field;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.Locale;
@@ -49,7 +53,8 @@ import java.util.Locale;
  * returning control back to the client, or will timeout if the change doesn't happen in a timely manner.</p>
  */
 @SuppressWarnings("deprecation")
-public class ButlerService extends IntentService {
+public class ButlerService extends JobIntentService {
+    private Intent mForegroundIntent = null;
     //for debug:
     private static final String TAG = CommandInvocation.TAG;
 
@@ -108,8 +113,10 @@ public class ButlerService extends IntentService {
         private CommandResponse invoke(final String cmd) throws
                 RemoteException, InterruptedException, ExecutionException, TimeoutException {
             // TODO: in future possible can allow multiple parallel invocations
-            Future<CommandResponse> future = CommandInvocation.invoke(cmd);
-            CommandResponse response = future.get(1, TimeUnit.SECONDS);
+            Future<CommandResponse> futureResponse = CommandInvocation.invoke(cmd);
+
+            CommandResponse response = futureResponse.get(1, TimeUnit.SECONDS);
+            Log.i(TAG, "Invoke this is " + this + ", " + response);
             if (response.getStatusCode() != 0) {
                 // log debug message, as server should handle as error/exception
                 Log.d(TAG, "Server-side error granting permission: " + response.getMessage());
@@ -208,6 +215,8 @@ public class ButlerService extends IntentService {
             }
             if (response != null) {
                 Log.e(TAG, "Message from host: " + response.getMessage());
+            } else {
+                Log.e(TAG, "Response was null");
             }
         }
 
@@ -254,6 +263,7 @@ public class ButlerService extends IntentService {
         public boolean setRotation(int rotation)
                 throws RemoteException {
             CommandResponse response = sendSetIntProperty(NS_SYSTEM, "accelerometer_rotation", 0);
+            Log.d(TAG, "ROTATION: " + response);
             if (response == null || response.getStatusCode() != 0){
                 onErrorInt(NS_SYSTEM, "accelerometer_rotation", 0, response);
             }
@@ -313,19 +323,19 @@ public class ButlerService extends IntentService {
     };
 
     public ButlerService() {
-        super("ButlerService");
+        super();
     }
 
     @Override
     public void onCreate() {
         super.onCreate();
-        //Log.d(TAG, "MDC ButlerService starting up...");
+        Log.d(TAG, "MDC ButlerService starting up...");
     }
 
     @Override
     public void onDestroy() {
         super.onDestroy();
-        //Log.d(TAG, "MDC ButlerService shutting down...");
+        Log.d(TAG, "MDC ButlerService shutting down...");
     }
 
     @Nullable
@@ -338,10 +348,15 @@ public class ButlerService extends IntentService {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         super.onStartCommand(intent, flags, startId);
+        onHandleIntent(intent);
         return android.app.Service.START_STICKY;
     }
 
     @Override
+    protected void onHandleWork(Intent intent) {
+        onHandleIntent(intent);
+    }
+
     protected void onHandleIntent(Intent intent){
         /**
          * A test-only intent ACTION_TEST_ONLY_SEND_CMD is provided for use in testing
@@ -352,7 +367,6 @@ public class ButlerService extends IntentService {
          * that could make debugging the basics far more difficult.
          */
         if (intent.getAction() == null){
-            Log.w(TAG, "Got null intent action? Ignoring");
             return;
         }
         if (intent.getAction().equals(ACTION_CMD_RESPONSE)) {
@@ -368,11 +382,8 @@ public class ButlerService extends IntentService {
             // and allow server to test response logic
             Log.d(TAG, "Sending command ");
             Log.d(TAG, intent.getStringExtra("command"));
-            try {
-                CommandInvocation.invoke("TEST_ONLY " + intent.getStringExtra("command"));
-            } catch (Exception e) {
-                Log.e(TAG, "Failed to send test-only command");
-            }
+            CommandInvocation.invoke("TEST_ONLY " + intent.getStringExtra("command"));
+
         } else if (intent.getAction().equals(ACTION_SET_SYSTEM_LOCALE)) {
             Log.d(TAG, "Setting system locale");
             Log.d(TAG, intent.getStringExtra("locale"));

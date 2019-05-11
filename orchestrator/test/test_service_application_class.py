@@ -48,7 +48,7 @@ class TestServiceApplication:
             async def timer():
                 await asyncio.wait_for(process_logcat(), timeout=5)
 
-            app.start(".ButlerService")
+            app.start(".ButlerService", foreground=True)
             try:
                 asyncio.get_event_loop().run_until_complete(timer())
             except asyncio.TimeoutError:

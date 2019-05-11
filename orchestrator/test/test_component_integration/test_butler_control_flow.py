@@ -51,14 +51,15 @@ class TestButlerControlFlow:
                 cmd = cmd.replace(" ", "\\ ")
                 butler_service.start(".ButlerService", "--es", "command", cmd,
                                      intent="com.linkedin.android.testbutler.FOR_TEST_ONLY_SEND_CMD")
+                print("SENT REQUEST FOR BUTLER COMMAND")
 
             def parse_line(self, line: str):
                 nonlocal line_count
 
                 if line_count == 0:
                     line_count += 1
-                    if line != "---------":
-                        log.error("Logcat did not start with expected line of output")
+                    if not line.startswith("---------"):
+                        log.error("Logcat did not start with expected line of output. Line was %s" % line)
                     # use standard first line of output from logcat to
                     # kickoff sending backdoor to tell device to echo a test butler command back to this host
                     self.request_command("just a test")
@@ -90,7 +91,7 @@ class TestButlerControlFlow:
                         return
                     if "Error" in line:
                         raise Exception("Error processing response:  %s" % line)
-                    if "Sending command" in line:
+                    if "Sending command" in line or "GOT RESPONSE" in line:
                         return
                     try:
                         preamble, line = line.split(":", 1)
@@ -103,7 +104,7 @@ class TestButlerControlFlow:
                         return
                     flow_seqence.popleft()
                     assert tag == TAG
-                    assert line == "CMD RESPONSE MSG: Success"
+                    assert line == "CMD RESPONSE MSG: Success", "Sending command" in line
                 elif flow_seqence[0] == "awaiting_response_confirmation_code":
                     try:
                         preamble, line = line.split(":", 1)
@@ -122,6 +123,7 @@ class TestButlerControlFlow:
             line_parser = Parser(app_under_test=None, service=butler_service)
             async for line in DeviceLog(device).logcat("-v", "brief", "-s", TAG):
                 try:
+                    print(line)
                     line_parser.parse_line(line)
                 except Exception as e:
                     log.error("Exception in processing line: %s\n %s" % (line, str(e)))

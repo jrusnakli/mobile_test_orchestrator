@@ -113,7 +113,7 @@ class TestAndroidDevice:
 
         try:
             app.start(activity=".MainActivity")
-            butler_app.start(activity=".ButlerService")
+            butler_app.start(activity=".ButlerService", foreground=True)
             app.clear_data()
             app.stop()
             butler_app.stop()

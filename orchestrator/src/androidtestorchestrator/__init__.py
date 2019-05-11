@@ -237,6 +237,8 @@ class AndroidTestOrchestrator:
         """
         # leave the campground as clean as you left it:
         if self._test_butler_service is not None:
+            self._test_butler_service.start(".ButlerService",
+                                            intent="com.linkedin.android.testbutler.STOP")
             self._test_butler_service.uninstall()
 
     def add_logcat_monitor(self, tag: str, handler: LineParser, priority: str= "*"):

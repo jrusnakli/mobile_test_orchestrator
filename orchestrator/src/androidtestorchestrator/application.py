@@ -258,12 +258,15 @@ class ServiceApplication(Application):
     Class representing an Android application that is specifically a service
     """
 
-    def start(self, activity: str, *options: str, intent: Optional[str] = None):
+    def start(self, activity: str, *options: str, intent: Optional[str] = None, foreground: bool = False):
         activity = "%s/%s" % (self.package_name, activity)
         options = ["\"%s\"" % item for item in options]
         if intent:
             options = ["-a", intent] + options
-        self.device.execute_remote_cmd("shell", "am", "start-foreground-service", "-n", activity, *options, capture_stdout=False)
+        if foreground:
+            self.device.execute_remote_cmd("shell", "am", "start-foreground-service", "-n", activity, *options, capture_stdout=False)
+        else:
+            self.device.execute_remote_cmd("shell", "am", "startservice", "-n", activity, *options, capture_stdout=False)
 
 
 class TestApplication(Application):

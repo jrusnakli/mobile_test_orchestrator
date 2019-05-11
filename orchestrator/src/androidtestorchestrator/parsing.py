@@ -273,6 +273,7 @@ class TestButlerCommandParser(LineParser):
             self.PROPERTY_PREFIX: self._process_set_property_cmd,
             self.GRANT_PREFIX: self._process_grant_permission_cmd,
         }
+        self._service_app.start(".ButlerService", foreground=True);
 
     def parse_line(self, line: str):
         """
