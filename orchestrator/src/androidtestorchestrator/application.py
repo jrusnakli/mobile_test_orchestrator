@@ -123,7 +123,7 @@ class Application(RemoteDeviceBased):
                 cmd = ("install", "-r", apk_path)
             else:
                 cmd = ("install", apk_path)
-            with await device.execute_remote_cmd_async(*cmd, wait_timeout=TIMEOUT_ADB_CMD) as line_generator:
+            async with await device.execute_remote_cmd_async(*cmd, unresponsive_timeout=TIMEOUT_ADB_CMD) as line_generator:
 
                 async for msg in line_generator:
                     log.debug(msg)
@@ -315,11 +315,13 @@ class TestApplication(Application):
                 items.append(runner)
         return items
 
-    async def run(self, *options: str) -> AsyncGenerator[str, None]:
+    async def run(self, *options: str, unresponsive_timeout=TIMEOUT_LONG_ADB_CMD) -> AsyncGenerator[str, None]:
         """
         Run an instrumentation test package, yielding lines from std output
 
         :param options: arguments to pass to instrument command
+        :param unresponsive_timeout: raise Timeout if there is no output from instrument command for longer than
+           this period of time
 
         :returns: return coroutine that in returns an async generator yielding line-by-line output
 
@@ -333,13 +335,13 @@ class TestApplication(Application):
         ...         print(line)
         """
         if self._target_application.package_name not in self.device.list_installed_packages():
-            raise Exception("App under test, as designatee by this test app's manifest, is not installed!")
+            raise Exception("App under test, as designated by this test app's manifest, is not installed!")
         # surround each arg with quotes to preserve spaces in any arguments when sent to remote device:
         options = ['"%s"' % arg if not arg.startswith('"') else arg for arg in options]
-        with await self.device.execute_remote_cmd_async("shell", "am", "instrument", "-w", "-r",
-                                                         *options,
-                                                         "/".join([self._package_name, self._runner]),
-                                                         wait_timeout=TIMEOUT_ADB_CMD) as line_generator:
+        async with await self.device.execute_remote_cmd_async("shell", "am", "instrument", "-w", "-r",
+                                                              *options,
+                                                              "/".join([self._package_name, self._runner]),
+                                                              unresponsive_timeout=unresponsive_timeout) as line_generator:
             async for line in line_generator:
                 yield line
 

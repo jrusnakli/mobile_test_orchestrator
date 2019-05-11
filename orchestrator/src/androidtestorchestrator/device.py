@@ -6,8 +6,8 @@ import re
 import subprocess
 import time
 
-from contextlib import suppress
-from typing import List, Union, AsyncGenerator, Iterable, Tuple, Optional, IO
+from contextlib import suppress, asynccontextmanager
+from typing import List, Iterable, Tuple, Dict, Optional, AsyncContextManager, Union, Callable, IO
 
 log = logging.getLogger(__name__)
 
@@ -17,16 +17,26 @@ TIMEOUT_LONG_ADB_CMD = 4 * 60
 TIMEOUT_SCREEN_CAPTURE = 2*60
 
 
-def trace(e: Exception) -> str:
-    import traceback
-    return "%s\n%s" % (str(e), traceback.format_exc())
-
-
 class Device(object):
     """
     Class for interacting directly with a remote device over USB via Google's adb command.
     This is intended to be a direct bridge to the same functionality as adb, with minimized embellishments
     """
+
+    # These packages may appear as running when looking at the activities in a device's activity stack. The running
+    # of these packages do not affect interaction with the app under test. With the exception of the Samsung
+    # MtpApplication (pop-up we can't get rid of that asks the user to update their device), they are also not visible
+    # to the user. We keep a list of them so we know which ones to disregard when trying to retrieve the actual
+    # foreground application the user is interacting with.
+    SILENT_RUNNING_PACKAGES = ["com.samsung.android.mtpapplication", "com.wssyncmldm", "com.bitbar.testdroid.monitor"]
+
+    class InsufficientStorageError(Exception):
+        """
+        raised on insufficient storage on device (e.g. in install)
+        """
+
+    ERROR_MSG_INSUFFICIENT_STORAGE = "INSTALL_FAILED_INSUFFICIENT_STORAGE"
+
     override_ext_storage = {
         # TODO: is this still needed (in lieu of updates to OS SW):
         "Google Pixel": "/sdcard"
@@ -94,7 +104,7 @@ class Device(object):
 
         :raises FileNotFoundError: if adb path is invalid
         """
-        if not adb_path or not os.path.isfile(adb_path):
+        if not os.path.isfile(adb_path):
             raise FileNotFoundError("Invalid adb path given: '%s'" % adb_path)
         self._device_id = device_id
         self._adb_path = adb_path
@@ -107,6 +117,7 @@ class Device(object):
         self._name = None
         self._ext_storage = Device.override_ext_storage.get(self.model)
         self._device_server_datetime_offset = None
+        self._lock = asyncio.Semaphore()
 
     @property
     def device_server_datetime_offset(self):
@@ -139,16 +150,24 @@ class Device(object):
         """
         return self._device_id
 
+    def _determine_system_property(self, property):
+        """
+        :param property: property to fetch
+        :return:  requested property or "UNKNOWN" if not present on device
+        """
+        prop = self.get_system_property("ro.product.brand")
+        if not prop:
+            log.error("Unable to get brand of device from system properties. Setting to UNKNOWN")
+            prop = "UNKNOWN"
+        return prop
+
     @property
     def brand(self):
         """
         :return: The brand of the device as provided in it's system properties, or "UNKNOWN" if indeterminable
         """
         if not self._brand:
-            self._brand = self.get_system_property("ro.product.brand")
-            if not self._brand:
-                log.error("Unable to get brand of device from system properties. Setting to UNKNOWN")
-                self._brand = "UNKNOWN"
+            self._brand = self._determine_system_property("ro.product.brand")
         return self._brand
 
     @property
@@ -157,10 +176,7 @@ class Device(object):
         :return: the model of this device, or "UNKNOWN" if indeterminable
         """
         if not self._model:
-            self._model = self.get_system_property("ro.product.model")
-            if not self._model:
-                log.error("Unable to get brand of device from system properties. Setting to UNKNOWN")
-                self._model = "UNKNOWN"
+            self._model = self._determine_system_property("ro.product.model")
         return self._model
 
     @property
@@ -169,10 +185,7 @@ class Device(object):
         :return:  The manufacturer of this device, or "UNKNOWN" if indeterminable
         """
         if not self._manufacturer:
-            self._manufacturer = self.get_system_property("ro.product.manufacturer")
-            if not self._manufacturer:
-                log.error("Unable to get brand of device from system properties. Setting to UNKNOWN")
-                self._manufacturer = "UNKNOWN"
+            self._manufacturer = self._determine_system_property("ro.product.manufacturer")
         return self._manufacturer
 
     @property
@@ -184,25 +197,26 @@ class Device(object):
             self._name = self.manufacturer + " " + self.model
         return self._name
 
-    def execute_remote_cmd(self, *args: str, timeout=TIMEOUT_ADB_CMD, capture_stdout=True) -> Union[str, None]:
+    def execute_remote_cmd(self, *args: str, timeout=TIMEOUT_ADB_CMD, capture_stdout: bool = True,
+                           fail_on_presence_of_stderr=False) -> Optional[str]:
         """
         Execute a command on this device (via adb)
 
         :param args: args to be executed (via adb command)
         :param timeout: raise asyncio.TimeoutError if command fails to execute in specified time
         :param capture_stdout: whether to capture and return stdout output (otherwise return None)
+        :param fail_on_presence_of_stderr: Some commands return code 0 and still faile, so must check stderr
+           (NOTE however that some commands like monkey return 0 and use stderr as though it was stdout :-( )
 
-        :return: None if no stdout output requested, otherwise a string containing the stoudt output of the command
+        :return: None if no stdout output requested, otherwise a string containing the stdout output of the command
 
         :raises: CommandExecutionFailureException if command fails to execute on remote device
         """
-        args = [self._adb_path, "-s", self.device_id, *args]
-        log.info("Executing: %s" % (' '.join(args)))
-        completed = subprocess.run(args, timeout=timeout,
+        completed = subprocess.run(self.formulate_adb_cmd(*args), timeout=timeout,
                                    stderr=subprocess.PIPE,
                                    stdout=subprocess.PIPE if capture_stdout else subprocess.DEVNULL,
                                    encoding='utf-8', errors='ignore')
-        if completed.returncode != 0:
+        if completed.returncode != 0 or (fail_on_presence_of_stderr and completed.stderr):
             raise self.CommandExecutionFailureException(completed.returncode,
                                                         "Failed to execute '%s' on device %s [%s]" %
                                                         (' '.join(args), self.device_id, completed.stderr))
@@ -214,15 +228,19 @@ class Device(object):
         log.info("Executing: %s" % (' '.join(args)))
         return subprocess.Popen(args, stdout=stdout, stderr=subprocess.PIPE, encoding='utf-8', errors='ignore')
 
-    async def execute_remote_cmd_async(self, *args: str, wait_timeout: float = 0.0) -> AsyncGenerator[str, None]:
+    async def execute_remote_cmd_async(self, *args: str, unresponsive_timeout: Union[float, None] = None,
+                                       proc_completion_timeout: float = 0.0, loop=None) -> AsyncContextManager:
         """
         coroutine for executing a command on this remote device asynchronously, allowing the client to
         iterate over lines of output;
 
         :param args: command to execute
-        :param wait_timeout: Once client stops iteration (or generator completes), wait timeout seconds
+        :param proc_completion_timeout: Once client stops iteration (or generator completes), wait timeout seconds
            for process to complete, otherwise kill the process.  A value of 0 will kill the process
            immediately after client breaks out of iteration
+        :param unresponsive_timeout: if non None and a read of next line of stdout takes longer than specified, T
+            imeoutException will be raised
+        :param loop: event loop to asynchronously run under, or None for default event loop
 
         :returns: AsyncGenerator iterating over lines of output from command
         """
@@ -232,53 +250,47 @@ class Device(object):
         # to perform those functions)
         proc = await asyncio.subprocess.create_subprocess_exec(*self.formulate_adb_cmd(*args),
                                                                stdout=asyncio.subprocess.PIPE,
-                                                               stderr=asyncio.subprocess.PIPE)
+                                                               stderr=asyncio.subprocess.PIPE,
+                                                               loop=loop,
+                                                               bufsize=0)
 
-        class LineByLine(AsyncGenerator):
+        class LineGenerator(AsyncContextManager):
+            """
+            wraps below async generator in context manager to ensure proper closure
 
-            def __aiter__(self):
-                return self
+            """
+            async def __aenter__(self):
+                return self.lines()
 
-            async def __anext__(self):
-                line = await proc.stdout.readline()
-                return await self.asend(line.decode('utf-8', errors='ignore'))
+            async def __aexit__(self, exc_type, exc_val, exc_tb):
+                if proc_completion_timeout is None or proc_completion_timeout > 0.0:
+                    return_code = await asyncio.wait_for(proc.wait(), proc_completion_timeout, loop=loop)
+                    if return_code != 0:
+                        stderr = await proc.stderr.read()
+                        stderr = stderr.decode('utf-8', errors='ignore`')
+                        error_msg = "Remote command '%s' exited with code %s [%s]" % (' '.join(args), return_code, stderr)
+                        raise Device.CommandExecutionFailureException(return_code, error_msg)
 
-            async def asend(self, line):
-                if not line:
-                    try:
-                        if wait_timeout > 0.0:
-                            return_code = await asyncio.wait_for(proc.wait(), wait_timeout)
-                            stderr = await proc.stderr.read()
-                            stderr = stderr.decode('utf-8', errors='ignore`')
-                            if return_code != 0:
-                                error_msg = "Remote command '%s' exited with code %s [%s]" % (
-                                    ' '.join(args), return_code, stderr)
-                                raise Device.CommandExecutionFailureException(return_code, error_msg)
-                    finally:
-                        with suppress(Exception):
-                            proc.kill()
-                    raise StopAsyncIteration
-                return line
+            async def lines(self):
+                if unresponsive_timeout is not None:
+                    line = await asyncio.wait_for(proc.stdout.readline(), timeout=unresponsive_timeout)
+                else:
+                    line = await proc.stdout.readline()
+                while line:
+                    yield line.decode('utf-8')
+                    if unresponsive_timeout is not None:
+                        line = await asyncio.wait_for(proc.stdout.readline(), timeout=unresponsive_timeout)
+                    else:
+                        line = await proc.stdout.readline()
 
-            async def athrow(self, typ, val=None, tb=None):
-                if val is None:
-                    if tb is None:
-                        raise typ
-                    val = typ()
-                if tb is not None:
-                    val = val.with_traceback(tb)
-                raise val
-
-            def __enter__(self):
-                return self
-
-            def __exit__(self, exc_type, exc_val, exc_tb):
-                with suppress(Exception):
+            async def stop(self, force: bool = False):
+                if force:
                     proc.kill()
+                else:
+                    proc.terminate()
+                await proc.wait()
 
-        # return as a coroutine.  This prevents a double hop implementation where this function would
-        # yield results to a client that in turn loops over and yieldds those results in its own AsyncGenerator
-        return LineByLine()
+        return LineGenerator()
 
     def set_device_setting(self, namespace: str, key: str, value: str) -> str:
         """
@@ -303,7 +315,7 @@ class Device(object):
             log.warning("Unable to detect device setting %s:%s" % (namespace, key))
         return previous_value
 
-    def get_device_setting(self, namespace: str, key: str) -> Union[None, str]:
+    def get_device_setting(self, namespace: str, key: str) -> Optional[str]:
         """
         Get a device setting
 
@@ -326,14 +338,10 @@ class Device(object):
         :return: previous value, in case client wishes to restore at some point
         """
         previous_value = self.get_system_property(key)
-        try:
-            self.execute_remote_cmd("shell", "setprop", key, value, capture_stdout=False)
-        except self.CommandExecutionFailureException as e:
-            raise self.CommandExecutionFailureException(e.return_code,
-                                                        "Unable to set system property %s to value %s" % (key, value))
+        self.execute_remote_cmd("shell", "setprop", key, value, capture_stdout=False)
         return previous_value
 
-    def get_system_property(self, key: str) -> Union[None, str]:
+    def get_system_property(self, key: str) -> Optional[str]:
         """
         :param key: the key of the property to be retrieved
 
@@ -346,31 +354,18 @@ class Device(object):
             log.error("Unable to get system property %s [%s]" % (key, str(e)))
             return None
 
-    def get_system_properties(self) -> str:
+    def get_device_properties(self) -> Dict[str, str]:
         """
         :return: full dict of properties
         """
+        results: Dict[str, str] = {}
+        output = self.execute_remote_cmd("shell", "getprop", timeout=TIMEOUT_ADB_CMD,)
+        for line in output.splitlines():
+            if ':' in line:
+                property_name, property_value = line.split(':', 1)
+                results[property_name.strip()[1:-1]] = property_value.strip()
 
-        # a lot of output, so safer to stream it:
-        async def get_props():
-            proc = await asyncio.subprocess.create_subprocess_exec(*self.formulate_adb_cmd("shell", "getprop"),
-                                                                   stdout=subprocess.PIPE,
-                                                                   stderr=subprocess.PIPE)
-            results = {}
-            while True:
-                line = await proc.stdout.readline()
-                if not line:
-                    break
-                line = line.decode('utf-8', errors='ignore')
-                if ':' in line:
-                    property_name, property_value = line.split(':', 1)
-                    results[property_name.strip()[1:-1]] = property_value.strip()
-            return results
-
-        async def timed():
-            return await asyncio.wait_for(get_props(), TIMEOUT_ADB_CMD)
-
-        return asyncio.get_event_loop().run_until_complete(timed())
+        return results
 
     def get_device_datetime(self) -> datetime.datetime:
         """
@@ -405,12 +400,12 @@ class Device(object):
 
         :param locale: locale to set on device
         """
+        locale_pkg_name = "net.sanapeli.adbchangelanguage"
+        with suppress(self.CommandExecutionFailureException):
+            self.execute_remote_cmd("shell", "am", "stop", locale_pkg_name)
         # invoke intent on test butler service to change system locale:
-        self.execute_remote_cmd("shell", "am", "startservice", "-n",
-                                "com.linkedin.android.testbutler/.ButlerService", "-a",
-                                "com.linkedin.android.testbutler.SET_SYSTEM_LOCALE", "--es",
-                                "locale", locale.replace("_", "-r"),
-                                capture_stdout=False)
+        self.execute_remote_cmd("shell", "am", "start", "-n", "%s/.AdbChangeLanguage" % locale_pkg_name,
+                                "-e", "language", locale.replace("_", "-r"))
         if self.get_locale() != locale:
             # allow time for device and app to catch up
             time.sleep(self.SLEEP_SET_PROPERTY)
@@ -438,6 +433,12 @@ class Device(object):
                 items.append(item.replace("package:", '').strip())
         return items
 
+    def list_instrumentation(self):
+        """
+        :return: list of instrumentations for a (test) app
+        """
+        return self.list("instrumentation")
+
     @property
     def external_storage_location(self) -> str:
         """
@@ -450,7 +451,7 @@ class Device(object):
                     self._ext_storage = msg.strip()
         return self._ext_storage or "/sdcard"
 
-    def take_screenshot(self, local_screenshot_path: str):
+    def take_screenshot(self, local_screenshot_path: str) -> None:
         """
         :param local_screenshot_path: path to store screenshot
 
@@ -464,7 +465,7 @@ class Device(object):
                                     timeout=TIMEOUT_SCREEN_CAPTURE)
             self.execute_remote_cmd("pull", device_path, local_screenshot_path, capture_stdout=False)
         finally:
-            with suppress(Exception):
+            with suppress(self.CommandExecutionFailureException):
                 self.execute_remote_cmd("shell", "rm", device_path)
 
     # PyCharm detects erroreously that parens below are not required when they are
@@ -480,7 +481,7 @@ class Device(object):
         else:
             return (self._adb_path, *args)
 
-    def oneshot_cpu_mem(self, package_name) -> Tuple[float, float]:
+    def oneshot_cpu_mem(self, package_name: str) -> Union[Tuple[float, float], Tuple[None, None]]:
         """
         Get one-time cpu/memory usage data point
         :param package_name: package name to get cpu/mem data for
@@ -488,65 +489,48 @@ class Device(object):
         """
         # TODO: Remove this in lieu of a better mechanism
         # first get format of output, then get results for requested package
-        async def run_stats():
-            proc = await asyncio.subprocess.create_subprocess_exec(*self.formulate_adb_cmd("shell", "ps", "-o",
-                                                                                           "NAME,PCPU,RSS"),
-                                                                   stdout=asyncio.subprocess.PIPE)
-            try:
-                while True:
-                    line = await proc.stdout.readline()
-                    if not line:
-                        break
-                    line = line.decode('utf-8', errors='ignore')  # encoding seems to be ignored if supplied above
-                    if package_name in line:
-                        name, cpu, mem = line.strip().split()
-                        cpu = float(cpu.strip())
-                        mem = float(mem.strip())
+        output = self.execute_remote_cmd("shell", "ps", "-o", "NAME,PCPU,RSS", timeout=TIMEOUT_ADB_CMD)
+        for line in output.splitlines():
+            if package_name in line:
+                name, cpu, mem = line.strip().split()
+                cpu = float(cpu.strip())
+                mem = float(mem.strip())
 
-                        return cpu, mem
-                return None, None
-            finally:
-                with suppress(Exception):
-                    proc.kill()
+                return cpu, mem
+        return None, None
 
-        async def timer():
-            return await asyncio.wait_for(run_stats(), 5)
+    def input(self, subject, source=None):
+        """
+        Send event subject through given source
+        :param subject: event to send
+        :param source: source of event, or None to default to "keyevent"
+        """
+        self.execute_remote_cmd("shell", "input", source or "keyevent", subject, capture_stdout=False)
 
-        return asyncio.get_event_loop().run_until_complete(timer())
-
-    def input(self, subject):
-        self.execute_remote_cmd("shell", "input", subject, capture_stdout=False)
-
-    def check_network_connection(self, domain, count=3):
+    def check_network_connection(self, domain: str, count: int = 3) -> int:
         """
         check network connection to domain
 
         :param domain: domain to ping
         :param count: how many times to ping domain
 
-        :return: 0 on success, non-zero otherwise
+        :return: 0 on success, number of failed packets otherwise
         """
-        async def ping():
-            nonlocal count
-            async for msg in await self.execute_remote_cmd_async("shell", "ping", "-c", str(count), domain):
-                if not msg:
-                    break
-                if "64 bytes" in msg:
+        try:
+            output = self.execute_remote_cmd("shell", "ping", "-c", str(count), domain, timeout=TIMEOUT_LONG_ADB_CMD)
+            for msg in output.splitlines():
+                if "64 bytes" in str(msg):
                     count -= 1
                 if count <= 0:
                     break
             return count
-
-        async def timed():
-            return await asyncio.wait_for(ping(), timeout=count*5)
-
-        try:
-            return asyncio.get_event_loop().run_until_complete(timed())
-        except asyncio.TimeoutError:
+        except subprocess.TimeoutExpired:
             log.error("ping is hanging and not yielding any results. returning error code")
             return -1
+        except self.CommandExecutionFailureException:
+            return -1
 
-    def get_version(self, package):
+    def get_version(self, package) -> Optional[str]:
         """
         get version of given package
 
@@ -555,14 +539,202 @@ class Device(object):
         :return: version of given package or None if no such package
         """
         version = None
-        output = self.execute_remote_cmd("shell", "dumpsys", "package", package)
-        for line in output.splitlines():
-            if line and "versionName" in line and '=' in line:
-                version = line.split('=')[1].strip()
-                break
-        if version is None:
-            raise Exception("No such package installed: %s" % package)
+        try:
+            output = self.execute_remote_cmd("shell", "dumpsys", "package", package)
+            for line in output.splitlines():
+                if line and "versionName" in line and '=' in line:
+                    version = line.split('=')[1].strip()
+                    break
+        except Exception as e:
+            log.error("Unable to get version for package %s [%s]" % (package, str(e)))
         return version
+
+    def _verify_install(self, appl_path: str, package: str) -> None:
+        """
+        verify installation of an app, taking a screenshot on failure
+
+        :param appl_path: For logging which apk failed to install (upon any failure)
+        :param package: package name of app
+
+        "raises" Exception if failure to verify
+        """
+        packages = self.list_installed_packages()
+        if package not in packages:
+            # some devices (may??) need time for package install to be detected by system
+            time.sleep(self.SLEEP_PKG_INSTALL)
+            packages = self.list_installed_packages()
+        if package not in packages:
+            if package is not None:
+                screenshot_dir = "test-screenshots"
+                if not os.path.exists(screenshot_dir):
+                    os.makedirs(screenshot_dir)
+                self.take_screenshot("install_failure-%s.png" % package)
+                log.error("Did not find installed package %s;  found: %s" % (package, packages))
+                log.error("Device failure to install %s on model %s;  install status succeeds,"
+                          "but package not found on device" %
+                          (appl_path, self.model))
+            raise Exception("Failed to verify installation of app '%s', event though output indicated otherwise" %
+                            package)
+        else:
+            log.info("Package %s installed" % str(package))
+
+    def install_synchronous(self, apk_path: str, as_upgrade, package: str) -> None:
+        if as_upgrade:
+            cmd = ("install", "-r", apk_path)
+        else:
+            cmd = ("install", apk_path)
+        return self.execute_remote_cmd(*cmd, timeout=TIMEOUT_LONG_ADB_CMD)
+
+    async def install(self, apk_path: str, as_upgrade, package: str) -> None:
+        if not as_upgrade:
+            # avoid unnecessary conflicts with older certs and crap:
+            with suppress(Exception):
+                self.execute_remote_cmd("uninstall", package, capture_stdout=False)
+
+        extra_commands = Device.special_install_instructions.get(self.model)
+
+        # bypass this by executing extra commands if needed (but only once 100% of package is installed)
+        def execute_extras():
+            """
+            Execute additional commands post-install of app required by some devices to do non-standard
+            user interaction to properly install app over USB (for example)
+            """
+            for command, sleep_time in extra_commands['post_install_cmds']:
+                if sleep_time:
+                    time.sleep(sleep_time)
+                try:
+                    self.execute_remote_cmd(*command, timeout=TIMEOUT_LONG_ADB_CMD, capture_stdout=False)
+                except Exception as e:
+                    log.error(str(e))
+
+        # Execute the installation of the app, monitoring output for completion in order to invoke
+        # any extra commands
+        if as_upgrade:
+            cmd = ("install", "-r", apk_path)
+        else:
+            cmd = ("install", apk_path)
+        # do not allow more than one install at a time on a specific device, as
+        # this can be problematic
+        async with self.lock():
+            async with await self.execute_remote_cmd_async(*cmd, proc_completion_timeout=TIMEOUT_LONG_ADB_CMD) as lines:
+                async for msg in lines:
+                    log.debug(msg)
+
+                    if self.ERROR_MSG_INSUFFICIENT_STORAGE in msg:
+                        raise self.InsufficientStorageError("Insufficient storage for install of %s" %
+                                                            apk_path)
+                    # some devices have non-standard pop-ups that must be cleared by accepting usb installs
+                    # (non-standard Android):
+                    if extra_commands and msg and ("100%%" in msg or "pkg:" in msg or "Success" in msg):
+                        # this is when pop-up shows up (roughly)
+                        log.info("Execution of extra commands on install...")
+                        # successfully pushed, now execute special instructions, which
+                        # is often a tap event to accept a pop-up
+                        execute_extras()
+
+        # on some devices, a pop-up may prevent successful install even if return code from adb install showed
+        # success, so must explicitly verify the install was successful:
+        log.debug("Verifying install...")
+        self._verify_install(apk_path, package)  # raises exception on failure to verify
+
+    @asynccontextmanager
+    async def lock(self):
+        await self._lock.acquire()
+        yield self
+        self._lock.release()
+
+    @property
+    def home_screen_active(self) -> bool:
+        """
+        Determines if the home screen is currently in the foreground. Note that system pop-ups will results
+        in this function returning False.
+        """
+        found_potential_stack_match = False
+        stdout = self.execute_remote_cmd("shell", "dumpsys", "activity", "activities", capture_stdout=True,
+                                         timeout=TIMEOUT_ADB_CMD)
+        # Find lines that look like this:
+        #   Stack #0:
+        # or
+        #   Stack #0: type=home mode=fullscreen
+        app_stack_pattern = re.compile(r'^Stack #(\d*):')
+        stdout_lines = stdout.splitlines()
+        for line in stdout_lines:
+            matches = app_stack_pattern.match(line.strip())
+            if matches:
+                found_potential_stack_match = True
+                if matches.group(1) == "0":
+                    return True
+                else:
+                    break
+
+        # Went through entire activities stack, but no line matched expected format for displaying activity
+        if not found_potential_stack_match:
+            raise Exception(
+                f"Could not determine if home screen is in foreground because no lines matched expected "
+                f"format of \"dumpsys activity activities\" pattern. Please check that the format did not change:\n"
+                f"{stdout_lines}")
+
+        # Format of activities was fine, but detected home screen was not in foreground. But it is possible this is a
+        # Samsung device with silent packages in foreground. Need to check if that's the case, and app after them
+        # is the launcher/home screen.
+        foreground_activity = self.foreground_activity(ignore_silent_apps=True)
+        return foreground_activity.lower() == "com.sec.android.app.launcher"
+
+    def return_home(self, keycode_back_limit: int = 10):
+        """
+        Return to home screen as though the user did so via one or many taps on the back button.
+        Subsequent launches of the app will need to recreate the app view, but may
+        be able to take advantage of some saved state, and is considered a warm app launch.
+
+        NOTE: This function assumes the app is currently in the foreground. If not, it may still return to the home
+        screen, but the process of closing activities on the back stack will not occur.
+
+        :param keycode_back_limit: int The maximum number of times to press the back button to attempt to get back to
+        the home screen
+        """
+        back_button_attempt = 0
+
+        while back_button_attempt <= keycode_back_limit:
+            back_button_attempt += 1
+            self.input("KEYCODE_BACK")
+            if self.home_screen_active:
+                return
+            # Sleep for a second to allow for complete activity destruction.
+            # TODO: ouch!! almost a 10 second overhead if we reach limit
+            time.sleep(1)
+
+        foreground_activity = self.foreground_activity(ignore_silent_apps=True)
+
+        raise Exception(f"Max number of back button presses ({keycode_back_limit}) to get to Home screen has "
+                        f"been reached. Found foreground activity {foreground_activity}. App closure failed.")
+
+    def _activity_stack_top(self, filter: Callable[[str], bool] = lambda x: True) -> List[str]:
+        """
+        :return: List of the app packages in the activities stack, with the first item being at the top of the stack
+        """
+        stdout = self.execute_remote_cmd("shell", "dumpsys", "activity", "activities", capture_stdout=True)
+        # Find lines that look like this:
+        #   * TaskRecord{133fbae #1340 I=com.google.android.apps.nexuslauncher/.NexusLauncherActivity U=0 StackId=0 sz=1}
+        # or
+        #   * TaskRecord{94c8098 #1791 A=com.android.chrome U=0 StackId=454 sz=1}
+        app_record_pattern = re.compile(r'^\* TaskRecord\{[a-f0-9-]* #\d* [AI]=([a-zA-Z].[a-zA-Z0-9.]*)[ /].*')
+        for line in stdout.splitlines():
+            matches = app_record_pattern.match(line.strip())
+            app_package = matches.group(1) if matches else None
+            if app_package and filter(app_package):
+                return app_package
+        return None  # to be explicit
+
+    def foreground_activity(self, ignore_silent_apps=True):
+        """
+        :param ignore_silent_apps: whether or not to ignore silent-running apps (ignoring those
+            if they are in the stack. They show up as the foreground activity, even if the normal activity
+            we care about is behind it and running as expected)
+
+        :return: package name of current foreground activity
+        """
+        ignored = self.SILENT_RUNNING_PACKAGES if ignore_silent_apps else []
+        return self._activity_stack_top(filter=lambda x: x.lower() not in ignored)
 
 
 class RemoteDeviceBased(object):
@@ -575,10 +747,9 @@ class RemoteDeviceBased(object):
         :param device: Which device is associated with this instance
         """
         self._device = device
-        self._ext_storage = None
 
     @property
-    def device(self):
+    def device(self)->Device:
         """
         :return:  The device associated with this instance
         """

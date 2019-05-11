@@ -18,13 +18,14 @@ class TestDeviceLog:
         length = 100
 
         async def parse_logcat():
-            async for line in device_log.logcat():
-                nonlocal output
-                if line.startswith("----"):
-                    continue
-                output.append(line)
-                if len(output) >= length:
-                    break
+            async with await device_log.logcat() as lines:
+                async for line in lines:
+                    nonlocal output
+                    if line.startswith("----"):
+                        continue
+                    output.append(line)
+                    if len(output) >= length:
+                        break
 
         async def timer():
             await asyncio.wait_for(parse_logcat(), timeout=30)

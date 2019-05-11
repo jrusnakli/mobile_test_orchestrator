@@ -41,7 +41,7 @@ class TestAndroidDevice:
     def test_set_invalid_system_property(self, device: Device):
         with pytest.raises(Exception) as exc_info:
             device.set_system_property("nosuchkey", "value")
-        assert "Unable to set system property nosuchkey to value" in str(exc_info.value)
+        assert "setprop: failed to set property 'nosuchkey' to 'value'" in str(exc_info.value)
 
     def test_get_set_system_property(self, device: Device):
         device.set_system_property("debug.mock2", "5555")
@@ -70,10 +70,10 @@ class TestAndroidDevice:
         assert "android" in device.brand.lower() or "google" in device.brand.lower()
 
     def test_model(self, device: Device):
-        assert device.model.startswith("Android SDK built for x86")
+        assert device.model.startswith("Android SDK built for x86") or "google" in device.model
 
     def test_manufacturer(self, device: Device):
-        assert device.manufacturer in ["Google", "unknown"]
+        assert device.manufacturer.lower() in ["google", "unknown"]
 
     def test_get_device_datetime(self, device: Device):
         import time
@@ -123,15 +123,12 @@ class TestAndroidDevice:
 
     def test_invalid_cmd_execution(self, device: Device):
         async def execute():
-            async for _ in await device.execute_remote_cmd_async("some", "bad", "command", wait_timeout=10):
-                pass
+            async with await device.execute_remote_cmd_async("some", "bad", "command", proc_completion_timeout=10) as lines:
+                async for _ in lines:
+                    pass
         with pytest.raises(Exception) as exc_info:
             asyncio.get_event_loop().run_until_complete(execute())
         assert "some bad command" in str(exc_info)
-
-    def test_get_device_properties(self, device: Device):
-        all_properties = device.get_system_properties()
-        assert "ro.product.model" in all_properties
 
     def test_get_locale(self, device: Device):
         locale = device.get_locale()

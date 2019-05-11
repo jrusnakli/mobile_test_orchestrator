@@ -104,6 +104,5 @@ class TestApplication:
         assert "Failed to verify installation of app 'no.such.package'" in str(exc_info.value)
 
     def test_version_invalid_package(self, device):
-        app = Application("no.such.package", device)
         with pytest.raises(Exception):
-            app.version
+            Application.install("no.such.package", device)

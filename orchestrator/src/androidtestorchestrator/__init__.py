@@ -65,10 +65,15 @@ class TestSuite:
 class AndroidTestOrchestrator:
     """
     Class for orchestrating interactions with a device or emulator during execution of a test or suite of tests.
+    The idea is to execute a set of (or single) test suites, referred to here as a "test plan", with each
+    suite being a collection of (adb shell am) instrument commands to run.  Each item in the
+    test suite contains the command line options to pass to the instrument command
+    which, in part, includes which set of tests to run.  app data is cleared between each test suite execution
+    and "dangerous" permissions re-granted to prevent pop-ups.
 
     :param artifact_dir: directory where logs and screenshots are saved
     :param test_butler_apk_path: path to external test butler apk to use (e.g. for emulators);
-       or None to use built-in TestButler for real devices
+       or None to use built-in TestButler
     :param max_test_time: maximum allowed time for a single test to execute before timing out (or None)
     :param max_test_suite_time: maximum allowed time for test plan to complete to or None
 
@@ -199,7 +204,7 @@ class AndroidTestOrchestrator:
         """
         :param artifact_dir: directory where logs and screenshots are saved
         :param test_butler_apk_path: path to external test butler apk to use (e.g. for emulators);
-           or None to use real-device TestButler apk
+           or None to use built-in TestButler apk
         :param max_test_time: maximum allowed time for a single test to execute before timing out (or None)
         :param max_test_suite_time:maximum allowed time for a suite of tets (a package under and Android instrument
            command, for example) to execute; or None
@@ -277,7 +282,11 @@ class AndroidTestOrchestrator:
         :param device_restoration: to restore device on each iteration
         """
         # clear logcat for fresh start
-        DeviceLog(test_application.device).clear()
+        try:
+            DeviceLog(test_application.device).clear()
+        except Device.CommandExecutionFailureException as e:
+            # sometimes logcat -c will give and error "failed to clear 'main' log';  Ugh
+            log.error("clearing logcat failed: " + str(e))
 
         async def single_buffered_test_suite():
             """
@@ -348,8 +357,9 @@ class AndroidTestOrchestrator:
             logcat_demuxer = LogcatTagDemuxer(self._tag_monitors)
             device_log = DeviceLog(device)
             keys = ['%s:%s' % (k, v[0]) for k, v in self._tag_monitors.items()]
-            async for line in device_log.logcat("-v", "brief", "-s", *keys):
-                logcat_demuxer.parse_line(line)
+            async with await device_log.logcat("-v", "brief", "-s", *keys) as lines:
+                async for line in lines:
+                    logcat_demuxer.parse_line(line)
         except Exception as e:
             log.error("Exception on logcat processing, aborting: \n%s" % trace(e))
             asyncio.get_event_loop().stop()

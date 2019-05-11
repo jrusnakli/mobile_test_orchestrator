@@ -1,19 +1,17 @@
-import asyncio.subprocess
-import logging
 import os
-
 from collections import OrderedDict
-from contextlib import suppress
-from typing import Union, ContextManager, AsyncGenerator, Dict, Tuple
 
+import logging
 import psutil
+from contextlib import suppress
+from typing import AsyncContextManager, Dict, Tuple, ContextManager
 
-from .device import Device, RemoteDeviceBased
-from .parsing import LineParser
 from .timing import StopWatch
+from .parsing import LineParser
+from .device import Device, RemoteDeviceBased
 
-
-log = logging.getLogger(__name__)
+log = logging.getLogger(__file__)
+log.setLevel(logging.WARNING)
 
 
 class DeviceLog(RemoteDeviceBased):
@@ -156,25 +154,26 @@ class DeviceLog(RemoteDeviceBased):
 
     def __init__(self, device: Device):
         super().__init__(device)
-        self._device = device
 
-    def clear(self) -> None:
+    def clear(self):
         """
         clear device log on the device and start fresh
         """
         self.device.execute_remote_cmd("logcat", "-c", capture_stdout=False)
 
-    async def logcat(self, *options: str) -> AsyncGenerator[str, str]:
+    async def logcat(self, *options: str, loop=None) -> AsyncContextManager:
         """
-        async generator to continually parser logcat (more precisely, until parser.parse_lines method exits)
+        async generator to continually output lines from logcat until client
+        exits processing (exist async iterator), at which point process is killed
 
         :param options: list of string options to provide to logcat command
-        :return: AsyncGenerator to iterate over lines of logcat (as context manager)
+        :param loop: specific asyncio loop to use or None for default
+
+        :return: AsyncGenerator to iterate over lines of logcat
+
         :raises: asyncio.TimeoutError if timeout is not None and timeout is reached
         """
-        with await self.device.execute_remote_cmd_async("logcat", *options, wait_timeout=0) as line_generator:
-            async for line in line_generator:
-                yield line
+        return await self.device.execute_remote_cmd_async("logcat", *options, proc_completion_timeout=0, loop=loop)
 
     def capture_to_file(self, output_path: str) -> ContextManager["DeviceLog.LogCapture"]:
         """

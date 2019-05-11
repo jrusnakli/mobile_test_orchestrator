@@ -130,7 +130,6 @@ public class ButlerService extends JobIntentService {
             Future<CommandResponse> futureResponse = CommandInvocation.invoke(cmd);
 
             CommandResponse response = futureResponse.get(1, TimeUnit.SECONDS);
-            Log.i(TAG, "Invoke this is " + this + ", " + response);
             if (response.getStatusCode() != 0) {
                 // log debug message, as server should handle as error/exception
                 Log.d(TAG, "Server-side error granting permission: " + response.getMessage());

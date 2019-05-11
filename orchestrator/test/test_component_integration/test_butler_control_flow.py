@@ -121,15 +121,16 @@ class TestButlerControlFlow:
 
         async def parse_logcat():
             line_parser = Parser(app_under_test=None, service=butler_service)
-            async for line in DeviceLog(device).logcat("-v", "brief", "-s", TAG):
-                try:
-                    print(line)
-                    line_parser.parse_line(line)
-                except Exception as e:
-                    log.error("Exception in processing line: %s\n %s" % (line, str(e)))
-                    asyncio.get_event_loop().stop()
-                if len(flow_seqence) == 0:
-                    break
+            async with await DeviceLog(device).logcat("-v", "brief", "-s", TAG) as lines:
+                async for line in lines:
+                    try:
+                        print(line)
+                        line_parser.parse_line(line)
+                    except Exception as e:
+                        log.error("Exception in processing line: %s\n %s" % (line, str(e)))
+                        asyncio.get_event_loop().stop()
+                    if len(flow_seqence) == 0:
+                        break
 
         async def timer():
             await asyncio.wait_for(parse_logcat(), timeout=3*60)

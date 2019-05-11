@@ -41,9 +41,10 @@ class TestServiceApplication:
 
             async def process_logcat():
                 nonlocal  device_log
-                async for _ in device_log.logcat("-s", "TestButler"):
-                    # if we get one message from TestButler tag, it is started
-                    break
+                async with await device_log.logcat("-s", "TestButler") as lines:
+                    async for _ in lines:
+                        # if we get one message from TestButler tag, it is started
+                        break
 
             async def timer():
                 await asyncio.wait_for(process_logcat(), timeout=5)
