@@ -69,7 +69,7 @@ def test_butler_service():
     if app is None:
         raise Exception("Failed to build test butler service")
     else:
-        path = os.path.join(TB_RESOURCES_DIR, "apks", "debug", "TestButlerLive.apk")
+        path = os.path.join(TB_RESOURCES_DIR, "apks", "TestButlerLive.apk")
         os.makedirs(os.path.dirname(path), exist_ok=True)
         shutil.copy(app, path)
     return app

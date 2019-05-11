@@ -4,6 +4,7 @@
 # be better server in mdl-integration-server directory, but we cannot start up an emulator
 # from there
 ##########
+
 import time
 
 import asyncio
@@ -31,6 +32,7 @@ class TestApplication:
 
     def test_grant_permissions(self, device: Device, support_test_app: str):
         app = Application.from_apk(support_test_app, device)
+        assert app.package_name.endswith(".test")
         try:
             permission = "android.permission.WRITE_EXTERNAL_STORAGE"
             app.grant_permissions([permission])
