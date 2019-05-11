@@ -26,17 +26,23 @@ class CommandInvocation {
         Log.e(TAG, message);
     }
 
-    static synchronized int incrementCounter(){
+    /**
+     * Possibility of multiple thread access, so synchronize to increment command counter
+     * @return next command id (used to match to response from host)
+     */
+    static synchronized private int incrementCounter(){
         counter += 1;
         return counter;
     }
 
     static Future<CommandResponse> invoke(final String cmd) {
         final int count  = incrementCounter();
-        final String put_cmd = String.valueOf(count) + " " + cmd;
+        final String tagged_cmd = String.valueOf(count) + " " + cmd;
 
-        // this message signals server to invoke adb command to set property:
-        Log.i(TAG, put_cmd);
+        // NOTE: This is not just a simple log message, and is important to the logic of the
+        // code interactions with the server;
+        // This logcat message signals server to invoke adb command to set property:
+        Log.i(TAG, tagged_cmd);
         CompletableFuture<CommandResponse> futureResponse = new CompletableFuture<>();
         synchronized(cmdResponses){
             cmdResponses.put(count, futureResponse);
@@ -45,14 +51,19 @@ class CommandInvocation {
 
     }
 
+    /**
+     * process string respomnse message from host (host of this Android device)
+     * @param response String response to process
+     * @throws Exception on invalid format in response (expected to be space-separated:
+     *   <int cmd-id> <int return-code> <string message>
+     */
     static void processServerResponse(final String response) throws Exception{
-        //Log.d(TAG, "GOT RESPONSE " + response);
         final String[] elements = response.split(",", 3);
         // if not a valid lookup id as first element, throw Exception right away
         try{
             Integer.valueOf(elements[0]);
         } catch (Exception e) {
-            throw new Exception("Invalid response from server; first two element should be ints: " +
+            throw new Exception("Invalid response from host; first two element should be ints: " +
                     response);
         }
         final int lookupId = Integer.valueOf(elements[0]);
@@ -70,8 +81,8 @@ class CommandInvocation {
                 } else {
                     // set the response and then release semaphore
                     CommandResponse cmdResponse = new CommandResponse(statusCode, message);
-                    Log.d(TAG, "CMD RESPONSE MSG: " + message);
-                    Log.d(TAG, "CMD RESPONSE STATUS: " + statusCode);
+                    Log.d(TAG, "<FOR_TEST> CMD RESPONSE MSG: " + message);
+                    Log.d(TAG, "<FOR_TEST> CMD RESPONSE STATUS: " + statusCode);
 
                     pendingResponse.complete(cmdResponse);
                 }

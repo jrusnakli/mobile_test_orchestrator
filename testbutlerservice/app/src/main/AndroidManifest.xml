@@ -17,8 +17,6 @@
             android:enabled="true"
             tools:ignore="ExportedService">
             <intent-filter>
-                <action android:name="com.linkedin.android.testbutler.START" />
-                <action android:name="com.linkedin.android.testbutler.STOP" />
                 <action android:name="com.linkedin.android.testbutler.COMMAND_RESPONSE" />
                 <action android:name="com.linkedin.android.testbutler.SEND_TEST_COMMAND" />
 

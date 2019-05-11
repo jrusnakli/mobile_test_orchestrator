@@ -4,11 +4,11 @@ from multiprocessing import Queue
 import pytest
 import shutil
 
-import support
 import sys
 
 sys.path += [os.path.dirname(__file__), os.path.join(os.path.dirname(__file__), "..", "src")]
 
+import support
 from support import Config
 from androidtestorchestrator.device import Device
 

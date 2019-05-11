@@ -58,7 +58,7 @@ public class ButlerService extends JobIntentService {
     //for debug:
     private static final String TAG = CommandInvocation.TAG;
 
-    // These should match declaration of intent in Manifest.xml
+    // These should match declaration of intents in Manifest.xml
     final static String ACTION_CMD_RESPONSE = "com.linkedin.android.testbutler.COMMAND_RESPONSE";
     final static String ACTION_TEST_ONLY_SEND_CMD = "com.linkedin.android.testbutler.FOR_TEST_ONLY_SEND_CMD";
     final static String ACTION_SET_SYSTEM_LOCALE = "com.linkedin.android.testbutler.SET_SYSTEM_LOCALE";
@@ -95,6 +95,13 @@ public class ButlerService extends JobIntentService {
             return returnValue == null ? "" : returnValue;
         }
 
+        /**
+         *
+         * @param namespace namespace of property being requested
+         * @param key key name of property being requested
+         * @return Integer property requested
+         * @throws Settings.SettingNotFoundException
+         */
         private Integer getIntProperty(final String namespace, final String key) throws Settings.SettingNotFoundException {
             if (key.equals("location_providers_allowed")) {
                 return getIntProperty(namespace, "location_mode");
@@ -110,9 +117,16 @@ public class ButlerService extends JobIntentService {
             }
         }
 
+        /**
+         * Invoke a command, wait for and return the response
+         * @param cmd text of command
+         * @return the CommandResponse from the host
+         * @throws InterruptedException if interrupted while waiting for response
+         * @throws ExecutionException on execution exception while waiting for response
+         * @throws TimeoutException if response takes more than 1 second
+         */
         private CommandResponse invoke(final String cmd) throws
-                RemoteException, InterruptedException, ExecutionException, TimeoutException {
-            // TODO: in future possible can allow multiple parallel invocations
+                InterruptedException, ExecutionException, TimeoutException {
             Future<CommandResponse> futureResponse = CommandInvocation.invoke(cmd);
 
             CommandResponse response = futureResponse.get(1, TimeUnit.SECONDS);
@@ -134,8 +148,7 @@ public class ButlerService extends JobIntentService {
          * @return CommandResponse from host, or null if no property change was needed
          */
         private CommandResponse sendSetStringProperty(final String namespace, final String key,
-                                              String value)
-                throws  RemoteException{
+                                              String value){
             try {
                 if (getStringProperty(namespace, key).toLowerCase().equals(value.toLowerCase())) {
                     return null;
@@ -152,9 +165,15 @@ public class ButlerService extends JobIntentService {
             }
         }
 
+        /**
+         * Send a text command to set a integer property via stdout over adb to signal server to take action
+         * @param namespace Namespace of param to set
+         * @param key  key name of param to set
+         * @param value value to set parameter to
+         * @return CommandResponse from host, or null if no property change was needed
+         */
         private CommandResponse sendSetIntProperty(final String namespace, final String key,
-                                           int value)
-                throws  RemoteException{
+                                           int value) {
             try {
                 if (getIntProperty(namespace, key).equals(value)) {
                     return null;
@@ -220,9 +239,13 @@ public class ButlerService extends JobIntentService {
             }
         }
 
+        /**
+         * Request host to set the wifi state of device
+         * @param enabled whether to enable or disable wifi
+         * @return true if successfully set
+         */
         @Override
-        public boolean setWifiState(boolean enabled)
-                throws RemoteException {
+        public boolean setWifiState(boolean enabled){
             CommandResponse response = sendSetIntProperty(NS_GLOBAL, "wifi_on", enabled ? 1 : 0);
             if (response == null || response.getStatusCode() != 0){
                 onError(NS_GLOBAL,"wifi_on", enabled ? "1" : "0", response);
@@ -260,8 +283,7 @@ public class ButlerService extends JobIntentService {
         }
 
         @Override
-        public boolean setRotation(int rotation)
-                throws RemoteException {
+        public boolean setRotation(int rotation) {
             CommandResponse response = sendSetIntProperty(NS_SYSTEM, "accelerometer_rotation", 0);
             Log.d(TAG, "ROTATION: " + response);
             if (response == null || response.getStatusCode() != 0){
@@ -276,12 +298,12 @@ public class ButlerService extends JobIntentService {
         }
 
         @Override
-        public boolean setGsmState(boolean enabled) throws RemoteException {
+        public boolean setGsmState(boolean enabled) {
             return false;
         }
 
         @Override
-        public boolean grantPermission(String packageName, String permission) throws RemoteException {
+        public boolean grantPermission(String packageName, String permission) {
             int hasPerm = getApplicationContext().getPackageManager().checkPermission(permission,
                     packageName);
             if (hasPerm == PackageManager.PERMISSION_GRANTED) {
@@ -301,17 +323,17 @@ public class ButlerService extends JobIntentService {
         }
 
         @Override
-        public boolean setSpellCheckerState(boolean enabled) throws RemoteException {
+        public boolean setSpellCheckerState(boolean enabled) {
             return false;
         }
 
         @Override
-        public boolean setShowImeWithHardKeyboardState(boolean enabled) throws RemoteException {
+        public boolean setShowImeWithHardKeyboardState(boolean enabled) {
             return false;
         }
 
         @Override
-        public boolean setImmersiveModeConfirmation(boolean enabled) throws RemoteException {
+        public boolean setImmersiveModeConfirmation(boolean enabled) {
             CommandResponse response = sendSetStringProperty(NS_SECURE, "immersive_mode_confirmation",
 				      enabled ? "\"\"\"\"" : "confirmed");
             if (response == null || response.getStatusCode() != 0){
@@ -380,8 +402,7 @@ public class ButlerService extends JobIntentService {
         } else if (intent.getAction().equals(ACTION_TEST_ONLY_SEND_CMD)){
             // This is only for test purposes to send a command over to server
             // and allow server to test response logic
-            Log.d(TAG, "Sending command ");
-            Log.d(TAG, intent.getStringExtra("command"));
+            Log.d(TAG, "Sending command \"" + intent.getStringExtra("command") + "\"");
             CommandInvocation.invoke("TEST_ONLY " + intent.getStringExtra("command"));
 
         } else if (intent.getAction().equals(ACTION_SET_SYSTEM_LOCALE)) {

@@ -62,7 +62,7 @@ class TestButlerControlFlow:
                         log.error("Logcat did not start with expected line of output. Line was %s" % line)
                     # use standard first line of output from logcat to
                     # kickoff sending backdoor to tell device to echo a test butler command back to this host
-                    self.request_command("just a test")
+                    self.request_command("a test command")
                     return
                 if line.startswith('----'):
                     return
@@ -77,7 +77,7 @@ class TestButlerControlFlow:
                     flow_seqence.popleft()
                     assert tag == TAG
                     cmd_id, cmd = line.replace("\\", '').split(" ", 1)
-                    assert cmd == "TEST_ONLY just a test"
+                    assert cmd == "TEST_ONLY a test command"
 
                     # send hard-coded response back based on received id,
                     # with next to-list item being to wait on the response confirmation back from device
@@ -85,14 +85,12 @@ class TestButlerControlFlow:
                     self._send_response(cmd_id=cmd_id, response_code=0, response_msg="Success")
                 elif flow_seqence[0] == "awaiting_response_confirmation":
                     if line.startswith("-----"):
-                        log.error("Recieved unexpected logcat message:\n  " + line)
+                        log.error("Received unexpected logcat message:\n  " + line)
                         if "crash" in line:
                             raise Exception("logcat crashed")
                         return
                     if "Error" in line:
                         raise Exception("Error processing response:  %s" % line)
-                    if "Sending command" in line or "GOT RESPONSE" in line:
-                        return
                     try:
                         preamble, line = line.split(":", 1)
                         line = line.strip()
@@ -100,11 +98,13 @@ class TestButlerControlFlow:
                     except ValueError:
                         log.error("Received unexpected logcat message:\n  " + line)
                         return
+                    if not line.startswith("<FOR_TEST>"):
+                        return
                     if priority != 'D':
                         return
                     flow_seqence.popleft()
                     assert tag == TAG
-                    assert line == "CMD RESPONSE MSG: Success", "Sending command" in line
+                    assert line == "<FOR_TEST> CMD RESPONSE MSG: Success", "Sending command" in line
                 elif flow_seqence[0] == "awaiting_response_confirmation_code":
                     try:
                         preamble, line = line.split(":", 1)
@@ -113,11 +113,11 @@ class TestButlerControlFlow:
                     except:
                         log.error("Recieved unexpected logcat message:\n  " + line)
                         return
-                    if priority != 'D':
+                    if not line.startswith("<FOR_TEST>") or priority != 'D':
                         return
                     flow_seqence.popleft()
                     assert tag == TAG
-                    assert line == "CMD RESPONSE STATUS: 0"
+                    assert line == "<FOR_TEST> CMD RESPONSE STATUS: 0"
 
         async def parse_logcat():
             line_parser = Parser(app_under_test=None, service=butler_service)
