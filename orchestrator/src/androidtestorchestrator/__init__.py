@@ -15,7 +15,10 @@ from typing import (Dict,
 from dataclasses import dataclass, field
 
 from androidtestorchestrator.devicestorage import DeviceStorage
-from .application import TestApplication, ServiceApplication, Application
+from .application import (TestApplication,
+                          ServiceApplication,
+                          Application,
+                          )
 from .device import Device
 from .devicelog import DeviceLog, LogcatTagDemuxer
 from .parsing import (InstrumentationOutputParser,

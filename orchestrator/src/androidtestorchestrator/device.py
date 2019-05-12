@@ -9,6 +9,8 @@ import time
 from contextlib import suppress, asynccontextmanager
 from typing import List, Iterable, Tuple, Dict, Optional, AsyncContextManager, Union, Callable, IO
 
+from apk_bitminer.parsing import AXMLParser
+
 log = logging.getLogger(__name__)
 log.setLevel(logging.INFO)
 
@@ -224,10 +226,25 @@ class Device(object):
         if capture_stdout:
             return completed.stdout
 
-    def execute_remote_cmd_background(self, *args, stdout: Optional[IO] = None):
+    def execute_remote_cmd_background(self, *args, stdout: Optional[IO] = subprocess.PIPE, **kargs) -> subprocess.Popen:
+        """
+        Run the given command args in the background.
+        :param args: command + list of args to be executed
+        :param stdout: an optional file-like objection to which stdout is to be redirected (piped).
+           defaults to subprocess.PIPE.  If None, stdout is redirected to /dev/null
+        :param kargs: dict arguments passed to subprocess.Popen
+
+        :return: subprocess.Open
+        """
         args = [self._adb_path, "-s", self.device_id, *args]
         log.info("Executing: %s" % (' '.join(args)))
-        return subprocess.Popen(args, stdout=stdout, stderr=subprocess.PIPE, encoding='utf-8', errors='ignore')
+        if 'encoding' not in kargs:
+            kargs['encoding'] = 'utf-8'
+            kargs['errors'] = 'ignore'
+        return subprocess.Popen(args,
+                                stdout=stdout or subprocess.DEVNULL,
+                                stderr=subprocess.PIPE,
+                                **kargs)
 
     async def execute_remote_cmd_async(self, *args: str, unresponsive_timeout: Union[float, None] = None,
                                        proc_completion_timeout: float = 0.0, loop=None) -> AsyncContextManager:
@@ -236,14 +253,22 @@ class Device(object):
         iterate over lines of output;
 
         :param args: command to execute
-        :param proc_completion_timeout: Once client stops iteration (or generator completes), wait timeout seconds
-           for process to complete, otherwise kill the process.  A value of 0 will kill the process
+        :param proc_completion_timeout: Once client stops iteration or generator completes, wait proc_completion_timeout seconds
+           for process to complete; otherwise kill the process.  A value of 0 will kill the process
            immediately after client breaks out of iteration
-        :param unresponsive_timeout: if non None and a read of next line of stdout takes longer than specified, T
-            imeoutException will be raised
+        :param unresponsive_timeout: if non None and a read of next line of stdout takes longer than specified,
+            TimeoutException will be raised
         :param loop: event loop to asynchronously run under, or None for default event loop
 
         :returns: AsyncGenerator iterating over lines of output from command
+
+        :raises: Device.CommandExecutionFailure if process is allowed to complete normally (e.g.
+           proc_completion_timeout is set and non-zero) and return code is non-zeor
+
+        >>> async with await device.execute_remote_cmd_async("some_cmd", "with", "args", unresponsive_timeout=10) as stdout:
+        ...     async for line in stdout:
+        ...         process(line)
+
         """
         # This is a lower level routine that clients of mdl-integration should not directly call.  Other classes will
         # provide a cleaner and more direct API (e.g. TestApplication.run and DeviceLog.logcat
@@ -336,8 +361,10 @@ class Device(object):
 
     def set_system_property(self, key: str, value: str) -> str:
         """
+        Set a system property on this device
         :param key: system property key to be set
         :param value: value to set to
+
         :return: previous value, in case client wishes to restore at some point
         """
         previous_value = self.get_system_property(key)
@@ -418,7 +445,6 @@ class Device(object):
     def list(self, kind: str) -> List[str]:
         """
         List available items of a given kind on the device
-
         :param kind: instrumentation or package
 
         :return: list of available items of given kind on the device
@@ -581,34 +607,44 @@ class Device(object):
         else:
             log.info("Package %s installed" % str(package))
 
-    def install_synchronous(self, apk_path: str, as_upgrade, package: str) -> None:
+    def install_synchronous(self, apk_path: str, as_upgrade) -> None:
+        """
+        install the given bundle, blocking until complete
+        :param apk_path: local path to the apk to be installed
+        :param as_upgrade: install as upgrade or not
+        :param package:
+        :return:
+        """
         if as_upgrade:
             cmd = ("install", "-r", apk_path)
         else:
             cmd = ("install", apk_path)
         return self.execute_remote_cmd(*cmd, timeout=TIMEOUT_LONG_ADB_CMD)
 
-    async def install(self, apk_path: str, as_upgrade, package: str) -> None:
+    async def install(self, apk_path: str, as_upgrade: bool,
+                      conditions: List[str] = None,
+                      on_full_install: Optional[Callable]=None) -> None:
+        """
+        Install given apk asynchronously, monitoring output for messages containing any of the given conditions,
+        executing a callback if given when any such condition is met
+        :param apk_path: bundle to install
+        :param as_upgrade: whether as upgrade or not
+        :param conditions: list of strings to look for in stdout as a trigger for callback
+           Some devices are non-standard and will provide a pop-up request explicit user permission for install
+           once the apk is fully uploaded and prepared
+           This param defaults to ["100\%", "pkg:", "Success"] as indication that bundle was fully prepared (pre-pop-up)
+        :param on_full_install: if not None the callback to be called
+
+        :raises: Device.InsufficientStorageError if there is not enough space on device
+        """
+        conditions = conditions or ["100\%", "pkg:", "Success"]
+        parser = AXMLParser.parse(apk_path)
+        package = parser.package_name
         if not as_upgrade:
             # avoid unnecessary conflicts with older certs and crap:
+            # TODO:  client should handle clean install -- this code really shouldn't be here??
             with suppress(Exception):
                 self.execute_remote_cmd("uninstall", package, capture_stdout=False)
-
-        extra_commands = Device.special_install_instructions.get(self.model)
-
-        # bypass this by executing extra commands if needed (but only once 100% of package is installed)
-        def execute_extras():
-            """
-            Execute additional commands post-install of app required by some devices to do non-standard
-            user interaction to properly install app over USB (for example)
-            """
-            for command, sleep_time in extra_commands['post_install_cmds']:
-                if sleep_time:
-                    time.sleep(sleep_time)
-                try:
-                    self.execute_remote_cmd(*command, timeout=TIMEOUT_LONG_ADB_CMD, capture_stdout=False)
-                except Exception as e:
-                    log.error(str(e))
 
         # Execute the installation of the app, monitoring output for completion in order to invoke
         # any extra commands
@@ -628,12 +664,8 @@ class Device(object):
                                                             apk_path)
                     # some devices have non-standard pop-ups that must be cleared by accepting usb installs
                     # (non-standard Android):
-                    if extra_commands and msg and ("100%%" in msg or "pkg:" in msg or "Success" in msg):
-                        # this is when pop-up shows up (roughly)
-                        log.info("Execution of extra commands on install...")
-                        # successfully pushed, now execute special instructions, which
-                        # is often a tap event to accept a pop-up
-                        execute_extras()
+                    if on_full_install and msg and any([condition in msg for condition in conditions]):
+                        on_full_install()
 
         # on some devices, a pop-up may prevent successful install even if return code from adb install showed
         # success, so must explicitly verify the install was successful:
@@ -649,8 +681,10 @@ class Device(object):
     @property
     def home_screen_active(self) -> bool:
         """
-        Determines if the home screen is currently in the foreground. Note that system pop-ups will results
+        :return: True if the home screen is currently in the foreground. Note that system pop-ups will result
         in this function returning False.
+
+        :raises: Exception if unable to make determination
         """
         found_potential_stack_match = False
         stdout = self.execute_remote_cmd("shell", "dumpsys", "activity", "activities", capture_stdout=True,
@@ -664,10 +698,10 @@ class Device(object):
         for line in stdout_lines:
             matches = app_stack_pattern.match(line.strip())
             if matches:
-                found_potential_stack_match = True
                 if matches.group(1) == "0":
                     return True
                 else:
+                    found_potential_stack_match = True
                     break
 
         # Went through entire activities stack, but no line matched expected format for displaying activity
@@ -686,14 +720,15 @@ class Device(object):
     def return_home(self, keycode_back_limit: int = 10):
         """
         Return to home screen as though the user did so via one or many taps on the back button.
-        Subsequent launches of the app will need to recreate the app view, but may
+
+        In this scenario, subsequent launches of the app will need to recreate the app view, but may
         be able to take advantage of some saved state, and is considered a warm app launch.
 
         NOTE: This function assumes the app is currently in the foreground. If not, it may still return to the home
         screen, but the process of closing activities on the back stack will not occur.
 
-        :param keycode_back_limit: int The maximum number of times to press the back button to attempt to get back to
-        the home screen
+        :param keycode_back_limit: The maximum number of times to press the back button to attempt to get back to
+           the home screen
         """
         back_button_attempt = 0
 

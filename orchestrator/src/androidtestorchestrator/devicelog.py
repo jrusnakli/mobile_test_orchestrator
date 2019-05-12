@@ -165,7 +165,6 @@ class DeviceLog(RemoteDeviceBased):
         """
         async generator to continually output lines from logcat until client
         exits processing (exist async iterator), at which point process is killed
-
         :param options: list of string options to provide to logcat command
         :param loop: specific asyncio loop to use or None for default
 

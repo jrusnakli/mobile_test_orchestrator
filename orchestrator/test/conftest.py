@@ -1,7 +1,6 @@
 import asyncio
 import os
 import threading
-from multiprocessing import Queue
 
 import pytest
 import shutil
@@ -14,7 +13,7 @@ import support
 from support import Config
 from androidtestorchestrator.device import Device
 
-TB_RESOURCES_DIR=os.path.abspath(os.path.join("..", "src", "androidtestorchestrator", "resources"))
+TB_RESOURCES_DIR =os.path.abspath(os.path.join("..", "src", "androidtestorchestrator", "resources"))
 
 # Run a bunch of stuff in the background, such as compiling depenent apks for test and launching emulators
 # This allows tests to potentially run in parallel (if not dependent on output of these tasks), parallelizes
@@ -25,7 +24,7 @@ TB_RESOURCES_DIR=os.path.abspath(os.path.join("..", "src", "androidtestorchestra
 class BackgroundThread(threading.Thread):
     def run(self):
         asyncio.set_event_loop(asyncio.new_event_loop())
-        numcores = 1  # getattr(config.option, "numcores", None) or 1
+        numcores = 1
         tasks = [
             support.compile_support_app(numcores),
             support.compile_support_test_app(numcores),

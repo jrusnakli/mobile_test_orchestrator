@@ -228,10 +228,10 @@ class TestButlerCommandParser(LineParser):
     """
     BUTLER_SERVICE_TAG = "ButlerService-MDC"
 
-    SETTINGS_PREFIX = "TEST_BUTLER_SETTING"
-    PROPERTY_PREFIX = "TEST_BUTLER_PROPERTY"
-    GRANT_PREFIX = "TEST_BUTLER_GRANT"
-    TEST_ONLY_PREFIX = "TEST_ONLY"
+    CMD_SETTINGS_PREFIX = "TEST_BUTLER_SETTING"
+    CMD_PROPERTY_PREFIX = "TEST_BUTLER_PROPERTY"
+    CMD_GRANT_PREFIX = "TEST_BUTLER_GRANT"
+    CMD_TEST_ONLY_PREFIX = "TEST_ONLY"
 
     CODE_ASSUMPTION_VIOLATION = 4  # must match on Java side
 
@@ -271,9 +271,9 @@ class TestButlerCommandParser(LineParser):
         self._listener = listener
         # mapping of string prefix to method to invoke to execute command
         self._method_map = {
-            self.SETTINGS_PREFIX: self._process_set_device_setting_cmd,
-            self.PROPERTY_PREFIX: self._process_set_property_cmd,
-            self.GRANT_PREFIX: self._process_grant_permission_cmd,
+            self.CMD_SETTINGS_PREFIX: self._process_set_device_setting_cmd,
+            self.CMD_PROPERTY_PREFIX: self._process_set_property_cmd,
+            self.CMD_GRANT_PREFIX: self._process_grant_permission_cmd,
         }
         self._service_app.start(".ButlerService", foreground=True);
 

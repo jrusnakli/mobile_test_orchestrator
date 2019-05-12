@@ -17,7 +17,11 @@ _Ty = TypeVar('T', bound='Application')
 class Application(RemoteDeviceBased):
     """
     Defines an application installed on a remotely USB-connected device. Provides an interface for stopping,
-    starting and such for an applicatoin
+    starting an application, and such.
+
+    An application is distinguished from a bundle (an apk).  A bundle is a package that only after installed
+    creates an application on the target device.  Thus, an application only makes sense in the context of the
+    device on which it can be launched.
     """
 
     SLEEP_GRANT_PERMISSION = 4
@@ -27,12 +31,12 @@ class Application(RemoteDeviceBased):
         Create an instance of a remote app and the interface to manipulate it.
         It is recommended to  create instances via the class-method `install`:
 
+        :param package_name: package name of app
+        :param device: which device app resides on
+
         >>> device = Device("some_serial_id", "/path/to/adb")
         >>> app = asyncio.wait(Application.from_apk("some.apk", device))
         >>> app.grant_permissions(["android.permission.WRITE_EXTERNAL_STORAGE"])
-
-        :param package_name: package name of app
-        :param device: which device app resides on
         """
         super(Application, self).__init__(device)
         self._package_name = package_name
@@ -68,7 +72,10 @@ class Application(RemoteDeviceBased):
     @classmethod
     async def from_apk_async(cls: Type[_Ty], apk_path: str, device: Device, as_upgrade=False) -> _Ty:
         """
-        Install provided application
+        Install provided application asynchronously.  This allows the output of the install to be processed
+        in a streamed fashion.  This can be useful on some devices that are non-standard android where installs
+        cause (for example) a pop-up requesting direct user permission for the install -- monitoring for a specific
+        message to simulate the tap to confirm the install.
 
         :param apk_path: path to apk
         :param device: device to install on
@@ -77,16 +84,23 @@ class Application(RemoteDeviceBased):
         :return: remote installed application
 
         :raises: Exception if failure ot install or verify installation
+
+        >>> async def install():
+        ...     async with await Application.from_apk_async("/some/local/path/to/apk") as stdout:
+        ...         async for line in stdout:
+        ...            if "some trigger message" in line:
+        ...               perform_tap_to_accept_install()
+
         """
         parser = AXMLParser.parse(apk_path)
         package = parser.package_name
-        await device.install(apk_path, as_upgrade, package)
+        await device.install(apk_path, as_upgrade)
         return cls(package, device)
 
     @classmethod
     def from_apk(cls: Type[_Ty], apk_path: str, device: Device, as_upgrade=False) -> _Ty:
         """
-        Install provided application
+        Install provided application, blocking until install is complete
 
         :param apk_path: path to apk
         :param device: device to install on
@@ -98,7 +112,7 @@ class Application(RemoteDeviceBased):
         """
         parser = AXMLParser.parse(apk_path)
         package = parser.package_name
-        device.install_synchronous(apk_path, as_upgrade, package)
+        device.install_synchronous(apk_path, as_upgrade)
         return cls(package, device)
 
     def uninstall(self):
@@ -166,7 +180,9 @@ class Application(RemoteDeviceBased):
 
     def stop(self, force: bool = True) -> None:
         """
-        stop an app on the device
+        stop this app on the device
+
+        :param force: perform a force-stop if true (kill of app) rather than normal stop
         """
         try:
             if force:
@@ -294,8 +310,9 @@ class TestApplication(Application):
         >>> app = TestApplication.fromApk("some.apk", device)
         ...
         ... async def run():
-        ...     async  for line in app.run():
-        ...         print(line)
+        ...     async with await app.run() as stdout:
+        ...         async  for line in stdout:
+        ...             print(line)
         """
         if self._target_application.package_name not in self.device.list_installed_packages():
             raise Exception("App under test, as designatee by this test app's manifest, is not installed!")
@@ -317,6 +334,8 @@ class TestApplication(Application):
         :param as_upgrade: whether to install as upgrade or not
 
         :return: `TestApplication` of installed apk
+
+        >>> application = await Application.from_apk_async("local/path/to/apk", device)
         """
         parser = AXMLParser.parse(apk_path)
         # The manifest of the package should contain an instrumentation section, if not, it is not
@@ -339,6 +358,8 @@ class TestApplication(Application):
         :param as_upgrade: whether to install as upgrade or not
 
         :return: `TestApplication` of installed apk
+
+        >>> test_application = Application.from_apk("/local/path/to/apk", device, as_upgrade=True)
         """
         parser = AXMLParser.parse(apk_path)
         # The manifest of the package should contain an instrumentation section, if not, it is not
@@ -348,5 +369,5 @@ class TestApplication(Application):
         if not valid:
             raise Exception("Test application's manifest does not specify proper instrumentation element."
                             "Are you sure this is a test app")
-        device.install_synchronous(apk_path, as_upgrade, parser.package_name)
+        device.install_synchronous(apk_path, as_upgrade)
         return cls(parser.package_name, device, parser.instrumentation.target_package, parser.instrumentation.runner)
