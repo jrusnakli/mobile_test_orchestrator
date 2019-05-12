@@ -1,0 +1,7 @@
+build/
+venv/*
+*.py[cod]
+__pycache__/
+.idea/
+.gradle/
+resources/

@@ -75,8 +75,10 @@ async def wait_for_emulator_boot(port: int, avd: str, adb_path: str, emulator_pa
     device_id = "emulator-%d" % port
 
     cmd = [emulator_path, "-port", str(port), "@%s" % avd]
-    if is_retry:
+    if is_retry and "-no-snapshot-load" not in cmd:
         cmd.append("-no-snapshot-load")
+    if os.environ.get("EMULATOR_OPTS"):
+        cmd += os.environ["EMULATOR_OPTS"].split()
     proc = subprocess.Popen(cmd, stderr=sys.stderr, stdout=sys.stdout)
     await asyncio.sleep(3)
     getprop_cmd = [adb_path, "-s", device_id, "shell", "getprop", "sys.boot_completed"]
@@ -109,21 +111,18 @@ async def wait_for_emulator_boot(port: int, avd: str, adb_path: str, emulator_pa
     Config.proc_q.put(proc)
 
 
-async def launch(ports: List[int], avds: List[str], count: int, adb_path: str, emulator_path: str):
-    if len(avds) < count:
-        raise Exception("Not enough avds defined to support %d processor cores" % count)
-    for index, port in enumerate(ports[:count]):
-        for retry in (False, True):
-            try:
-                await wait_for_emulator_boot(port, avds[index], adb_path, emulator_path, retry)
-                emulator_port_pool_q.put(port)
-                break
-            except Exception as e:
-                if retry:
-                    emulator_port_pool_q.put(None)
+async def launch(port: int, avd: str, adb_path: str, emulator_path: str):
+    for retry in (False, True):
+        try:
+            await wait_for_emulator_boot(port, avd, adb_path, emulator_path, retry)
+            emulator_port_pool_q.put(port)
+            break
+        except Exception as e:
+            if retry:
+                emulator_port_pool_q.put(None)
 
 
-async def launch_emulators(count):
+async def launch_emulator():
     """
     Launch a set of emulators, waiting until boot complete on each one.  As each boot is
     achieved, the emaultor proc queue is populated (and return through fixture to awaiting tests)
@@ -132,52 +131,64 @@ async def launch_emulators(count):
 
     :return: dictionary of port: multiprocessing.Process of launched emulator processes
     """
-    ports = list(range(5554, 5682, 2))
-    if count > len(ports):
-        for _ in range(count):
-            emulator_port_pool_q.put(None)
-        raise ValueError("Max number of cores allowed is %d" % len(ports))
+    EMULATOR_NAME = "MTO_emulator"
+    port = 5554
     android_sdk = find_sdk()
     adb_path = os.path.join(android_sdk, "platform-tools", add_ext("adb"))
+
+    completed = subprocess.run([adb_path, "devices"], stdout=subprocess.PIPE, encoding='utf-8')
+    if f"emulator-{port}" in completed.stdout:
+        print(f"WARNING: using existing emulator at port {port}")
+        emulator_port_pool_q.put(port)
+        return
 
     if sys.platform == 'win32':
         emulator_path = os.path.join(android_sdk, "emulator", "emulator.exe")
     else:
         emulator_path = os.path.join(android_sdk, "tools", "emulator")
+    sdkmanager_path = os.path.join(android_sdk, "tools", "bin", "sdkmanager")
+    avdmanager_path = os.path.join(android_sdk, "tools", "bin", "avdmanager")
     if not os.path.isfile(emulator_path):
-        for _ in range(count):
-            emulator_port_pool_q.put(None)
+        emulator_port_pool_q.put(None)
         raise Exception("Unable to find path to 'emulator' command")
     list_emulators_cmd = [emulator_path, "-list-avds"]
     completed = subprocess.run(list_emulators_cmd, timeout=10, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                encoding='utf-8')
     if completed.returncode != 0:
         raise Exception("Command '%s -list-avds' failed with code %d" % (emulator_path, completed.returncode))
-    if not completed.stdout:
-        raise Exception("No AVDs found to launch emulator as returned by '%s -list-avds" % emulator_path)
-    avds = completed.stdout.splitlines()
-    completed = subprocess.run([adb_path, "devices"], stdout=subprocess.PIPE, encoding='utf-8')
-    for line in completed.stdout.splitlines():
-        if not line or "List of" in line:
-            continue
-        device_id, status = line.split('\t', 1)
-        if 'device' in status and "emulator" in device_id:
-            port = int(device_id.split('-')[-1])
-            emulator_port_pool_q.put(port)
-            ports.remove(port)
-            count -= 1
-    await launch(ports, avds, count, adb_path, emulator_path)
+    if EMULATOR_NAME not in completed.stdout:
+        download_emulator_cmd = [sdkmanager_path, "\"system-images;android-28;default;x86_64\""]
+        p = subprocess.Popen(download_emulator_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.PIPE)
+        p.stdin.write(b"Y\n")
+        if p.wait() != 0:
+            raise Exception("Failed to download image for AVD")
+        create_avd_cmd = [avdmanager_path, "create", "avd", "-n", EMULATOR_NAME, "-k", "system-images;android-28;default;x86_64",
+                          "-d", "pixel_xl"]
+        p = subprocess.Popen(create_avd_cmd,  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.PIPE)
+        if p.wait() != 0:
+            stdout, stderr = p.communicate()
+            raise Exception(f"Failed to create avd: {stdout}\n{stderr}")
+        completed = subprocess.run(list_emulators_cmd, timeout=10, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                   encoding='utf-8')
+        if completed.returncode != 0:
+            raise Exception("Command '%s -list-avds' failed with code %d" % (emulator_path, completed.returncode))
+        if EMULATOR_NAME not in completed.stdout:
+            raise Exception("Unable to create AVD for testing")
+    avd = EMULATOR_NAME
+    await launch(port, avd, adb_path, emulator_path)
 
 
-async def apk(dir: str, count: int, q: Queue, target: str = "assembleDebug"):
+async def apk(dir: str, q: Queue, target: str = "assembleDebug"):
     try:
         apk_path = None
+        assert target, "empty target specified"
         if sys.platform == 'win32':
             cmd = ["gradlew", target]
             shell = True
         else:
             cmd = ["./gradlew", target]
-            shell = True
+            shell = False
+        print(f"Launching: {cmd}")
         process = subprocess.Popen(cmd,
                                    cwd=dir,
                                    env=os.environ.copy(),
@@ -201,31 +212,29 @@ async def apk(dir: str, count: int, q: Queue, target: str = "assembleDebug"):
                                     "debug", f"app-debug{suffix2}.apk")
             if not os.path.exists(apk_path):
                 raise Exception("Failed to find built apk %s" % apk_path)
-            for _ in range(count):
-                q.put(apk_path)
-                done = True
+            q.put(apk_path)
+            done = True
     except Exception as e:
-        for _ in range(count):
-            q.put(None)
+        q.put(None)
         raise
-    finally:
+    else:
         print(f"Built {apk_path}")
 
 
-async def compile_support_test_app(count):
+async def compile_support_test_app():
     """
     Compile a test app and make the resulting apk available to all awaiting test Processes
     :param count: number of test processes needing a support test app
     """
-    await apk(TEST_SUPPORT_APP_DIR, count, support_test_app_q, "assembleAndroidTest")
+    await apk(TEST_SUPPORT_APP_DIR, support_test_app_q, "assembleAndroidTest")
 
 
-async def compile_support_app(count):
-    await apk(TEST_SUPPORT_APP_DIR, count, support_app_q)
+async def compile_support_app():
+    await apk(TEST_SUPPORT_APP_DIR, support_app_q)
 
 
-async def compile_test_butler_app(count):
-    await apk(BUTLER_SERVICE_SRC_DIR, count, test_butler_app_q)
+async def compile_test_butler_app():
+    await apk(BUTLER_SERVICE_SRC_DIR, test_butler_app_q)
 
 
 find_sdk()

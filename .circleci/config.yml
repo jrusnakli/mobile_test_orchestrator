@@ -1,0 +1,50 @@
+version: 2
+jobs:
+  build:
+    working_directory: ~/code
+    docker:
+      - image: jrusnakli/android:api-28-py3.7
+    environment:
+      JVM_OPTS: -Xmx3200m
+      EMULATOR_OPTS: -no-window -no-audio
+      PYTHONASYNCIODEBUG: 1
+      ANDROID_SDK_ROOT: /opt/android/sdk
+    steps:
+      - checkout
+      - restore_cache:
+          key: deps1-{{ .Branch }}-{{ checksum "requirements.txt" }}
+      - run:
+          name: setup python venv
+          command: |
+            /usr/local/bin/python3.7 -m venv venv
+            . venv/bin/activate
+            pip install pytest
+            pip install -r requirements.txt
+      - run:
+          name: Download Dependencies
+          command: |
+            cd testsupportapps/TestButlerTestApp && ./gradlew androidDependencies"
+            cd testsupportapps/TestButlerTestApp && ./gradlew aseembleDebug"
+      - save_cache:
+          key: deps1-{{ .Branch }}-{{ checksum "requirements.txt" }}
+          paths:
+            - "venv"
+      - run:
+          name: Setup emulator
+          command: |
+            .circleci/setup_emulator.sh
+      - run:
+          name: Running tests
+          command: |
+            . venv/bin/activate
+            cd orchestrator/test
+            pytest -s .
+      - save_cache:
+          key: deps1-{{ .Branch }}-{{ checksum "requirements.txt" }}
+          paths:
+            - "testbutlerservice/.gradle"
+            - "testbutlersupportapps/TestButlerTestApp/.gradle"
+            - "~/.android/avd/MTO_emulator.avd"
+      - store_artifacts:
+          path: test-reports/
+          destination: python_app

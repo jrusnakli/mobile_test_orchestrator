@@ -24,12 +24,11 @@ TB_RESOURCES_DIR =os.path.abspath(os.path.join("..", "src", "androidtestorchestr
 class BackgroundThread(threading.Thread):
     def run(self):
         asyncio.set_event_loop(asyncio.new_event_loop())
-        numcores = 1
         tasks = [
-            support.compile_support_app(numcores),
-            support.compile_support_test_app(numcores),
-            support.compile_test_butler_app(numcores),
-            support.launch_emulators(numcores),
+            support.compile_support_app(),
+            support.compile_support_test_app(),
+            support.compile_test_butler_app(),
+            support.launch_emulator(),
         ]
 
         async def execute_parallel():
@@ -91,7 +90,7 @@ def test_butler_service():
 
 @pytest.fixture(scope='session')
 def emulator():
-    port = support.emulator_port_pool_q.get(timeout=400)
+    port = support.emulator_port_pool_q.get(timeout=4*60)
     if port is None:
         raise Exception("Failed to launch or boot emulator")
     return "emulator-%d" % port
