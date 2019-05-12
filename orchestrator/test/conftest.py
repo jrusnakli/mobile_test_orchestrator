@@ -1,4 +1,6 @@
+import asyncio
 import os
+import threading
 from multiprocessing import Queue
 
 import pytest
@@ -14,26 +16,39 @@ from androidtestorchestrator.device import Device
 
 TB_RESOURCES_DIR=os.path.abspath(os.path.join("..", "src", "androidtestorchestrator", "resources"))
 
+# Run a bunch of stuff in the background, such as compiling depenent apks for test and launching emulators
+# This allows tests to potentially run in parallel (if not dependent on output of these tasks), parallelizes
+# these dependent tasks. The tasks populate results out to Queue's that test fixtures then use as needed
+# (hence once a test needs that fixture, it would block until the dependent task(s) are complete, but only then)
 
-configured = Queue()
 
+class BackgroundThread(threading.Thread):
+    def run(self):
+        asyncio.set_event_loop(asyncio.new_event_loop())
+        numcores = 1  # getattr(config.option, "numcores", None) or 1
+        tasks = [
+            support.compile_support_app(numcores),
+            support.compile_support_test_app(numcores),
+            support.compile_test_butler_app(numcores),
+            support.launch_emulators(numcores),
+        ]
 
-@pytest.mark.try_last
-def pytest_configure(config):
-    global configured
-    if not configured.empty():
-        return
-    configured.put(True)
-    numcores = getattr(config.option, "numcores", None) or 1
-    support.compile_support_app(numcores)
-    support.compile_support_test_app(numcores)
-    support.compile_test_butler_app(numcores)
-    support.launch_emulators(numcores)
+        async def execute_parallel():
+            await asyncio.wait(tasks)
+            print("DONE")
+        asyncio.get_event_loop().run_until_complete(
+            execute_parallel()
+        )
+
+background_thread = BackgroundThread()
+background_thread.start()
 
 
 def pytest_sessionfinish(exitstatus):
     for proc in Config.procs():
         proc.kill()
+        proc.poll()
+    background_thread.join()
 
 
 def add_ext(app):

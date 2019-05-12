@@ -1,10 +1,11 @@
-import multiprocessing
+import asyncio
 import os
+# TODO: CAUTION: WE CANNOT USE asyncio.subprocess as we executein in a thread other than made and on unix-like systems, there
+# is bug in Python 3.7.
 import subprocess
 import sys
-import time
-from multiprocessing import Queue
 from typing import List
+from queue import Queue
 
 _BASE_DIR = os.path.join(os.path.dirname(__file__), "..", "..")
 
@@ -16,11 +17,11 @@ _SRC_BASE_DIR = os.path.join(os.path.dirname(__file__), "..", )
 RESOURCES_DIR = os.path.join(_SRC_BASE_DIR, "src", "androidtestorchestrator", "resources")
 SETUP_PATH = os.path.join(_SRC_BASE_DIR, "setup.py")
 
-support_app_q = multiprocessing.Queue()
-support_test_app_q = multiprocessing.Queue()
-test_butler_app_q = multiprocessing.Queue()
+support_app_q = Queue()
+support_test_app_q = Queue()
+test_butler_app_q = Queue()
 
-emulator_port_pool_q = multiprocessing.Queue()
+emulator_port_pool_q = Queue()
 
 
 class Config:
@@ -70,34 +71,36 @@ def find_sdk():
     return android_sdk
 
 
-def wait_for_emulator_boot(port: int, avd: str, adb_path: str, emulator_path: str, is_retry: bool):
+async def wait_for_emulator_boot(port: int, avd: str, adb_path: str, emulator_path: str, is_retry: bool):
     device_id = "emulator-%d" % port
 
     cmd = [emulator_path, "-port", str(port), "@%s" % avd]
     if is_retry:
         cmd.append("-no-snapshot-load")
     proc = subprocess.Popen(cmd, stderr=sys.stderr, stdout=sys.stdout)
-    time.sleep(3)
+    await asyncio.sleep(3)
     getprop_cmd = [adb_path, "-s", device_id, "shell", "getprop", "sys.boot_completed"]
     tries = 60
     cycles = 2
     while tries > 0:
-        completed = subprocess.run(getprop_cmd, stdout=subprocess.PIPE,
-                                   stderr=subprocess.DEVNULL, encoding='utf-8', timeout=5)
+        completed =subprocess.run(getprop_cmd, stdout=subprocess.PIPE,
+                                   stderr=subprocess.PIPE, encoding='utf-8')
         if completed.returncode != 0:
+            print(completed.stdout)
+            print(completed.stderr)
             if 60 - tries > 5*cycles:
                 # kill and try again
                 proc.kill()
                 proc = subprocess.Popen(cmd, stderr=sys.stderr, stdout=sys.stdout)
             elif proc.poll() is not None:
                 raise Exception("Failed to start emulator")
-            time.sleep(3)
+            await asyncio.sleep(3)
             cycles += 1
             continue
         if completed.stdout.strip() == '1':  # boot complete
-            time.sleep(3)
+            await asyncio.sleep(3)
             break
-        time.sleep(3)
+        await asyncio.sleep(3)
         tries -= 1
     if tries <= 0:
         proc.kill()
@@ -106,21 +109,21 @@ def wait_for_emulator_boot(port: int, avd: str, adb_path: str, emulator_path: st
     Config.proc_q.put(proc)
 
 
-def launch(ports: List[int], avds: List[str], count: int, adb_path: str, emulator_path: str):
+async def launch(ports: List[int], avds: List[str], count: int, adb_path: str, emulator_path: str):
     if len(avds) < count:
         raise Exception("Not enough avds defined to support %d processor cores" % count)
     for index, port in enumerate(ports[:count]):
         for retry in (False, True):
             try:
-                wait_for_emulator_boot(port, avds[index], adb_path, emulator_path, retry)
+                await wait_for_emulator_boot(port, avds[index], adb_path, emulator_path, retry)
                 emulator_port_pool_q.put(port)
                 break
-            except Exception:
+            except Exception as e:
                 if retry:
                     emulator_port_pool_q.put(None)
 
 
-def launch_emulators(count):
+async def launch_emulators(count):
     """
     Launch a set of emulators, waiting until boot complete on each one.  As each boot is
     achieved, the emaultor proc queue is populated (and return through fixture to awaiting tests)
@@ -160,66 +163,69 @@ def launch_emulators(count):
         device_id, status = line.split('\t', 1)
         if 'device' in status and "emulator" in device_id:
             port = int(device_id.split('-')[-1])
-            for _ in range(count):
-                emulator_port_pool_q.put(port)
+            emulator_port_pool_q.put(port)
             ports.remove(port)
             count -= 1
-
-    proc = multiprocessing.Process(target=launch, args=(ports, avds, count, adb_path, emulator_path))
-    proc.start()
+    await launch(ports, avds, count, adb_path, emulator_path)
 
 
-def apk(dir: str, count: int, q: multiprocessing.Queue, target: str = "assembleDebug"):
+async def apk(dir: str, count: int, q: Queue, target: str = "assembleDebug"):
     try:
+        apk_path = None
         if sys.platform == 'win32':
             cmd = ["gradlew", target]
             shell = True
         else:
             cmd = ["./gradlew", target]
-            shell = False
-        completed = subprocess.run(cmd,
+            shell = True
+        process = subprocess.Popen(cmd,
                                    cwd=dir,
                                    env=os.environ.copy(),
                                    stdout=sys.stdout,
                                    stderr=sys.stderr,
                                    shell=shell)
-        if completed.returncode != 0:
-            raise Exception("Failed to build apk:\n%s" %  cmd)
-        if target == "assembleAndroidTest":
-            suffix = "androidTest"
-            suffix2 = f"-{suffix}"
-        else:
-            suffix = "."
-            suffix2 = ""
-        apk_path = os.path.join(dir, "app", "build", "outputs", "apk", suffix,
-                                "debug", f"app-debug{suffix2}.apk")
-        if not os.path.exists(apk_path):
-            raise Exception("Failed to find built apk %s" % apk_path)
-        for _ in range(count):
-            q.put(apk_path)
+        done = False
+        while not done:
+            await asyncio.sleep(1)
+            if process.poll() is None:
+                continue
+            if process.returncode != 0:
+                raise Exception("Failed to build apk:\n%s" %  cmd)
+            if target == "assembleAndroidTest":
+                suffix = "androidTest"
+                suffix2 = f"-{suffix}"
+            else:
+                suffix = "."
+                suffix2 = ""
+            apk_path = os.path.join(dir, "app", "build", "outputs", "apk", suffix,
+                                    "debug", f"app-debug{suffix2}.apk")
+            if not os.path.exists(apk_path):
+                raise Exception("Failed to find built apk %s" % apk_path)
+            for _ in range(count):
+                q.put(apk_path)
+                done = True
     except Exception as e:
         for _ in range(count):
             q.put(None)
         raise
+    finally:
+        print(f"Built {apk_path}")
 
 
-def compile_support_test_app(count):
+async def compile_support_test_app(count):
     """
     Compile a test app and make the resulting apk available to all awaiting test Processes
     :param count: number of test processes needing a support test app
     """
-    proc = multiprocessing.Process(target=apk, args=(TEST_SUPPORT_APP_DIR, count, support_test_app_q, "assembleAndroidTest"))
-    proc.start()
+    await apk(TEST_SUPPORT_APP_DIR, count, support_test_app_q, "assembleAndroidTest")
 
 
-def compile_support_app(count):
-    proc = multiprocessing.Process(target=apk, args=(TEST_SUPPORT_APP_DIR, count, support_app_q))
-    proc.start()
+async def compile_support_app(count):
+    await apk(TEST_SUPPORT_APP_DIR, count, support_app_q)
 
 
-def compile_test_butler_app(count):
-    proc = multiprocessing.Process(target=apk, args=(BUTLER_SERVICE_SRC_DIR, count, test_butler_app_q))
-    proc.start()
+async def compile_test_butler_app(count):
+    await apk(BUTLER_SERVICE_SRC_DIR, count, test_butler_app_q)
 
 
 find_sdk()
