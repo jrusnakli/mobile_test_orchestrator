@@ -70,10 +70,10 @@ class TestAndroidDevice:
         assert "android" in device.brand.lower() or "google" in device.brand.lower()
 
     def test_model(self, device: Device):
-        assert device.model.startswith("Android SDK built for x86") or "google" in device.model
+        assert device.model == "Android"
 
     def test_manufacturer(self, device: Device):
-        assert device.manufacturer.lower() in ["google", "unknown"]
+        assert device.manufacturer.lower() == "android"
 
     def test_get_device_datetime(self, device: Device):
         import time
