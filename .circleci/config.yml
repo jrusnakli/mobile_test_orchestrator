@@ -21,6 +21,10 @@ jobs:
             pip install pytest
             pip install -r requirements.txt
       - run:
+          name: Setup emulator
+          command: |
+            .circleci/setup_emulator.sh
+      - run:
           name: Download Dependencies
           command: |
             cd testsupportapps/TestButlerTestApp && ./gradlew androidDependencies
@@ -31,13 +35,6 @@ jobs:
             - "venv"
             - "testsupportapps/TestButlerTestApp/.gradle"
             - "testbutlerservice/.gradle"
-      - run:
-          name: Setup emulator
-          command: |
-            yes | ${ANDROID_SDK_ROOT}/tools/bin/sdkmanager "system-images;android-28;default;x86_64"
-            echo "DOWNLOADED\n"
-            ${ANDROID_SDK_ROOT}/tools/bin/avdmanager create avd -n MTO_emulator -k "system-images;android-28;default;x86_64" -d "pixel_xl" || echo ""
-            echo "AVD CREATED\n"
       - run:
           name: Running tests
           command: |
