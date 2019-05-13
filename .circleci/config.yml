@@ -29,10 +29,13 @@ jobs:
           key: deps1-{{ .Branch }}-{{ checksum "requirements.txt" }}
           paths:
             - "venv"
+            - "testsupportapps/TestButlerTestApp/.gradle"
+            - "testbutlerservice/.gradle"
       - run:
           name: Setup emulator
           command: |
-            .circleci/setup_emulator.sh
+            yes | ${ANDROID_SDK_ROOT}/tools/bin/sdkmanager "system-images;android-28;default;x86_64"
+            ${ANDROID_SDK_ROOT}/tools/bin/avdmanager create avd -n MTO_emulator -k "system-images;android-28;default;x86_64" -d "pixel_xl"
       - run:
           name: Running tests
           command: |
@@ -42,8 +45,6 @@ jobs:
       - save_cache:
           key: deps1-{{ .Branch }}-{{ checksum "requirements.txt" }}
           paths:
-            - "testbutlerservice/.gradle"
-            - "testbutlersupportapps/TestButlerTestApp/.gradle"
             - "~/.android/avd/MTO_emulator.avd"
       - store_artifacts:
           path: test-reports/
