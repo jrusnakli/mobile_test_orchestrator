@@ -1,5 +1,6 @@
 import asyncio
 import os
+import time
 # TODO: CAUTION: WE CANNOT USE asyncio.subprocess as we executein in a thread other than made and on unix-like systems, there
 # is bug in Python 3.7.
 import subprocess
@@ -68,7 +69,7 @@ def find_sdk():
     return android_sdk
 
 
-async def wait_for_emulator_boot(port: int, avd: str, adb_path: str, emulator_path: str, is_retry: bool):
+def wait_for_emulator_boot(port: int, avd: str, adb_path: str, emulator_path: str, is_retry: bool):
     device_id = "emulator-%d" % port
 
     cmd = [emulator_path, "-port", str(port), "@%s" % avd]
@@ -77,18 +78,20 @@ async def wait_for_emulator_boot(port: int, avd: str, adb_path: str, emulator_pa
     if os.environ.get("EMULATOR_OPTS"):
         cmd += os.environ["EMULATOR_OPTS"].split()
     proc = subprocess.Popen(cmd, stderr=sys.stderr, stdout=sys.stdout)
-    await asyncio.sleep(3)
+    time.sleep(3)
     getprop_cmd = [adb_path, "-s", device_id, "shell", "getprop", "sys.boot_completed"]
     tries = 60
     while tries > 0:
+        if proc.poll() is not None:
+            raise Exception("Failed to launch emulator")
         completed = subprocess.run(getprop_cmd, stdout=subprocess.PIPE,
                                    stderr=subprocess.PIPE, encoding='utf-8')
         if completed.returncode != 0:
             print(completed.stderr)
         elif completed.stdout.strip() == '1':  # boot complete
-            await asyncio.sleep(3)
+            time.sleep(3)
             break
-        await asyncio.sleep(3)
+        time.sleep(3)
         tries -= 1
         if tries == 0:
             proc.kill()
@@ -97,17 +100,17 @@ async def wait_for_emulator_boot(port: int, avd: str, adb_path: str, emulator_pa
     Config.proc_q.put(proc)
 
 
-async def launch(port: int, avd: str, adb_path: str, emulator_path: str):
+def launch(port: int, avd: str, adb_path: str, emulator_path: str):
     for retry in (False, True):
         try:
-            await wait_for_emulator_boot(port, avd, adb_path, emulator_path, retry)
+            wait_for_emulator_boot(port, avd, adb_path, emulator_path, retry)
             break
         except Exception as e:
             if retry:
                 raise e
 
 
-async def launch_emulator(port: int):
+def launch_emulator(port: int):
     """
     Launch a set of emulators, waiting until boot complete on each one.  As each boot is
     achieved, the emaultor proc queue is populated (and return through fixture to awaiting tests)
@@ -157,7 +160,7 @@ async def launch_emulator(port: int):
         if EMULATOR_NAME not in completed.stdout:
             raise Exception("Unable to create AVD for testing")
     avd = EMULATOR_NAME
-    await launch(port, avd, adb_path, emulator_path)
+    launch(port, avd, adb_path, emulator_path)
 
 
 async def apk(dir: str, q: Queue, target: str = "assembleDebug"):

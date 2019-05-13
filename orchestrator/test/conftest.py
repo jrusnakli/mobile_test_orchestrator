@@ -90,11 +90,7 @@ def test_butler_service():
 @pytest.fixture(scope='session')
 def emulator():
     port = 5554
-
-    async def launch():
-        await asyncio.wait_for(support.launch_emulator(port), 4*60)
-
-    asyncio.get_event_loop().run_until_complete(launch())
+    support.launch_emulator(port)
     return "emulator-%d" % port
 
 
