@@ -90,7 +90,7 @@ def test_butler_service():
 
 @pytest.fixture(scope='session')
 def emulator():
-    port = support.emulator_port_pool_q.get(timeout=40)
+    port = support.emulator_port_pool_q.get(timeout=4*60)
     if port is None:
         raise Exception("Failed to launch or boot emulator")
     return "emulator-%d" % port

@@ -43,6 +43,12 @@ jobs:
             - "testbutlerservice/.gradle"
             - "testbutlersupportapps/TestButlerTestApp/.gradle"
             - "~/.android/avd/MTO_emulator.avd"
+      - run:
+          name: directory
+          command: |
+            ls /home/circleci/code/orchestrator/test/../../testsupportapps/TestButlerTestApp/app/build/outputs/apk
+            ls /home/circleci/code/orchestrator/test/../../testsupportapps/TestButlerTestApp/app/build/outputs/apk/debug
+            find /home/circleci/code/orchestrator/ -name \*.apk
       - store_artifacts:
           path: test-reports/
           destination: python_app
