@@ -181,12 +181,13 @@ async def launch_emulator():
 async def apk(dir: str, q: Queue, target: str = "assembleDebug"):
     try:
         apk_path = None
+        assert target, "empty target specified"
         if sys.platform == 'win32':
             cmd = ["gradlew", target]
             shell = True
         else:
             cmd = ["./gradlew", target]
-            shell = True
+            shell = False
         print(f"Launching: {cmd}")
         process = subprocess.Popen(cmd,
                                    cwd=dir,
