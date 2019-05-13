@@ -80,30 +80,19 @@ async def wait_for_emulator_boot(port: int, avd: str, adb_path: str, emulator_pa
     await asyncio.sleep(3)
     getprop_cmd = [adb_path, "-s", device_id, "shell", "getprop", "sys.boot_completed"]
     tries = 60
-    cycles = 2
     while tries > 0:
-        completed =subprocess.run(getprop_cmd, stdout=subprocess.PIPE,
+        completed = subprocess.run(getprop_cmd, stdout=subprocess.PIPE,
                                    stderr=subprocess.PIPE, encoding='utf-8')
         if completed.returncode != 0:
-            print(completed.stdout)
             print(completed.stderr)
-            if 60 - tries > 5*cycles:
-                # kill and try again
-                proc.kill()
-                proc = subprocess.Popen(cmd, stderr=sys.stderr, stdout=sys.stdout)
-            elif proc.poll() is not None:
-                raise Exception("Failed to start emulator")
-            await asyncio.sleep(3)
-            cycles += 1
-            continue
-        if completed.stdout.strip() == '1':  # boot complete
+        elif completed.stdout.strip() == '1':  # boot complete
             await asyncio.sleep(3)
             break
         await asyncio.sleep(3)
         tries -= 1
-    if tries <= 0:
-        proc.kill()
-        raise Exception("Emulator failed to boot in time")
+        if tries == 0:
+            proc.kill()
+            raise Exception(f"Emulator failed to boot in time \n {completed.stderr}")
 
     Config.proc_q.put(proc)
 
