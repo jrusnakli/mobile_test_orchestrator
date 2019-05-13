@@ -23,8 +23,8 @@ jobs:
       - run:
           name: Download Dependencies
           command: |
-            cd testsupportapps/TestButlerTestApp && ./gradlew androidDependencies"
-            cd testsupportapps/TestButlerTestApp && ./gradlew aseembleDebug"
+            cd testsupportapps/TestButlerTestApp && ./gradlew androidDependencies
+            ./gradlew assembleDebug
       - save_cache:
           key: deps1-{{ .Branch }}-{{ checksum "requirements.txt" }}
           paths:
