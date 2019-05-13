@@ -28,7 +28,6 @@ class BackgroundThread(threading.Thread):
             support.compile_support_app(),
             support.compile_support_test_app(),
             support.compile_test_butler_app(),
-            support.launch_emulator(),
         ]
 
         async def execute_parallel():
@@ -90,9 +89,12 @@ def test_butler_service():
 
 @pytest.fixture(scope='session')
 def emulator():
-    port = support.emulator_port_pool_q.get(timeout=4*60)
-    if port is None:
-        raise Exception("Failed to launch or boot emulator")
+    port = 5554
+
+    async def launch():
+        await asyncio.wait_for(support.launch_emulator(port), 4*60)
+
+    asyncio.get_event_loop().run_until_complete(launch())
     return "emulator-%d" % port
 
 

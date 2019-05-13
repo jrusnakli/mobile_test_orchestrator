@@ -122,7 +122,7 @@ async def launch(port: int, avd: str, adb_path: str, emulator_path: str):
                 emulator_port_pool_q.put(None)
 
 
-async def launch_emulator():
+async def launch_emulator(port: int):
     """
     Launch a set of emulators, waiting until boot complete on each one.  As each boot is
     achieved, the emaultor proc queue is populated (and return through fixture to awaiting tests)
@@ -132,7 +132,6 @@ async def launch_emulator():
     :return: dictionary of port: multiprocessing.Process of launched emulator processes
     """
     EMULATOR_NAME = "MTO_emulator"
-    port = 5554
     android_sdk = find_sdk()
     adb_path = os.path.join(android_sdk, "platform-tools", add_ext("adb"))
 
