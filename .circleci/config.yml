@@ -33,7 +33,7 @@ jobs:
       - run:
           name: Build test butler (debug)
           command: |
-            cd testbutlerlive
+            cd testbutlerservice
             ./gradlew assembleDebug
             cp app/build/outputs/apk/debug/app-debug.apk ../orchestrator/src/androidtestorchestrator/resources/apks/TestButlerLive.apk
       - save_cache:

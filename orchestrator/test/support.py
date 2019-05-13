@@ -4,7 +4,6 @@ import os
 # is bug in Python 3.7.
 import subprocess
 import sys
-from typing import List
 from queue import Queue
 
 _BASE_DIR = os.path.join(os.path.dirname(__file__), "..", "..")
@@ -20,8 +19,6 @@ SETUP_PATH = os.path.join(_SRC_BASE_DIR, "setup.py")
 support_app_q = Queue()
 support_test_app_q = Queue()
 test_butler_app_q = Queue()
-
-emulator_port_pool_q = Queue()
 
 
 class Config:
@@ -115,11 +112,10 @@ async def launch(port: int, avd: str, adb_path: str, emulator_path: str):
     for retry in (False, True):
         try:
             await wait_for_emulator_boot(port, avd, adb_path, emulator_path, retry)
-            emulator_port_pool_q.put(port)
             break
         except Exception as e:
             if retry:
-                emulator_port_pool_q.put(None)
+                raise e
 
 
 async def launch_emulator(port: int):
@@ -138,7 +134,6 @@ async def launch_emulator(port: int):
     completed = subprocess.run([adb_path, "devices"], stdout=subprocess.PIPE, encoding='utf-8')
     if f"emulator-{port}" in completed.stdout:
         print(f"WARNING: using existing emulator at port {port}")
-        emulator_port_pool_q.put(port)
         return
 
     if sys.platform == 'win32':
@@ -148,7 +143,6 @@ async def launch_emulator(port: int):
     sdkmanager_path = os.path.join(android_sdk, "tools", "bin", "sdkmanager")
     avdmanager_path = os.path.join(android_sdk, "tools", "bin", "avdmanager")
     if not os.path.isfile(emulator_path):
-        emulator_port_pool_q.put(None)
         raise Exception("Unable to find path to 'emulator' command")
     list_emulators_cmd = [emulator_path, "-list-avds"]
     completed = subprocess.run(list_emulators_cmd, timeout=10, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
