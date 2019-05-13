@@ -25,6 +25,7 @@ jobs:
           command: |
             sudo apt-get install pulseaudio
             .circleci/setup_emulator.sh
+            ${ANDROID_SDK_ROOT}/tools/emulator @MTO_emulator -no-window -noaudio
       - run:
           name: Build support apps (debug)
           command: |
