@@ -187,6 +187,7 @@ async def apk(dir: str, q: Queue, target: str = "assembleDebug"):
         else:
             cmd = ["./gradlew", target]
             shell = True
+        print(f"Launching: {cmd}")
         process = subprocess.Popen(cmd,
                                    cwd=dir,
                                    env=os.environ.copy(),
@@ -215,7 +216,7 @@ async def apk(dir: str, q: Queue, target: str = "assembleDebug"):
     except Exception as e:
         q.put(None)
         raise
-    finally:
+    else:
         print(f"Built {apk_path}")
 
 
