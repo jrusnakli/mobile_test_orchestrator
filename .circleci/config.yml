@@ -6,9 +6,10 @@ jobs:
       - image: jrusnakli/android:api-28-py3.7
     environment:
       JVM_OPTS: -Xmx3200m
-      EMULATOR_OPTS: "-no-window -no-audio"
+      EMULATOR_OPTS: "-no-window -no-audio -no-accel"
       PYTHONASYNCIODEBUG: 1
       ANDROID_SDK_ROOT: /opt/android/sdk
+      ANDROID_AVD_HOME: /opt/android/sdk/avds
     steps:
       - checkout
       - restore_cache:
@@ -25,7 +26,6 @@ jobs:
           command: |
             sudo apt-get install pulseaudio
             .circleci/setup_emulator.sh
-            ${ANDROID_SDK_ROOT}/tools/emulator @MTO_emulator -no-window -noaudio
       - run:
           name: Build support apps (debug)
           command: |
