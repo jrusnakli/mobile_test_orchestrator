@@ -95,10 +95,30 @@ def emulator():
 
 
 @pytest.fixture(scope='session')
-def device(emulator):  # kicks off emulator launch
+def sole_emulator(emulator):  # kicks off emulator launch
     android_sdk = support.find_sdk()
     return Device(adb_path=os.path.join(android_sdk, "platform-tools", add_ext("adb")),
                   device_id=emulator)
+
+emulator_lock = threading.Semaphore(1)
+
+
+@pytest.fixture
+def device(sole_emulator, request):
+    """
+    test-specific fixture that allows other tests not dependent on this fixture to run in parallel,
+    but forces dependent tests to run serially
+    :param sole_emulator: the only emulator we test against
+    :param request:
+    :return: sole test emulator
+    """
+    emulator_lock.acquire()
+
+    def unlock():
+        emulator_lock.release()
+
+    request.addfinalizer(unlock)
+    return sole_emulator
 
 
 @pytest.fixture

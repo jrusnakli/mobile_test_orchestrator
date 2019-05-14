@@ -22,10 +22,9 @@ jobs:
             pip install pytest
             pip install -r requirements.txt
       - run:
-          name: Setup emulator
+          name: setup emulator
           command: |
-            sudo apt-get install pulseaudio
-            .circleci/setup_emulator.sh
+             .circleci/setup_emulator.sh
       - run:
           name: Build support apps (debug)
           command: |

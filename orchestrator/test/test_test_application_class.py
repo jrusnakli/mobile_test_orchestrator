@@ -16,7 +16,7 @@ log = logging.getLogger(__name__)
 
 
 # noinspection PyShadowingNames
-@pytest.fixture(scope='class')
+@pytest.fixture  # (scope='class')
 def test_app(device, request, support_app, support_test_app, test_butler_service):
     butler_app = Application.from_apk(support_app, device)
     test_app = TestApplication.from_apk(support_test_app, device)

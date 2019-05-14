@@ -163,7 +163,7 @@ def launch_emulator(port: int):
     launch(port, avd, adb_path, emulator_path)
 
 
-async def apk(dir: str, q: Queue, target: str = "assembleDebug"):
+async def build_apk(dir: str, q: Queue, target: str = "assembleDebug"):
     try:
         apk_path = None
         assert target, "empty target specified"
@@ -211,15 +211,15 @@ async def compile_support_test_app():
     Compile a test app and make the resulting apk available to all awaiting test Processes
     :param count: number of test processes needing a support test app
     """
-    await apk(TEST_SUPPORT_APP_DIR, support_test_app_q, "assembleAndroidTest")
+    await build_apk(TEST_SUPPORT_APP_DIR, support_test_app_q, "assembleAndroidTest")
 
 
 async def compile_support_app():
-    await apk(TEST_SUPPORT_APP_DIR, support_app_q)
+    await build_apk(TEST_SUPPORT_APP_DIR, support_app_q)
 
 
 async def compile_test_butler_app():
-    await apk(BUTLER_SERVICE_SRC_DIR, test_butler_app_q)
+    await build_apk(BUTLER_SERVICE_SRC_DIR, test_butler_app_q)
 
 
 find_sdk()

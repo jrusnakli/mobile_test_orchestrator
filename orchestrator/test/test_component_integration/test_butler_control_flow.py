@@ -19,7 +19,7 @@ TAG = "TestButler"
 log = logging.getLogger(__name__)
 
 
-@pytest.fixture(scope='session')
+@pytest.fixture
 def install_butler(device: Device, test_butler_service: str):
     """
     fixture to install test butler service, prepare logcat
