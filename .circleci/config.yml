@@ -48,7 +48,7 @@ jobs:
           command: |
             . venv/bin/activate
             cd orchestrator/test
-            pytest -s . -  --html  test-reports/report.html --cov=../src . --cov-report html:test-reports/coverage
+            pytest -s . --html  test-reports/report.html --cov=../src . --cov-report html:test-reports/coverage
       - save_cache:
           key: deps1-{{ .Branch }}-{{ checksum "requirements.txt" }}
           paths:
