@@ -4,6 +4,7 @@ import time
 
 import pytest
 
+from androidtestorchestrator import ServiceApplication
 from androidtestorchestrator.device import Device
 from androidtestorchestrator.devicelog import DeviceLog
 
@@ -11,38 +12,51 @@ from androidtestorchestrator.devicelog import DeviceLog
 # noinspection PyShadowingNames
 class TestDeviceLog:
 
-    def test_logcat_and_clear(self, device: Device):
-        output = []
-        # call here waits for emulator startup, allowing other fixtures to complete in parallel
-        device_log = DeviceLog(device)
-        length = 100
+    def test_logcat_and_clear(self, device: Device, test_butler_service):
+        service = ServiceApplication.from_apk(test_butler_service, device)
+        try:
+            output = []
+            # call here waits for emulator startup, allowing other fixtures to complete in parallel
+            device_log = DeviceLog(device)
+            length = 25
 
-        async def parse_logcat():
-            async with await device_log.logcat() as lines:
-                async for line in lines:
-                    nonlocal output
-                    if line.startswith("----"):
-                        continue
-                    output.append(line)
-                    if len(output) >= length:
-                        break
+            async def parse_logcat():
+                async with await device_log.logcat() as lines:
+                    async for line in lines:
+                        nonlocal output
+                        if line.startswith("----"):
+                            continue
+                        output.append(line)
+                        if len(output) >= length:
+                            break
 
-        async def timer():
-            await asyncio.wait_for(parse_logcat(), timeout=30)
+            async def timer():
+                await asyncio.wait_for(parse_logcat(), timeout=30)
 
-        asyncio.get_event_loop().run_until_complete(timer())
-        assert len(output) >= length
+            for _ in range(length+5):
+                # use test butler to introduce log cat messages:
+                service.start(".ButlerService", "--es", "command", "just for logcat",
+                              intent="com.linkedin.android.testbutler.FOR_TEST_ONLY_SEND_CMD")
+            asyncio.get_event_loop().run_until_complete(timer())
+            assert len(output) >= length
 
-        output_before = output[:]
-        device_log.clear()
+            for _ in range(length+5):
+                # use test butler to introduce log cat messages:
+                service.start(".ButlerService", "--es", "command", "just for logcat",
+                              intent="com.linkedin.android.testbutler.FOR_TEST_ONLY_SEND_CMD")
 
-        # capture more lines of output and make sure they don't match any in previous capture
-        output = []
+            output_before = output[:]
+            device_log.clear()
 
-        asyncio.get_event_loop().run_until_complete(timer())
-        assert len(output) >= length
-        for line in output[10:]:
-            assert line not in output_before
+            # capture more lines of output and make sure they don't match any in previous capture
+            output = []
+
+            asyncio.get_event_loop().run_until_complete(timer())
+            assert len(output) >= length
+            for line in output[10:]:
+                assert line not in output_before
+        finally:
+            service.uninstall()
 
     def test_capture_mark_start_stop(self, device: Device, tmpdir):
         device_log = DeviceLog(device)
