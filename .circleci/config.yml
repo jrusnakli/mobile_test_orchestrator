@@ -19,7 +19,6 @@ jobs:
           command: |
             /usr/local/bin/python3.7 -m venv venv
             . venv/bin/activate
-            pip install pytest
             pip install -r requirements.txt
       - run:
           name: setup emulator
@@ -49,11 +48,11 @@ jobs:
           command: |
             . venv/bin/activate
             cd orchestrator/test
-            pytest -s .
+            pytest -s . -  --html  test-reports/report.html --cov=../src . --cov-report html:test-reports/coverage
       - save_cache:
           key: deps1-{{ .Branch }}-{{ checksum "requirements.txt" }}
           paths:
             - "~/.android/avd/MTO_emulator.avd"
       - store_artifacts:
-          path: test-reports/
+          path: orchestrator/test/test-reports/
           destination: python_app
