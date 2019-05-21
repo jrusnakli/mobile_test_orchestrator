@@ -98,8 +98,10 @@ def emulator():
 def sole_emulator(emulator):  # kicks off emulator launch
     android_sdk = support.find_sdk()
     Device.set_default_adb_timeout(30)  # emulator without accel can be slow
+    Device.set_default_long_adb_timeout(240*4)
     return Device(adb_path=os.path.join(android_sdk, "platform-tools", add_ext("adb")),
                   device_id=emulator)
+
 
 emulator_lock = threading.Semaphore(1)
 
