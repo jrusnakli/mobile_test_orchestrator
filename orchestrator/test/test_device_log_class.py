@@ -46,7 +46,14 @@ class TestDeviceLog:
                               intent="com.linkedin.android.testbutler.FOR_TEST_ONLY_SEND_CMD")
 
             output_before = output[:]
-            device_log.clear()
+            retries = 3
+            try:
+                device_log.clear()
+            except Device.CommandExecutionFailureException as e:
+                if retries > 0 and "Failed to clear" in str(e):
+                    retries -= 1
+                else:
+                    raise
 
             # capture more lines of output and make sure they don't match any in previous capture
             output = []
