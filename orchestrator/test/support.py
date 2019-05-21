@@ -72,7 +72,8 @@ def find_sdk():
 def wait_for_emulator_boot(port: int, avd: str, adb_path: str, emulator_path: str, is_retry: bool):
     device_id = "emulator-%d" % port
 
-    cmd = [emulator_path, "-port", str(port), "@%s" % avd]
+    # read more about cmd option https://developer.android.com/studio/run/emulator-commandline
+    cmd = [emulator_path, "-port", str(port), "@%s" % avd, "-wipe-data"]
     if is_retry and "-no-snapshot-load" not in cmd:
         cmd.append("-no-snapshot-load")
     if os.environ.get("EMULATOR_OPTS"):
@@ -113,7 +114,7 @@ def launch(port: int, avd: str, adb_path: str, emulator_path: str):
 def launch_emulator(port: int):
     """
     Launch a set of emulators, waiting until boot complete on each one.  As each boot is
-    achieved, the emaultor proc queue is populated (and return through fixture to awaiting tests)
+    achieved, the emulator proc queue is populated (and return through fixture to awaiting tests)
 
     :param count: number to launch, usually number of processes test is running on
 
@@ -131,7 +132,8 @@ def launch_emulator(port: int):
     if sys.platform == 'win32':
         emulator_path = os.path.join(android_sdk, "emulator", "emulator.exe")
     else:
-        emulator_path = os.path.join(android_sdk, "tools", "emulator")
+        # latest Android SDK should use $SDK_ROOT/emulator/emulator instead of $SDK_ROOT/tools/emulator
+        emulator_path = os.path.join(android_sdk, "emulator", "emulator")
     sdkmanager_path = os.path.join(android_sdk, "tools", "bin", "sdkmanager")
     avdmanager_path = os.path.join(android_sdk, "tools", "bin", "avdmanager")
     if not os.path.isfile(emulator_path):

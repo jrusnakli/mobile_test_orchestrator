@@ -2,7 +2,11 @@ build/
 venv/*
 *.py[cod]
 __pycache__/
+.cache/*
+.coverage
 .idea/
 .gradle/
+*.egg-info
 resources/
 test-reports/
+orchestrator/venv/

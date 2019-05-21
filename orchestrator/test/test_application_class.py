@@ -99,7 +99,10 @@ class TestApplication:
 
     def test_clear_data(self, device, support_app):  # noqa
         app = Application.from_apk(support_app, device)
-        app.clear_data()  # should not raise exception
+        try:
+            app.clear_data()  # should not raise exception
+        finally:
+            app.uninstall()
 
     def test_version_invalid_package(self, device):
         with pytest.raises(Exception):

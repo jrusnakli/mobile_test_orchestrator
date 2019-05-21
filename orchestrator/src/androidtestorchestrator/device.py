@@ -208,7 +208,7 @@ class Device(object):
         :param args: args to be executed (via adb command)
         :param timeout: raise asyncio.TimeoutError if command fails to execute in specified time
         :param capture_stdout: whether to capture and return stdout output (otherwise return None)
-        :param fail_on_presence_of_stderr: Some commands return code 0 and still faile, so must check stderr
+        :param fail_on_presence_of_stderr: Some commands return code 0 and still fail, so must check stderr
            (NOTE however that some commands like monkey return 0 and use stderr as though it was stdout :-( )
 
         :return: None if no stdout output requested, otherwise a string containing the stdout output of the command
