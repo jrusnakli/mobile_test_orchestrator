@@ -27,6 +27,7 @@ def install_butler(device: Device, test_butler_service: str):
     """
     service = ServiceApplication.from_apk(test_butler_service, device)
     DeviceLog(device).clear()
+
     return service
 
 

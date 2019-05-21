@@ -60,8 +60,11 @@ class TestAndroidDevice:
 
     def test_list_packages(self, device: Device, support_app: str):
         app = Application.from_apk(support_app, device)
-        pkgs = device.list_installed_packages()
-        assert app.package_name in pkgs
+        try:
+            pkgs = device.list_installed_packages()
+            assert app.package_name in pkgs
+        finally:
+            app.uninstall()
 
     def test_external_storage_location(self, device: Device):
         assert DeviceStorage(device).external_storage_location.startswith("/")
@@ -90,16 +93,18 @@ class TestAndroidDevice:
     @pytest.mark.skipif(True, reason="Test butler does not currently support system setting of locale")
     def test_get_set_locale(self, device: Device, local_changer_apk):  # noqa
         app = Application.from_apk(local_changer_apk, device)
-        app.grant_permissions([" android.permission.CHANGE_CONFIGURATION"])
-        device.set_locale("en_US")
-        assert device.get_locale() == "en_US"
-        device.set_locale("fr_FR")
-        assert device.get_locale() == "fr_FR"
+        try:
+            app.grant_permissions([" android.permission.CHANGE_CONFIGURATION"])
+            device.set_locale("en_US")
+            assert device.get_locale() == "en_US"
+            device.set_locale("fr_FR")
+            assert device.get_locale() == "fr_FR"
+        finally:
+            app.uninstall()
 
     def test_grant_permissions(self, device: Device, support_app: str):
         app = Application.from_apk(support_app, device)
         try:
-
             app.grant_permissions(["android.permission.WRITE_EXTERNAL_STORAGE"])
         finally:
             app.uninstall()
@@ -139,9 +144,12 @@ class TestAndroidDevice:
 
     def test_oneshot_cpu_mem(self, device: Device, support_app: str):
         app = Application.from_apk(support_app, device)
-        app.monkey()
-        time.sleep(1)
-        cpu, mem = device.oneshot_cpu_mem(app.package_name)
-        app.stop(force=True)
-        assert cpu is not None
-        assert mem is not None
+        try:
+            app.monkey()
+            time.sleep(1)
+            cpu, mem = device.oneshot_cpu_mem(app.package_name)
+            app.stop(force=True)
+            assert cpu is not None
+            assert mem is not None
+        finally:
+            app.uninstall()

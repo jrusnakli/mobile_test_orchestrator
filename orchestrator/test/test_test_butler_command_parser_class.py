@@ -102,25 +102,29 @@ class TestTestButlerCommandParser(object):
     def test_parse_line(self, device: Device, test_butler_service: str, support_test_app: str):
         butler_service = ServiceApplication.from_apk(test_butler_service, device)
         app = Application.from_apk(support_test_app, device)
-        # start with a known confirmed value
-        device.set_device_setting(namespace="system", key="volume_music", value=SettingAndPropertyListener.START_VALUE)
-        assert device.get_device_setting(namespace="system", key="volume_music") == \
-            SettingAndPropertyListener.START_VALUE
-        device.set_system_property(key="debug.mock", value="mock_value")
-        assert device.get_system_property("debug.mock") == "mock_value"
+        try:
+            # start with a known confirmed value
+            device.set_device_setting(namespace="system", key="volume_music", value=SettingAndPropertyListener.START_VALUE)
+            assert device.get_device_setting(namespace="system", key="volume_music") == \
+                SettingAndPropertyListener.START_VALUE
+            device.set_system_property(key="debug.mock", value="mock_value")
+            assert device.get_system_property("debug.mock") == "mock_value"
 
-        listener = SettingAndPropertyListener()
-        parser = TestButlerCommandParser(butler_service, app_under_test=app, listener=listener)
+            listener = SettingAndPropertyListener()
+            parser = TestButlerCommandParser(butler_service, app_under_test=app, listener=listener)
 
-        for line in [
-            "I/TestButler( ): 1 TEST_BUTLER_SETTING: system volume_music %s" % SettingAndPropertyListener.NEW_VALUE,
-            "I/TestButler( ): 2 TEST_BUTLER_PROPERTY: debug.mock 42"]:
-            parser.parse_line(line)
+            for line in [
+                "I/TestButler( ): 1 TEST_BUTLER_SETTING: system volume_music %s" % SettingAndPropertyListener.NEW_VALUE,
+                "I/TestButler( ): 2 TEST_BUTLER_PROPERTY: debug.mock 42"]:
+                parser.parse_line(line)
 
-        assert listener.setting_change_detected
-        assert device.get_device_setting("system", "volume_music") == "1"
-        assert listener.property_change_detected
-        assert device.get_system_property("debug.mock") == "42"
+            assert listener.setting_change_detected
+            assert device.get_device_setting("system", "volume_music") == "1"
+            assert listener.property_change_detected
+            assert device.get_system_property("debug.mock") == "42"
+        finally:
+            butler_service.uninstall()
+            app.uninstall()
 
     @pytest.mark.parametrize('listener', [None, SettingListener()])
     def test_process_set_device_setting_cmd(self, device: Device, listener: Optional[SettingListener],
