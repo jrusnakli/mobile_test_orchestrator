@@ -147,7 +147,6 @@ class TestAndroidTestOrchestrator(object):
             orchestrator.execute_test_plan(test_plan=test_generator(),
                                            test_application=android_test_app,
                                            test_listener=TestExpectations())
-        assert test_count == 1  # last test suite had one test
 
     def test_add_background_task(self,
                                  device: Device,

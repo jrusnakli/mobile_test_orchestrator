@@ -14,11 +14,6 @@ from apk_bitminer.parsing import AXMLParser
 log = logging.getLogger(__name__)
 log.setLevel(logging.INFO)
 
-# in seconds:
-TIMEOUT_ADB_CMD = 10
-TIMEOUT_LONG_ADB_CMD = 4 * 60
-TIMEOUT_SCREEN_CAPTURE = 2*60
-
 
 class Device(object):
     """
@@ -49,6 +44,11 @@ class Device(object):
 
     SLEEP_SET_PROPERTY = 2
     SLEEP_PKG_INSTALL = 5
+
+    # in seconds:
+    TIMEOUT_SCREEN_CAPTURE = 2 * 60
+    TIMEOUT_ADB_CMD = 10
+    TIMEOUT_LONG_ADB_CMD = 4 * 60
 
     NORMAL_PERMISSIONS = [
         "ACCESS_LOCATION_EXTRA_COMMANDS",
@@ -98,6 +98,22 @@ class Device(object):
         @property
         def return_code(self):
             return self._return_code
+
+    @classmethod
+    def set_default_adb_timeout(cls, timeout: int):
+        """
+
+        :param timeout: timeout in seconds
+        """
+        cls.TIMEOUT_ADB_CMD = timeout
+
+    @classmethod
+    def set_default_long_adb_timeout(cls, timeout: int):
+        """
+
+        :param timeout: timeout in seconds
+        """
+        cls.TIMEOUT_LONG_ADB_CMD = timeout
 
     def __init__(self, device_id: str, adb_path: str):
         """
@@ -200,7 +216,7 @@ class Device(object):
             self._name = self.manufacturer + " " + self.model
         return self._name
 
-    def execute_remote_cmd(self, *args: str, timeout=TIMEOUT_ADB_CMD, capture_stdout: bool = True,
+    def execute_remote_cmd(self, *args: str, timeout=None, capture_stdout: bool = True,
                            fail_on_presence_of_stderr=False) -> Optional[str]:
         """
         Execute a command on this device (via adb)
@@ -215,6 +231,7 @@ class Device(object):
 
         :raises: CommandExecutionFailureException if command fails to execute on remote device
         """
+        timeout = timeout or Device.TIMEOUT_ADB_CMD
         completed = subprocess.run(self.formulate_adb_cmd(*args), timeout=timeout,
                                    stderr=subprocess.PIPE,
                                    stdout=subprocess.PIPE if capture_stdout else subprocess.DEVNULL,
@@ -389,7 +406,7 @@ class Device(object):
         :return: full dict of properties
         """
         results: Dict[str, str] = {}
-        output = self.execute_remote_cmd("shell", "getprop", timeout=TIMEOUT_ADB_CMD,)
+        output = self.execute_remote_cmd("shell", "getprop", timeout=Device.TIMEOUT_ADB_CMD,)
         for line in output.splitlines():
             if ':' in line:
                 property_name, property_value = line.split(':', 1)
@@ -491,7 +508,7 @@ class Device(object):
         device_path = "%s/%s" % (self.external_storage_location, base_name)
         try:
             self.execute_remote_cmd("shell", "screencap", "-p", device_path, capture_stdout=False,
-                                    timeout=TIMEOUT_SCREEN_CAPTURE)
+                                    timeout=Device.TIMEOUT_SCREEN_CAPTURE)
             self.execute_remote_cmd("pull", device_path, local_screenshot_path, capture_stdout=False)
         finally:
             with suppress(self.CommandExecutionFailureException):
@@ -518,7 +535,7 @@ class Device(object):
         """
         # TODO: Remove this in lieu of a better mechanism
         # first get format of output, then get results for requested package
-        output = self.execute_remote_cmd("shell", "ps", "-o", "NAME,PCPU,RSS", timeout=TIMEOUT_ADB_CMD)
+        output = self.execute_remote_cmd("shell", "ps", "-o", "NAME,PCPU,RSS", timeout=Device.TIMEOUT_ADB_CMD)
         for line in output.splitlines():
             if package_name in line:
                 name, cpu, mem = line.strip().split()
@@ -546,7 +563,7 @@ class Device(object):
         :return: 0 on success, number of failed packets otherwise
         """
         try:
-            output = self.execute_remote_cmd("shell", "ping", "-c", str(count), domain, timeout=TIMEOUT_LONG_ADB_CMD)
+            output = self.execute_remote_cmd("shell", "ping", "-c", str(count), domain, timeout=Device.TIMEOUT_LONG_ADB_CMD)
             for msg in output.splitlines():
                 if "64 bytes" in str(msg):
                     count -= 1
@@ -619,7 +636,7 @@ class Device(object):
             cmd = ("install", "-r", apk_path)
         else:
             cmd = ("install", apk_path)
-        return self.execute_remote_cmd(*cmd, timeout=TIMEOUT_LONG_ADB_CMD)
+        return self.execute_remote_cmd(*cmd, timeout=Device.TIMEOUT_LONG_ADB_CMD)
 
     async def install(self, apk_path: str, as_upgrade: bool,
                       conditions: List[str] = None,
@@ -655,7 +672,7 @@ class Device(object):
         # do not allow more than one install at a time on a specific device, as
         # this can be problematic
         async with self.lock():
-            async with await self.execute_remote_cmd_async(*cmd, proc_completion_timeout=TIMEOUT_LONG_ADB_CMD) as lines:
+            async with await self.execute_remote_cmd_async(*cmd, proc_completion_timeout=Device.TIMEOUT_LONG_ADB_CMD) as lines:
                 async for msg in lines:
                     log.debug(msg)
 
@@ -688,7 +705,7 @@ class Device(object):
         """
         found_potential_stack_match = False
         stdout = self.execute_remote_cmd("shell", "dumpsys", "activity", "activities", capture_stdout=True,
-                                         timeout=TIMEOUT_ADB_CMD)
+                                         timeout=Device.TIMEOUT_ADB_CMD)
         # Find lines that look like this:
         #   Stack #0:
         # or

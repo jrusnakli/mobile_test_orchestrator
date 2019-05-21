@@ -81,7 +81,8 @@ def wait_for_emulator_boot(port: int, avd: str, adb_path: str, emulator_path: st
     proc = subprocess.Popen(cmd, stderr=sys.stderr, stdout=sys.stdout)
     time.sleep(3)
     getprop_cmd = [adb_path, "-s", device_id, "shell", "getprop", "sys.boot_completed"]
-    tries = 60
+    tries = 100
+    cycles = 2
     while tries > 0:
         if proc.poll() is not None:
             raise Exception("Failed to launch emulator")
