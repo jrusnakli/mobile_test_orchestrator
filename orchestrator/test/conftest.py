@@ -97,6 +97,7 @@ def emulator():
 @pytest.fixture(scope='session')
 def sole_emulator(emulator):  # kicks off emulator launch
     android_sdk = support.find_sdk()
+    Device.set_default_adb_timeout(30)  # emulator without accel can be slow
     return Device(adb_path=os.path.join(android_sdk, "platform-tools", add_ext("adb")),
                   device_id=emulator)
 

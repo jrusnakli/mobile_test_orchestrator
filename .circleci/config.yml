@@ -53,6 +53,12 @@ jobs:
           key: deps1-{{ .Branch }}-{{ checksum "requirements.txt" }}
           paths:
             - "~/.android/avd/MTO_emulator.avd"
+      - run:
+          name: directory
+          command: |
+            ls /home/circleci/code/orchestrator/test/../../testsupportapps/TestButlerTestApp/app/build/outputs/apk
+            ls /home/circleci/code/orchestrator/test/../../testsupportapps/TestButlerTestApp/app/build/outputs/apk/debug
+            find /home/circleci/code/orchestrator/ -name \*.apk
       - store_artifacts:
           path: orchestrator/test/test-reports/
           destination: python_app
