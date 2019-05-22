@@ -35,7 +35,7 @@ class Application(RemoteDeviceBased):
         :param device: which device app resides on
 
         >>> device = Device("some_serial_id", "/path/to/adb")
-        >>> app = asyncio.wait(Application.from_apk("some.apk", device))
+        >>> app = asyncio.wait(Application.from_apk_async("some.apk", device))
         >>> app.grant_permissions(["android.permission.WRITE_EXTERNAL_STORAGE"])
         """
         super(Application, self).__init__(device)
@@ -43,14 +43,14 @@ class Application(RemoteDeviceBased):
         self._version = None  # loaded on-demand first time self.version called
 
     @property
-    def package_name(self):
+    def package_name(self) -> str:
         """
         :return: Android package name associated with this app
         """
         return self._package_name
 
     @property
-    def version(self):
+    def version(self) -> Optional[str]:
         """
         :return: version of this app
         """
@@ -59,9 +59,9 @@ class Application(RemoteDeviceBased):
         return self._version
 
     @property
-    def pid(self):
+    def pid(self) -> Optional[str]:
         """
-        :return: pif of app if running (either in foreground or background) or None if not running
+        :return: pid of app if running (either in foreground or background) or None if not running
         """
         stdout = self.device.execute_remote_cmd("shell", "pidof", "-s", self.package_name, capture_stdout=True)
         split_output = stdout.splitlines()
@@ -83,10 +83,10 @@ class Application(RemoteDeviceBased):
 
         :return: remote installed application
 
-        :raises: Exception if failure ot install or verify installation
+        :raises: Exception if failure of install or verify installation
 
         >>> async def install():
-        ...     async with await Application.from_apk_async("/some/local/path/to/apk") as stdout:
+        ...     async with await Application.from_apk_async("/some/local/path/to/apk", device) as stdout:
         ...         async for line in stdout:
         ...            if "some trigger message" in line:
         ...               perform_tap_to_accept_install()
@@ -109,6 +109,8 @@ class Application(RemoteDeviceBased):
         :return: remote installed application
 
         :raises: Exception if failure ot install or verify installation
+
+        >>> app = Application.from_apk("/local/path/to/apk", device, as_upgrade=True)
         """
         parser = AXMLParser.parse(apk_path)
         package = parser.package_name
@@ -126,7 +128,7 @@ class Application(RemoteDeviceBased):
             log.warning("adb command froze on uninstall.  Ignoring issue as device specific")
         except Exception as e:
             if self.package_name in self.device.list_installed_packages():
-                log.error("Failed to uninstall app %s [%s]", (self.package_name, str(e)))
+                log.error(f"Failed to uninstall app {self.package_name} [{str(e)}]")
 
     def grant_permissions(self, permissions: List[str]) -> List[str]:
         """
@@ -152,7 +154,7 @@ class Application(RemoteDeviceBased):
             try:
                 self.device.execute_remote_cmd("shell", "pm", "grant", self.package_name, p, capture_stdout=False)
             except Exception as e:
-                log.error("Failed to grant permission %s for package %s [%s]" % (p, self.package_name, str(e)))
+                log.error(f"Failed to grant permission {p} for package {self.package_name} [{str(e)}]")
             succeeded.append(p)
         return succeeded
 
@@ -162,11 +164,12 @@ class Application(RemoteDeviceBased):
 
         :param activity: which Android Activity to invoke on start of app
         :param intent: which Intent to invoke, or None for default intent
-        :param options: string list of options to pass on to the "am start" command on the remote devie, or None
+        :param options: string list of options to pass on to the "am start" command on the remote device, or None
 
         """
         # embellish to fully qualified name as Android expects
-        activity = "%s/%s" % (self.package_name, activity) if activity else "%s/.MainActivity" % self.package_name
+        # TODO: should it be running monkey if no activity is given?
+        activity = f"{self.package_name}/{activity}" if activity else f"{self.package_name}/.MainActivity"
         if intent:
             options = ("-a", intent, *options)
         self.device.execute_remote_cmd("shell", "am", "start", "-n", activity, *options, capture_stdout=False)
@@ -174,6 +177,7 @@ class Application(RemoteDeviceBased):
     def monkey(self, count: int = 1) -> None:
         """
         Run monkey against application
+        More to read about adb monkey at https://developer.android.com/studio/test/monkey#command-options-reference
         """
         cmd = ["shell", "monkey", "-p", self._package_name, "-c", "android.intent.category.LAUNCHER", str(count)]
         self.device.execute_remote_cmd(*cmd, capture_stdout=False)
@@ -190,7 +194,7 @@ class Application(RemoteDeviceBased):
             else:
                 self.device.execute_remote_cmd("shell", "am", "stop", self.package_name, capture_stdout=False)
         except Exception as e:
-            log.error("Failed to force-stop app %s: error; %s" % (self.package_name, str(e)))
+            log.error(f"Failed to force-stop app {self.package_name} with error: {str(e)}")
 
     def clean_kill(self) -> None:
         """
@@ -235,8 +239,8 @@ class ServiceApplication(Application):
         :param foreground: whether to start in foreground or not (Android O+
             does not allow background starts any longer)
         """
-        activity = "%s/%s" % (self.package_name, activity)
-        options = ["\"%s\"" % item for item in options]
+        activity = f"{self.package_name}/{activity}"
+        options = [f"\"{item}\"" for item in options]
         if intent:
             options = ["-a", intent] + options
         if foreground:

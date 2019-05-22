@@ -73,10 +73,19 @@ class TestAndroidDevice:
         assert "android" in device.brand.lower() or "google" in device.brand.lower()
 
     def test_model(self, device: Device):
-        assert device.model == "Android"
+        assert device.model == "Android SDK built for x86_64"
 
     def test_manufacturer(self, device: Device):
-        assert device.manufacturer.lower() == "android"
+        # the emulator used in test has no manufacturer
+        """
+        The emulator used in test has following properties
+        [ro.product.vendor.brand]: [Android]
+        [ro.product.vendor.device]: [generic_x86_64]
+        [ro.product.vendor.manufacturer]: [unknown]
+        [ro.product.vendor.model]: [Android SDK built for x86_64]
+        [ro.product.vendor.name]: [sdk_phone_x86_64]
+        """
+        assert device.manufacturer.lower() == "unknown"
 
     def test_get_device_datetime(self, device: Device):
         import time
