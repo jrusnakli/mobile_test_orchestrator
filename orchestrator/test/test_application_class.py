@@ -82,6 +82,8 @@ class TestApplication:
             time.sleep(3)  # Have to give time to "come up" :-(
             assert self.pidof(app), "No pid found for app; app not started as expected"
             app.stop()
+            if self.pidof(app):
+                time.sleep(3)  # allow slow emulators to catch up
             assert not self.pidof(app)
         finally:
             app.uninstall()

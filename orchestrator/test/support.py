@@ -137,16 +137,22 @@ def launch_emulator(port: int):
         emulator_path = os.path.join(android_sdk, "emulator", "emulator")
     sdkmanager_path = os.path.join(android_sdk, "tools", "bin", "sdkmanager")
     avdmanager_path = os.path.join(android_sdk, "tools", "bin", "avdmanager")
+    if sys.platform.lower() == 'win32':
+        sdkmanager_path += ".bat"
+        avdmanager_path += ".bat"
+        shell = True
+    else:
+        shell = False
     if not os.path.isfile(emulator_path):
         raise Exception("Unable to find path to 'emulator' command")
     list_emulators_cmd = [emulator_path, "-list-avds"]
     completed = subprocess.run(list_emulators_cmd, timeout=10, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                               encoding='utf-8')
+                               encoding='utf-8', shell=shell)
     if completed.returncode != 0:
         raise Exception("Command '%s -list-avds' failed with code %d" % (emulator_path, completed.returncode))
     if EMULATOR_NAME not in completed.stdout:
-        download_emulator_cmd = [sdkmanager_path, "\"system-images;android-28;default;x86_64\""]
-        p = subprocess.Popen(download_emulator_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.PIPE)
+        download_emulator_cmd = [sdkmanager_path, "system-images;android-28;default;x86_64"]
+        p = subprocess.Popen(download_emulator_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, stdin=subprocess.PIPE)
         p.stdin.write(b"Y\n")
         if p.wait() != 0:
             raise Exception("Failed to download image for AVD")
