@@ -96,11 +96,11 @@ class Device(object):
             self._return_code = return_code
 
         @property
-        def return_code(self):
+        def return_code(self) -> int:
             return self._return_code
 
     @classmethod
-    def set_default_adb_timeout(cls, timeout: int):
+    def set_default_adb_timeout(cls, timeout: int) -> None:
         """
 
         :param timeout: timeout in seconds
@@ -108,7 +108,7 @@ class Device(object):
         cls.TIMEOUT_ADB_CMD = timeout
 
     @classmethod
-    def set_default_long_adb_timeout(cls, timeout: int):
+    def set_default_long_adb_timeout(cls, timeout: int) -> None:
         """
 
         :param timeout: timeout in seconds
@@ -124,7 +124,7 @@ class Device(object):
         :raises FileNotFoundError: if adb path is invalid
         """
         if not os.path.isfile(adb_path):
-            raise FileNotFoundError("Invalid adb path given: '%s'" % adb_path)
+            raise FileNotFoundError(f"Invalid adb path given: '{adb_path}'")
         self._device_id = device_id
         self._adb_path = adb_path
 
@@ -169,12 +169,12 @@ class Device(object):
         """
         return self._device_id
 
-    def _determine_system_property(self, property):
+    def _determine_system_property(self, property: str) -> str:
         """
         :param property: property to fetch
         :return:  requested property or "UNKNOWN" if not present on device
         """
-        prop = self.get_system_property("ro.product.brand")
+        prop = self.get_system_property(property)
         if not prop:
             log.error("Unable to get brand of device from system properties. Setting to UNKNOWN")
             prop = "UNKNOWN"
@@ -238,8 +238,7 @@ class Device(object):
                                    encoding='utf-8', errors='ignore')
         if completed.returncode != 0 or (fail_on_presence_of_stderr and completed.stderr):
             raise self.CommandExecutionFailureException(completed.returncode,
-                                                        "Failed to execute '%s' on device %s [%s]" %
-                                                        (' '.join(args), self.device_id, completed.stderr))
+                                                        f"Failed to execute '{' '.join(args)}' on device {self.device_id} [{completed.stderr}]")
         if capture_stdout:
             return completed.stdout
 
@@ -254,7 +253,7 @@ class Device(object):
         :return: subprocess.Open
         """
         args = [self._adb_path, "-s", self.device_id, *args]
-        log.info("Executing: %s" % (' '.join(args)))
+        log.info(f"Executing: {' '.join(args)}")
         if 'encoding' not in kargs:
             kargs['encoding'] = 'utf-8'
             kargs['errors'] = 'ignore'
@@ -292,7 +291,7 @@ class Device(object):
         # will call this function to do the heavy lifting, but they provide a clean external-facing interface
         # to perform those functions)
         cmd = self.formulate_adb_cmd(*args)
-        print("Executing: %s" % " ".join(cmd))
+        print(f"Executing: {' '.join(cmd)}")
         proc = await asyncio.subprocess.create_subprocess_exec(*cmd,
                                                                stdout=asyncio.subprocess.PIPE,
                                                                stderr=asyncio.subprocess.PIPE,
@@ -398,7 +397,7 @@ class Device(object):
             output = self.execute_remote_cmd("shell", "getprop", key)
             return output.rstrip()
         except Exception as e:
-            log.error("Unable to get system property %s [%s]" % (key, str(e)))
+            log.error(f"Unable to get system property {key} [{str(e)}]")
             return None
 
     def get_device_properties(self) -> Dict[str, str]:
@@ -441,7 +440,7 @@ class Device(object):
             device_locale = '_'.join([lang.strip(), country.strip()])
         return device_locale
 
-    def set_locale(self, locale: str):
+    def set_locale(self, locale: str) -> None:
         """
         Set device's locale to new locale
 
@@ -479,7 +478,7 @@ class Device(object):
                 items.append(item.replace("package:", '').strip())
         return items
 
-    def list_instrumentation(self):
+    def list_instrumentation(self) -> List[str]:
         """
         :return: list of instrumentations for a (test) app
         """
@@ -505,7 +504,7 @@ class Device(object):
         """
         # Remember Android is always unix-like paths (aka do not use os.path.join):
         base_name = os.path.basename(local_screenshot_path)
-        device_path = "%s/%s" % (self.external_storage_location, base_name)
+        device_path = f"{self.external_storage_location}/{base_name}"
         try:
             self.execute_remote_cmd("shell", "screencap", "-p", device_path, capture_stdout=False,
                                     timeout=Device.TIMEOUT_SCREEN_CAPTURE)
@@ -545,7 +544,7 @@ class Device(object):
                 return cpu, mem
         return None, None
 
-    def input(self, subject, source=None):
+    def input(self, subject, source=None) -> None:
         """
         Send event subject through given source
         :param subject: event to send
@@ -629,8 +628,6 @@ class Device(object):
         install the given bundle, blocking until complete
         :param apk_path: local path to the apk to be installed
         :param as_upgrade: install as upgrade or not
-        :param package:
-        :return:
         """
         if as_upgrade:
             cmd = ("install", "-r", apk_path)
@@ -695,6 +692,7 @@ class Device(object):
         yield self
         self._lock.release()
 
+    #todo: why this is a property instead of a function?
     @property
     def home_screen_active(self) -> bool:
         """
@@ -763,7 +761,7 @@ class Device(object):
         raise Exception(f"Max number of back button presses ({keycode_back_limit}) to get to Home screen has "
                         f"been reached. Found foreground activity {foreground_activity}. App closure failed.")
 
-    def _activity_stack_top(self, filter: Callable[[str], bool] = lambda x: True) -> List[str]:
+    def _activity_stack_top(self, filter: Callable[[str], bool] = lambda x: True) -> Optional[str]:
         """
         :return: List of the app packages in the activities stack, with the first item being at the top of the stack
         """
