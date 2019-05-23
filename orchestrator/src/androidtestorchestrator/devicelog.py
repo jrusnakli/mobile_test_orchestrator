@@ -34,7 +34,7 @@ class DeviceLog(RemoteDeviceBased):
             self._markers = OrderedDict()
             self._proc = None
             if os.path.exists(output_path):
-                raise Exception("Path %s already exists; will not overwrite" % output_path)
+                raise Exception(f"Path {output_path} already exists; will not overwrite")
             self._output_file = open(output_path, 'w')
 
         def __enter__(self) -> StopWatch:
@@ -56,9 +56,9 @@ class DeviceLog(RemoteDeviceBased):
             """
             if not self._proc or self._proc.poll() is not None:
                 raise Exception("No running process. Cannot mark output")
-            marker = marker + ".%s" % start_or_end
+            marker = f"{marker}.{start_or_end}"
             if marker in self._markers:
-                log.error("Duplicate test marker!: %s" % marker)
+                log.error(f"Duplicate test marker!: {marker}")
             # For windows compat, we use psutil over os.kill(SIGSTOP/SIGCONT)
             p = psutil.Process(self._proc.pid)
             # pause logcat process, flush file, capture current file position and resume logcat
@@ -183,7 +183,7 @@ class DeviceLog(RemoteDeviceBased):
         >>> device = Device("some_serial_id", "/path/to/adb")
         ... log = DeviceLog(device)
         ... with log.capture_to_file("./log.txt") as log_capture:
-        ...     log_capture.mark_start("some_stask")
+        ...     log_capture.mark_start("some_task")
         ...     # do_something()
         ...     log_capture.mark_end("some_task")
         ... # file closed, logcat process terminated
