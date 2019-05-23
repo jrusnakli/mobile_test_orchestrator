@@ -526,24 +526,6 @@ class Device(object):
         else:
             return (self._adb_path, *args)
 
-    def oneshot_cpu_mem(self, package_name: str) -> Union[Tuple[float, float], Tuple[None, None]]:
-        """
-        Get one-time cpu/memory usage data point
-        :param package_name: package name to get cpu/mem data for
-        :return: cpu, memory  or None, None if not obtainable
-        """
-        # TODO: Remove this in lieu of a better mechanism
-        # first get format of output, then get results for requested package
-        output = self.execute_remote_cmd("shell", "ps", "-o", "NAME,PCPU,RSS", timeout=Device.TIMEOUT_ADB_CMD)
-        for line in output.splitlines():
-            if package_name in line:
-                name, cpu, mem = line.strip().split()
-                cpu = float(cpu.strip())
-                mem = float(mem.strip())
-
-                return cpu, mem
-        return None, None
-
     def input(self, subject, source=None) -> None:
         """
         Send event subject through given source

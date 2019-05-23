@@ -150,15 +150,3 @@ class TestAndroidDevice:
 
     def test_check_network_connect(self, device: Device):
         assert device.check_network_connection("localhost", count=3) == 0
-
-    def test_oneshot_cpu_mem(self, device: Device, support_app: str):
-        app = Application.from_apk(support_app, device)
-        try:
-            app.monkey()
-            time.sleep(1)
-            cpu, mem = device.oneshot_cpu_mem(app.package_name)
-            app.stop(force=True)
-            assert cpu is not None
-            assert mem is not None
-        finally:
-            app.uninstall()
