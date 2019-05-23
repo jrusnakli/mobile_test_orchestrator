@@ -89,6 +89,10 @@ def test_butler_service():
 
 @pytest.fixture(scope='session')
 def emulator():
+    if "MODEL_DEVICE_ID" in os.environ:
+        deviceid = os.environ["MODEL_DEVICE_ID"]
+        print(f"Using user-specified device id: {deviceid}")
+        return deviceid
     port = 5554
     support.launch_emulator(port)
     return "emulator-%d" % port
