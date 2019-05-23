@@ -28,7 +28,7 @@ class DeviceStorage(RemoteDeviceBased):
         """
         return self.device.external_storage_location
 
-    def push(self, local_path: str, remote_path: str):
+    def push(self, local_path: str, remote_path: str) -> None:
         """
         Push a local file to the given location on the remote device
 
@@ -42,14 +42,14 @@ class DeviceStorage(RemoteDeviceBased):
             raise FileNotFoundError("No such file found: %s" % local_path)
         self.device.execute_remote_cmd('push', '%s' % local_path, '%s' % remote_path, capture_stdout=False)
 
-    def pull(self, remote_path: str, local_path: str):
+    def pull(self, remote_path: str, local_path: str) -> None:
         """
         Pull a file from device
 
         :param remote_path: location on phone to pull file from
         :param local_path: path to file to be created from content from device
 
-        :raises FileExistsError: if the locatl path already exists
+        :raises FileExistsError: if the locat path already exists
         :raises Exception: if command to pull file failed
         """
         if os.path.exists(local_path):
