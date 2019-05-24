@@ -11,3 +11,4 @@ __pycache__/
 resources/
 test-reports/
 orchestrator/venv/
+*.iml
