@@ -145,7 +145,7 @@ def launch_emulator(port: int):
         shell = False
     if not os.path.isfile(emulator_path):
         raise Exception("Unable to find path to 'emulator' command")
-    list_emulators_cmd = [avdmanager_path, "-list-avds"]
+    list_emulators_cmd = [emulator_path, "-list-avds"]
     completed = subprocess.run(list_emulators_cmd, timeout=10, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                encoding='utf-8', shell=shell)
     if completed.returncode != 0:
