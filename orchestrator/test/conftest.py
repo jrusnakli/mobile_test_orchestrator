@@ -14,6 +14,7 @@ from support import Config
 from androidtestorchestrator.device import Device
 
 TB_RESOURCES_DIR =os.path.abspath(os.path.join("..", "src", "androidtestorchestrator", "resources"))
+TAG_MDC_DEVICE_ID = "MDC_DEVICE_ID"
 
 # Run a bunch of stuff in the background, such as compiling depenent apks for test and launching emulators
 # This allows tests to potentially run in parallel (if not dependent on output of these tasks), parallelizes
@@ -23,19 +24,7 @@ TB_RESOURCES_DIR =os.path.abspath(os.path.join("..", "src", "androidtestorchestr
 
 class BackgroundThread(threading.Thread):
     def run(self):
-        asyncio.set_event_loop(asyncio.new_event_loop())
-        tasks = [
-            support.compile_support_app(),
-            support.compile_support_test_app(),
-            support.compile_test_butler_app(),
-        ]
-
-        async def execute_parallel():
-            await asyncio.wait(tasks)
-            print("DONE")
-        asyncio.get_event_loop().run_until_complete(
-            execute_parallel()
-        )
+        support.compile_all()
 
 background_thread = BackgroundThread()
 background_thread.start()
@@ -89,8 +78,8 @@ def test_butler_service():
 
 @pytest.fixture(scope='session')
 def emulator():
-    if "MODEL_DEVICE_ID" in os.environ:
-        deviceid = os.environ["MODEL_DEVICE_ID"]
+    if TAG_MDC_DEVICE_ID in os.environ:
+        deviceid = os.environ[TAG_MDC_DEVICE_ID]
         print(f"Using user-specified device id: {deviceid}")
         return deviceid
     port = 5554

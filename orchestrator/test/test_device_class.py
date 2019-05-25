@@ -6,17 +6,18 @@
 ##########
 import asyncio
 import os
-import time
+import support
 
 import pytest
 
 from androidtestorchestrator.device import Device
 from androidtestorchestrator.devicestorage import DeviceStorage
 from androidtestorchestrator.application import Application, ServiceApplication
+from .conftest import TAG_MDC_DEVICE_ID
 
 RESOURCE_DIR = os.path.join(os.path.dirname(__file__), "resources")
 
-if "MDC_DEVICE_ID" not in os.environ:
+if TAG_MDC_DEVICE_ID not in os.environ:
     expected_device_info = {
         "model": "Android",
         "manufacturer": "android",
@@ -27,7 +28,9 @@ else:
     # This is not the typical test flow, so we use the Device class code to get
     # some attributes to compare against in test, which is not kosher for
     # a true test flow, but this is only run under specific user-based conditions
-    device = Device(os.environ["MODEL_DEVICE_ID"])
+    android_sdk = support.find_sdk()
+    adb_path = os.path.join(android_sdk, "platform-tools", support.add_ext("adb"))
+    device = Device(os.environ[TAG_MDC_DEVICE_ID], adb_path=adb_path)
     expected_device_info = {
         "model": device.get_system_property("ro.product.model"),
         "manufacturer": device.get_system_property("ro.product.manufacturer"),
@@ -87,7 +90,7 @@ class TestAndroidDevice:
         assert DeviceStorage(device).external_storage_location.startswith("/")
 
     def test_brand(self, device: Device):
-        assert device.brand.lower() == expected_device_info["brand"]
+        assert device.brand == expected_device_info["brand"]
 
     def test_model(self, device: Device):
         assert device.model == expected_device_info["model"]

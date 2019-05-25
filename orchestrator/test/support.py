@@ -6,6 +6,7 @@ import time
 import subprocess
 import sys
 from queue import Queue
+from typing import Tuple
 
 _BASE_DIR = os.path.join(os.path.dirname(__file__), "..", "..")
 
@@ -172,64 +173,53 @@ def launch_emulator(port: int):
     launch(port, avd, adb_path, emulator_path)
 
 
-async def build_apk(dir: str, q: Queue, target: str = "assembleDebug"):
+def gradle_build(*target_and_q: Tuple[str, Queue]):
+    assert target_and_q, "empty target specified"
+    targets = [t for t, _ in target_and_q]
     try:
         apk_path = None
-        assert target, "empty target specified"
+        gradle_path = os.path.join("testbutlerservice", "gradlew")
         if sys.platform == 'win32':
-            cmd = ["gradlew", target]
+            cmd = [gradle_path+".bat"] + targets
             shell = True
         else:
-            cmd = ["./gradlew", target]
+            cmd = [os.path.join(".", gradle_path)] + targets
             shell = False
-        print(f"Launching: {cmd}")
-        process = subprocess.Popen(cmd,
-                                   cwd=dir,
-                                   env=os.environ.copy(),
-                                   stdout=sys.stdout,
-                                   stderr=sys.stderr,
-                                   shell=shell)
-        done = False
-        while not done:
-            await asyncio.sleep(1)
-            if process.poll() is None:
-                continue
-            if process.returncode != 0:
-                raise Exception("Failed to build apk:\n%s" %  cmd)
-            if target == "assembleAndroidTest":
+        print(f"Launching: {cmd} from ../../{os.getcwd()}")
+        root = os.path.join("..", "..")
+        process = subprocess.run(cmd,
+                                 cwd=root,
+                                 env=os.environ.copy(),
+                                 stdout=sys.stdout,
+                                 stderr=sys.stderr,
+                                 shell=shell)
+        if process.returncode != 0:
+            raise Exception(f"Failed to build apk: {cmd}")
+        for target, q in target_and_q:
+            if target.endswith("assembleAndroidTest"):
                 suffix = "androidTest"
                 suffix2 = f"-{suffix}"
             else:
                 suffix = "."
                 suffix2 = ""
-            apk_path = os.path.join(dir, "app", "build", "outputs", "apk", suffix,
+            path_components = target.split(':')
+            apk_path = os.path.join("..", "..", *path_components[:-1], "build", "outputs", "apk", suffix,
                                     "debug", f"app-debug{suffix2}.apk")
             if not os.path.exists(apk_path):
                 raise Exception("Failed to find built apk %s" % apk_path)
             q.put(apk_path)
-            done = True
     except Exception as e:
-        q.put(None)
+        for _, q in target_and_q:
+            q.put(None)
         raise
     else:
         print(f"Built {apk_path}")
 
 
-async def compile_support_test_app():
-    """
-    Compile a test app and make the resulting apk available to all awaiting test Processes
-    :param count: number of test processes needing a support test app
-    """
-    await build_apk(TEST_SUPPORT_APP_DIR, support_test_app_q, "assembleAndroidTest")
-
-
-async def compile_support_app():
-    await build_apk(TEST_SUPPORT_APP_DIR, support_app_q)
-
-
-async def compile_test_butler_app():
-    await build_apk(BUTLER_SERVICE_SRC_DIR, test_butler_app_q)
-
+def compile_all():
+    gradle_build(("testsupportapps:TestButlerTestApp:app:assembleAndroidTest", support_test_app_q),
+                 ("testsupportapps:TestButlerTestApp:app:assembleDebug", support_app_q),
+                 ("testbutlerservice:app:assembleDebug", test_butler_app_q),
+                )
 
 find_sdk()
-

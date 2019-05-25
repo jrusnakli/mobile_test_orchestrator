@@ -28,7 +28,7 @@ class TestServiceApplication:
 
     def test_start(self, device: Device):
         with test_butler_apk() as test_butler_path:
-            app = ServiceApplication.from_apk(test_butler_path, device)
+            app = ServiceApplication.from_apk(str(test_butler_path), device)
 
         try:
 
