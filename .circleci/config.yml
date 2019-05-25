@@ -27,9 +27,9 @@ jobs:
       - run:
           name: Build support apps (debug)
           command: |
-            cd testsupportapps/TestButlerTestApp && ./gradlew androidDependencies
-            ./gradlew assembleDebug
-            ./gradlew assembleAndroidTest
+            ./testbutlerservice/gradlew androidDependencies
+            ./testbutlerservice/gradlew testsupportapps:TestButlerTestApp:app:assembleDebug
+            ./testbutlerservice/gradlew testsupportapps:TestButlerTestApp:app:assembleAndroidTest
       - run:
           name: Build test butler (debug)
           command: |
