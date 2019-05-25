@@ -16,8 +16,8 @@ class TestDeviceLog:
         log = DeviceLog(device)
         log.set_logcat_buffer_size("20M")
         assert log.logcat_buffer_size == '20Mb'
-        log.set_logcat_buffer_size("10M")
-        assert log.logcat_buffer_size == '10Mb'
+        log.set_logcat_buffer_size(DeviceLog.DEFAULT_LOGCAT_BUFFER_SIZE)
+        assert log.logcat_buffer_size == '1Mb'
 
     def test_logcat_and_clear(self, device: Device, test_butler_service):
         service = ServiceApplication.from_apk(test_butler_service, device)
