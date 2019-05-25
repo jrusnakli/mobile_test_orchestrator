@@ -19,9 +19,9 @@ RESOURCE_DIR = os.path.join(os.path.dirname(__file__), "resources")
 
 if TAG_MDC_DEVICE_ID not in os.environ:
     expected_device_info = {
-        "model": "Android",
-        "manufacturer": "android",
-        "brand": "android",
+        "model": "Android SDK built for x86_64",
+        "manufacturer": "unknown",
+        "brand": "Android",
     }
 else:
     # for debugging against local attached real device or user invoked emulator
