@@ -54,18 +54,20 @@ class DeviceLog(RemoteDeviceBased):
 
             :returns: file position captured for the marker (will also be captured internal to this object)
             """
-            if not self._proc or self._proc.poll() is not None:
-                raise Exception("No running process. Cannot mark output")
             marker = f"{marker}.{start_or_end}"
             if marker in self._markers:
                 log.error(f"Duplicate test marker!: {marker}")
-            # For windows compat, we use psutil over os.kill(SIGSTOP/SIGCONT)
-            p = psutil.Process(self._proc.pid)
-            # pause logcat process, flush file, capture current file position and resume logcat
-            p.suspend()
-            self._output_file.flush()
-            self._markers[marker] = self._output_file.tell()
-            p.resume()
+            proc_active = self._proc and self._proc.poll() is None
+            if proc_active:
+                # For windows compat, we use psutil over os.kill(SIGSTOP/SIGCONT)
+                p = psutil.Process(self._proc.pid)
+                # pause logcat process, flush file, capture current file position and resume logcat
+                p.suspend()
+                self._output_file.flush()
+                self._markers[marker] = self._output_file.tell()
+                p.resume()
+            else:
+                raise Exception("process is not active")
             return self._markers[marker]
 
         def mark_start(self, name: str) -> None:
@@ -152,8 +154,31 @@ class DeviceLog(RemoteDeviceBased):
                         raise Exception("Internal error: marker is neither a start or end marker: " + marker)
                     self._markers[marker] = new_pos
 
+    DEFAULT_LOGCAT_BUFFER_SIZE = "1M"
+
     def __init__(self, device: Device):
         super().__init__(device)
+        device.execute_remote_cmd("logcat", "-G", self.DEFAULT_LOGCAT_BUFFER_SIZE)
+
+    @property
+    def logcat_buffer_size(self, channel='main'):
+        """
+        @:param channel: which channel's size ('main', 'system', or 'crash')
+
+        :return: the logcat buffer size for given channel, or None if not defined
+        """
+        output = self.device.execute_remote_cmd("logcat", "-g", capture_stdout=True)
+        for line in output.splitlines():
+            if line.startswith(channel):
+                "format is <channel>: ring buffer is <size>"
+                return line.split()[4]
+        return None
+
+    def set_logcat_buffer_size(self, size_spec: str):
+        """
+        :param size_spec: string spec (per adb logcat --help) for size of buffer (e.g. 10M = 10 megabytes)
+        """
+        self.device.execute_remote_cmd("logcat", "-G", size_spec)
 
     def clear(self):
         """

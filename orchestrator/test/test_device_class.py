@@ -105,7 +105,7 @@ class TestAndroidDevice:
         [ro.product.vendor.model]: [Android SDK built for x86_64]
         [ro.product.vendor.name]: [sdk_phone_x86_64]
         """
-        assert device.manufacturer.lower() == expected_device_info["manufacturer"]
+        assert device.manufacturer == expected_device_info["manufacturer"]
 
     def test_get_device_datetime(self, device: Device):
         import time
