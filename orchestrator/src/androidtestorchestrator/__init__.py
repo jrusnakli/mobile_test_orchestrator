@@ -1,32 +1,31 @@
 import asyncio
 import logging
 import os
-import pkg_resources
 import sys
 import traceback
-
+from contextlib import nullcontext
+from dataclasses import dataclass, field
+from importlib.resources import is_resource, path
 from typing import (Dict,
                     Iterator,
                     List,
                     Tuple,
                     Union,
-                    Coroutine)
+                    Coroutine,
+                    ContextManager)
 
-from dataclasses import dataclass, field
-
-from androidtestorchestrator.devicestorage import DeviceStorage
+from androidtestorchestrator.resources import apks
 from .application import (TestApplication,
                           ServiceApplication,
-                          Application,
-                          )
+                          Application)
 from .device import Device
 from .devicelog import DeviceLog, LogcatTagDemuxer
+from .devicestorage import DeviceStorage
 from .parsing import (InstrumentationOutputParser,
                       LineParser,
                       TestButlerCommandParser)
 from .reporting import TestListener
 from .timing import StopWatch, Timer
-
 
 log = logging.getLogger(__name__)
 
@@ -36,10 +35,9 @@ if sys.platform == 'win32':
     asyncio.set_event_loop(loop)
 
 
-def test_butler_apk():
-    butler_apk =pkg_resources.resource_filename(__name__, os.path.join("resources", "apks", "TestButlerLive.apk"))
-    assert os.path.exists(butler_apk), "Invalid distribution! %s does not exist!!" % butler_apk
-    return butler_apk
+def test_butler_apk() -> ContextManager[str]:
+    assert is_resource(apks, "TestButlerLive.apk"), "Invalid distribution! TestButlerLive.apk does not exist!!"
+    return path(apks, "TestButlerLive.apk")
 
 
 def trace(e: Exception):
@@ -231,7 +229,7 @@ class AndroidTestOrchestrator:
         self._background_tasks = []
         self._instrumentation_timeout = max_test_suite_time
         self._test_timeout = max_test_time
-        self._test_butler_apk_path = test_butler_apk_path or test_butler_apk()
+        self._test_butler_apk_context = nullcontext(test_butler_apk_path) or test_butler_apk()
         self._timer = None
         self._test_butler_service = None
         self._tag_monitors: Dict[str, Tuple[str, LineParser]] = {}
@@ -389,7 +387,8 @@ class AndroidTestOrchestrator:
         device_restoration = self._DeviceRestoration(test_application.device)
         device_storage = DeviceStorage(test_application.device)
 
-        self._test_butler_service = ServiceApplication.from_apk(self._test_butler_apk_path, test_application.device)
+        with self._test_butler_apk_context as test_butler_apk_path:
+            self._test_butler_service = ServiceApplication.from_apk(test_butler_apk_path, test_application.device)
 
         # add testbutler tag for processing
         if self._test_butler_service:
