@@ -1,21 +1,41 @@
 # flake8: noqa: F401
 ##########
-# Tests the lower level Devivce class against a running emulator.  These tests may
+# Tests the lower level Device class against a running emulator.  These tests may
 # be better server in mdl-integration-server directory, but we cannot start up an emulator
 # from there
 ##########
 import asyncio
 import os
-import time
+import support
 
 import pytest
 
 from androidtestorchestrator.device import Device
 from androidtestorchestrator.devicestorage import DeviceStorage
 from androidtestorchestrator.application import Application, ServiceApplication
+from .conftest import TAG_MDC_DEVICE_ID
 
 RESOURCE_DIR = os.path.join(os.path.dirname(__file__), "resources")
 
+if TAG_MDC_DEVICE_ID not in os.environ:
+    expected_device_info = {
+        "model": "Android SDK built for x86_64",
+        "manufacturer": "unknown",
+        "brand": "Android",
+    }
+else:
+    # for debugging against local attached real device or user invoked emulator
+    # This is not the typical test flow, so we use the Device class code to get
+    # some attributes to compare against in test, which is not kosher for
+    # a true test flow, but this is only run under specific user-based conditions
+    android_sdk = support.find_sdk()
+    adb_path = os.path.join(android_sdk, "platform-tools", support.add_ext("adb"))
+    device = Device(os.environ[TAG_MDC_DEVICE_ID], adb_path=adb_path)
+    expected_device_info = {
+        "model": device.get_system_property("ro.product.model"),
+        "manufacturer": device.get_system_property("ro.product.manufacturer"),
+        "brand": device.get_system_property("ro.product.brand"),
+    }
 
 # noinspection PyShadowingNames
 class TestAndroidDevice:
@@ -70,10 +90,10 @@ class TestAndroidDevice:
         assert DeviceStorage(device).external_storage_location.startswith("/")
 
     def test_brand(self, device: Device):
-        assert "android" in device.brand.lower() or "google" in device.brand.lower()
+        assert device.brand == expected_device_info["brand"]
 
     def test_model(self, device: Device):
-        assert device.model == "Android SDK built for x86_64"
+        assert device.model == expected_device_info["model"]
 
     def test_manufacturer(self, device: Device):
         # the emulator used in test has no manufacturer
@@ -85,7 +105,7 @@ class TestAndroidDevice:
         [ro.product.vendor.model]: [Android SDK built for x86_64]
         [ro.product.vendor.name]: [sdk_phone_x86_64]
         """
-        assert device.manufacturer.lower() == "unknown"
+        assert device.manufacturer == expected_device_info["manufacturer"]
 
     def test_get_device_datetime(self, device: Device):
         import time
