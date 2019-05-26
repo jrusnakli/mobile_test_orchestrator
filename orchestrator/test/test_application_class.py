@@ -81,7 +81,7 @@ class TestApplication:
             app.start(".MainActivity")
             time.sleep(3)  # Have to give time to "come up" :-(
             assert self.pidof(app), "No pid found for app; app not started as expected"
-            app.stop()
+            app.stop(force=True)
             if self.pidof(app):
                 time.sleep(3)  # allow slow emulators to catch up
             assert not self.pidof(app)
@@ -94,7 +94,7 @@ class TestApplication:
             app.monkey()
             time.sleep(3)
             assert self.pidof(app), "Failed to start app"
-            app.stop()
+            app.stop(force=True)
             assert not self.pidof(app), "Failed to stop app"
         finally:
             app.uninstall()
