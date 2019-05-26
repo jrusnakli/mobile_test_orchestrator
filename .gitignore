@@ -12,3 +12,4 @@ __pycache__/
 test-reports/
 orchestrator/venv/
 *.iml
+local.properties

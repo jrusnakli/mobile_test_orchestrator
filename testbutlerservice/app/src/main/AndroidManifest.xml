@@ -2,9 +2,11 @@
     package="com.linkedin.android.testbutler"
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
+    <uses-sdk android:minSdkVersion="25"
+          android:targetSdkVersion="28"
+          android:maxSdkVersion="28" />
 
     <!-- Normal permissions -->
-
     <uses-permission android:name='android.permission.WAKE_LOCK'/>
     <uses-permission android:name='android.permission.BIND_JOB_SERVICE'/>
     <application

@@ -177,8 +177,8 @@ def gradle_build(*target_and_q: Tuple[str, Queue]):
     assert target_and_q, "empty target specified"
     targets = [t for t, _ in target_and_q]
     try:
-        apk_path = None
         gradle_path = os.path.join("testbutlerservice", "gradlew")
+        root = os.path.join("..", "..")
         if sys.platform == 'win32':
             cmd = [gradle_path+".bat"] + targets
             shell = True
@@ -186,13 +186,13 @@ def gradle_build(*target_and_q: Tuple[str, Queue]):
             cmd = [os.path.join(".", gradle_path)] + targets
             shell = False
         print(f"Launching: {cmd} from ../../{os.getcwd()}")
-        root = os.path.join("..", "..")
-        process = subprocess.run(cmd,
+        process = subprocess.Popen(cmd,
                                  cwd=root,
                                  env=os.environ.copy(),
                                  stdout=sys.stdout,
                                  stderr=sys.stderr,
                                  shell=shell)
+        process.wait()
         if process.returncode != 0:
             raise Exception(f"Failed to build apk: {cmd}")
         for target, q in target_and_q:
@@ -208,12 +208,11 @@ def gradle_build(*target_and_q: Tuple[str, Queue]):
             if not os.path.exists(apk_path):
                 raise Exception("Failed to find built apk %s" % apk_path)
             q.put(apk_path)
+            print(f"Built {apk_path}")
     except Exception as e:
         for _, q in target_and_q:
             q.put(None)
         raise
-    else:
-        print(f"Built {apk_path}")
 
 
 def compile_all():
