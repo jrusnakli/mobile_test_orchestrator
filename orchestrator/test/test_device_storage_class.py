@@ -39,9 +39,11 @@ class TestDeviceStorage:
 
     def test_pull(self, device: Device, tmpdir):
         storage = DeviceStorage(device)
-        local = os.path.join(tmpdir, "somefile")
-        storage.pull(remote_path="/usr/bin/bash", local_path=local)
-        assert os.path.exists(local)
+        local_path = os.path.join(tmpdir, "somefile")
+        remote_path = "/".join([storage.external_storage_location, "touchedfile"])
+        device.execute_remote_cmd("shell", "touch", remote_path)
+        storage.pull(remote_path=remote_path, local_path=local_path)
+        assert os.path.exists(local_path)
 
     def test_pull_invalid_remote_path(self, device: Device, tmpdir):
         storage = DeviceStorage(device)
