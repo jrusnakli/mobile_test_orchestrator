@@ -63,10 +63,10 @@ class TestApplication:
         # even if pidof fails due to it not being found, return code is 0, no exception is therefore
         # raised and worse, error is reported on stdout
         # Anpther inconsitency with our emulators: pidof not on the emulator?  And return code shows success :-*
-        if app.device.api_level > 26:
+        if app.device.api_level >= 26:
             try:
                 #Nomrally get an error code and an exception if package is not running:
-                output = app.device.execute_remote_cmd("shell", "pidof", app.package_name, fail_on_error_code=lambda x: x < 0)
+                output = app.device.execute_remote_cmd("shell", "pidof", "-s", app.package_name, fail_on_error_code=lambda x: x < 0)
                 # however, LinkedIn-specific(?) or older emulators don't have this, and return no error code
                 # so check output
                 if not output:
