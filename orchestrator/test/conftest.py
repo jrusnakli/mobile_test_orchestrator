@@ -7,6 +7,8 @@ import shutil
 
 import sys
 
+from apk_bitminer.parsing import AXMLParser
+
 sys.path += [os.path.dirname(__file__), os.path.join(os.path.dirname(__file__), "..", "src")]
 
 import support

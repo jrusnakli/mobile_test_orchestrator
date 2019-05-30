@@ -6,6 +6,10 @@
 ##########
 import asyncio
 import os
+from contextlib import suppress
+
+from apk_bitminer.parsing import AXMLParser
+
 import support
 
 import pytest
@@ -14,6 +18,7 @@ from androidtestorchestrator.device import Device
 from androidtestorchestrator.devicestorage import DeviceStorage
 from androidtestorchestrator.application import Application, ServiceApplication
 from .conftest import TAG_MDC_DEVICE_ID
+from support import uninstall_apk
 
 RESOURCE_DIR = os.path.join(os.path.dirname(__file__), "resources")
 
@@ -56,12 +61,26 @@ class TestAndroidDevice:
         assert device.get_device_setting("system", "dim_screen") == new
 
     def test_get_invalid_decvice_setting(self, device: Device):
-        assert device.get_device_setting("invalid", "nosuchkey") is None
+        try:
+            if int(device.get_system_property("ro.product.first_api_level")) < 26:
+                assert device.get_device_setting("invalid", "nosuchkey") is ''
+            else:
+                assert device.get_device_setting("invalid", "nosuchkey") is None
+        except:
+            assert device.get_device_setting("invalid", "nosuchkey") is None
 
     def test_set_invalid_system_property(self, device: Device):
-        with pytest.raises(Exception) as exc_info:
+        try:
+            api_is_old =int(device.get_system_property("ro.build.version.sdk")) < 26
+        except:
+            api_is_old = False
+        if api_is_old:
             device.set_system_property("nosuchkey", "value")
-        assert "setprop: failed to set property 'nosuchkey' to 'value'" in str(exc_info.value)
+            assert device.get_system_property("nosuchkey") is ""
+        else:
+            with pytest.raises(Exception) as exc_info:
+                device.set_system_property("nosuchkey", "value")
+            assert "setprop: failed to set property 'nosuchkey' to 'value'" in str(exc_info.value)
 
     def test_get_set_system_property(self, device: Device):
         device.set_system_property("debug.mock2", "5555")
@@ -69,6 +88,7 @@ class TestAndroidDevice:
         device.set_system_property("debug.mock2", "\"\"\"\"")
 
     def test_install_uninstall_app(self, device: Device, support_app: str):
+        uninstall_apk(support_app, device)
         app = Application.from_apk(support_app, device)
         app.uninstall()
         assert app.package_name not in device.list_installed_packages()
@@ -79,6 +99,7 @@ class TestAndroidDevice:
         assert app.package_name not in device.list_installed_packages()
 
     def test_list_packages(self, device: Device, support_app: str):
+        uninstall_apk(support_app, device)
         app = Application.from_apk(support_app, device)
         try:
             pkgs = device.list_installed_packages()
@@ -121,6 +142,7 @@ class TestAndroidDevice:
 
     @pytest.mark.skipif(True, reason="Test butler does not currently support system setting of locale")
     def test_get_set_locale(self, device: Device, local_changer_apk):  # noqa
+        uninstall_apk(local_changer_apk, device)
         app = Application.from_apk(local_changer_apk, device)
         try:
             app.grant_permissions([" android.permission.CHANGE_CONFIGURATION"])
@@ -131,8 +153,9 @@ class TestAndroidDevice:
         finally:
             app.uninstall()
 
-    def test_grant_permissions(self, device: Device, support_app: str):
-        app = Application.from_apk(support_app, device)
+    def test_grant_permissions(self, device: Device, support_test_app: str):
+        uninstall_apk(support_test_app, device)
+        app = Application.from_apk(support_test_app, device)
         try:
             app.grant_permissions(["android.permission.WRITE_EXTERNAL_STORAGE"])
         finally:
@@ -142,6 +165,8 @@ class TestAndroidDevice:
                             device: Device,
                             test_butler_service: str,
                             support_app: str):  # noqa
+        uninstall_apk(support_app, device)
+        uninstall_apk(test_butler_service, device)
         app = Application.from_apk(support_app, device)
         butler_app = ServiceApplication.from_apk(test_butler_service, device)
 

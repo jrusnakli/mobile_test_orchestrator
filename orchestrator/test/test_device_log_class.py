@@ -10,6 +10,9 @@ from androidtestorchestrator.devicelog import DeviceLog
 
 
 # noinspection PyShadowingNames
+from support import uninstall_apk
+
+
 class TestDeviceLog:
 
     def test_set_get_logcat_buffer_size(self, device: Device):
@@ -20,6 +23,7 @@ class TestDeviceLog:
         assert log.logcat_buffer_size == '1Mb'
 
     def test_logcat_and_clear(self, device: Device, test_butler_service):
+        uninstall_apk(test_butler_service, device)
         service = ServiceApplication.from_apk(test_butler_service, device)
         try:
             output = []

@@ -1,6 +1,7 @@
 import logging
 import subprocess
 import time
+from contextlib import suppress
 
 from apk_bitminer.parsing import AXMLParser
 from typing import List, TypeVar, Type, Optional, AsyncContextManager, Union
@@ -243,7 +244,7 @@ class ServiceApplication(Application):
         options = [f"\"{item}\"" for item in options]
         if intent:
             options = ["-a", intent] + options
-        if foreground:
+        if foreground and self.device.api_level >= 26:
             self.device.execute_remote_cmd("shell", "am", "start-foreground-service", "-n", activity, *options, capture_stdout=False)
         else:
             self.device.execute_remote_cmd("shell", "am", "startservice", "-n", activity, *options, capture_stdout=False)

@@ -8,9 +8,12 @@ import logging
 import pytest
 
 from collections import deque
+
+from apk_bitminer.parsing import AXMLParser
+
 from androidtestorchestrator.device import Device
 from androidtestorchestrator.devicelog import DeviceLog
-from androidtestorchestrator.application import ServiceApplication
+from androidtestorchestrator.application import ServiceApplication, Application
 from androidtestorchestrator.parsing import TestButlerCommandParser
 from typing import Callable
 
@@ -25,6 +28,7 @@ def install_butler(device: Device, test_butler_service: str):
     fixture to install test butler service, prepare logcat
     :return: logcat process and iterator over stdout
     """
+    Application(AXMLParser.parse(test_butler_service).package_name, device).uninstall()
     service = ServiceApplication.from_apk(test_butler_service, device)
     DeviceLog(device).clear()
 

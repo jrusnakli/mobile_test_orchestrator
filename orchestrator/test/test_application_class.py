@@ -13,11 +13,13 @@ import pytest
 from androidtestorchestrator import Device
 from androidtestorchestrator.application import Application
 
+from support import uninstall_apk
 
 # noinspection PyShadowingNames
 class TestApplication:
 
     def test_install_uninstall(self, device: Device, support_app: str):
+        uninstall_apk(support_app, device)
         app = Application.from_apk(support_app, device)
         try:
             assert app.package_name == "com.linkedin.mdctest"
@@ -31,6 +33,7 @@ class TestApplication:
             assert app.package_name not in device.list_installed_packages()
 
     def test_grant_permissions(self, device: Device, support_test_app: str):
+        uninstall_apk(support_test_app, device)
         app = Application.from_apk(support_test_app, device)
         assert app.package_name.endswith(".test")
         try:
@@ -60,22 +63,32 @@ class TestApplication:
         # even if pidof fails due to it not being found, return code is 0, no exception is therefore
         # raised and worse, error is reported on stdout
         # Anpther inconsitency with our emulators: pidof not on the emulator?  And return code shows success :-*
-
-        try:
-            #Nomrally get an error code and an exception if package is not running:
-            output = app.device.execute_remote_cmd("shell", "pidof", app.package_name)
-            # however, LinkedIn-specific(?) or older emulators don't have this, and return no error code
-            # so check output
-            if not output:
+        if app.device.api_level > 26:
+            try:
+                #Nomrally get an error code and an exception if package is not running:
+                output = app.device.execute_remote_cmd("shell", "pidof", app.package_name, fail_on_error_code=lambda x: x < 0)
+                # however, LinkedIn-specific(?) or older emulators don't have this, and return no error code
+                # so check output
+                if not output:
+                    return False
+                if "not found" in output:
+                    output = app.device.execute_remote_cmd("shell", "ps")
+                    return app.package_name in output
+                # on some device 1 is an indication of not present (some with return code of 0!), so if pid is one return false
+                if output == "1":
+                    return False
+                return True
+            except Exception:
                 return False
-            if "not found" in output:
-                output = app.device.execute_remote_cmd("shell", "ps")
+        else:
+            try:
+                output = app.device.execute_remote_cmd("shell", "ps" )
                 return app.package_name in output
-            return True
-        except Exception:
-            return False
+            except:
+                return False
 
     def test_start_stop(self, device: Device, support_app: str):  # noqa
+        uninstall_apk(support_app, device)
         app = Application.from_apk(support_app, device)
         try:
             app.start(".MainActivity")
@@ -89,6 +102,7 @@ class TestApplication:
             app.uninstall()
 
     def test_monkey(self, device, support_app):  # noqa
+        uninstall_apk(support_app, device)
         app = asyncio.get_event_loop().run_until_complete(Application.from_apk_async(support_app, device))
         try:
             app.monkey()
@@ -100,6 +114,7 @@ class TestApplication:
             app.uninstall()
 
     def test_clear_data(self, device, support_app):  # noqa
+        uninstall_apk(support_app, device)
         app = Application.from_apk(support_app, device)
         try:
             app.clear_data()  # should not raise exception
