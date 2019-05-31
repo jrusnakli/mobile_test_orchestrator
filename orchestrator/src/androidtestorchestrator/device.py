@@ -772,7 +772,7 @@ class Device(object):
         """
         equivalent to hitting home button to go to home screen
         """
-        self.input("keyevent", "KEYCODE_HOME")
+        self.input("KEYCODE_HOME")
 
     def _activity_stack_top(self, filter: Callable[[str], bool] = lambda x: True) -> Optional[str]:
         """
