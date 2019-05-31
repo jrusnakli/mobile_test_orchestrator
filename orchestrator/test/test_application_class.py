@@ -97,7 +97,8 @@ class TestApplication:
             app.stop(force=True)
             if self.pidof(app):
                 time.sleep(3)  # allow slow emulators to catch up
-            assert not self.pidof(app)
+            pidoutput = self.pidof(app)
+            assert not pidoutput, f"pidof indicated app is not stopped as expected; output of pidof is: {pidoutput}"
         finally:
             app.uninstall()
 
