@@ -97,8 +97,8 @@ class TestApplication:
             app.stop(force=True)
             if self.pidof(app):
                 time.sleep(3)  # allow slow emulators to catch up
-            pidoutput = self.pidof(app)
-            assert not pidoutput, f"pidof indicated app is not stopped as expected; output of pidof is: {pidoutput}"
+            pidoutput = app.device.execute_remote_cmd("shell", "pidof", "-s", app.package_name, fail_on_error_code=lambda x: x < 0)
+            assert not self.pidof(app), f"pidof indicated app is not stopped as expected; output of pidof is: {pidoutput}"
         finally:
             app.uninstall()
 
