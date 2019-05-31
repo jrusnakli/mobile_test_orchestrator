@@ -191,6 +191,7 @@ class Application(RemoteDeviceBased):
         """
         try:
             if force:
+                self.device.go_home()
                 self.device.execute_remote_cmd("shell", "am", "force-stop", self.package_name, capture_stdout=False)
             else:
                 self.device.execute_remote_cmd("shell", "am", "stop", self.package_name, capture_stdout=False)

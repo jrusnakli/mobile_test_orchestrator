@@ -768,6 +768,12 @@ class Device(object):
         raise Exception(f"Max number of back button presses ({keycode_back_limit}) to get to Home screen has "
                         f"been reached. Found foreground activity {foreground_activity}. App closure failed.")
 
+    def go_home(self):
+        """
+        equivalent to hitting home button to go to home screen
+        """
+        self.input("keyevent", "KEYCODE_HOME")
+
     def _activity_stack_top(self, filter: Callable[[str], bool] = lambda x: True) -> Optional[str]:
         """
         :return: List of the app packages in the activities stack, with the first item being at the top of the stack
