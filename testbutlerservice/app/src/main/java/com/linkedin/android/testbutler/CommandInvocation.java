@@ -5,8 +5,6 @@ import android.util.Log;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
 class CommandInvocation {
@@ -16,7 +14,6 @@ class CommandInvocation {
 
     private static final Map<Integer, CompletableFuture<CommandResponse> > cmdResponses= new ConcurrentHashMap();
     private static int counter = 0;
-    private static final ExecutorService executor = Executors.newSingleThreadExecutor();
 
     /**
      * Tell server an error occurred (signalling server should handle this error)

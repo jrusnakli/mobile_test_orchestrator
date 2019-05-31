@@ -1,12 +1,16 @@
-import asyncio
 import os
 import time
 # TODO: CAUTION: WE CANNOT USE asyncio.subprocess as we executein in a thread other than made and on unix-like systems, there
 # is bug in Python 3.7.
 import subprocess
 import sys
+from contextlib import suppress
 from queue import Queue
 from typing import Tuple
+
+from apk_bitminer.parsing import AXMLParser
+
+from androidtestorchestrator import Application
 
 _BASE_DIR = os.path.join(os.path.dirname(__file__), "..", "..")
 
@@ -221,5 +225,18 @@ def compile_all():
                  ("testsupportapps:TestButlerTestApp:app:assembleDebug", support_app_q),
                  ("testbutlerservice:app:assembleDebug", test_butler_app_q),
                 )
+
+
+def uninstall_apk(apk, device):
+    """
+    A little of a misnomer, as we don't actually uninstall an apk, however we can get the name of the
+    package from the apk and ensure the app is not installed on the device (ensure "cleanliness" for testing)
+    :param apk: apk to get package name from
+    :param device: device to uninstall package from
+    """
+    with suppress(Exception):
+        Application(AXMLParser.parse(apk).package_name, device).uninstall()
+
+
 
 find_sdk()

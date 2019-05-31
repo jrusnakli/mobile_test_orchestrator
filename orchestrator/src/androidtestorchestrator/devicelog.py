@@ -154,7 +154,7 @@ class DeviceLog(RemoteDeviceBased):
                         raise Exception("Internal error: marker is neither a start or end marker: " + marker)
                     self._markers[marker] = new_pos
 
-    DEFAULT_LOGCAT_BUFFER_SIZE = "1M"
+    DEFAULT_LOGCAT_BUFFER_SIZE = "5M"
 
     def __init__(self, device: Device):
         super().__init__(device)

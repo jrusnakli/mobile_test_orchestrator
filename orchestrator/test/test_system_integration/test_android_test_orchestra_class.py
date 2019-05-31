@@ -6,6 +6,8 @@ from androidtestorchestrator import AndroidTestOrchestrator, TestApplication, Se
 from androidtestorchestrator.device import Device
 from androidtestorchestrator.parsing import LineParser
 from androidtestorchestrator.reporting import TestListener
+from support import uninstall_apk
+
 
 # noinspection PyShadowingNames
 @pytest.fixture()
@@ -14,6 +16,9 @@ def android_test_app(device,
                      support_app: str,
                      support_test_app: str,
                      test_butler_service: str):
+    uninstall_apk(support_app, device)
+    uninstall_apk(support_test_app, device)
+    uninstall_apk(test_butler_service, device)
     app_for_test = TestApplication.from_apk(support_test_app, device)
     support_app = Application.from_apk(support_app, device)
     butler_service = ServiceApplication.from_apk(test_butler_service, device)
@@ -74,7 +79,8 @@ class TestAndroidTestOrchestrator(object):
         test_suite_count = 0
         expected_test_suite = None
         current_test_suite = None
-
+        uninstall_apk(android_test_app, device)
+        uninstall_apk(test_butler_service, device)
         class TestExpectations(TestListener):
 
             def __init__(self):
@@ -154,6 +160,9 @@ class TestAndroidTestOrchestrator(object):
                                  android_test_app : TestApplication,
                                  test_butler_service: str,
                                  tmpdir: str):
+        uninstall_apk(android_test_app, device)
+        uninstall_apk(test_butler_service, device)
+
         def test_generator():
             yield (TestSuite(name='test_suite1',
                              arguments=["-e", "class", "com.linkedin.mdctest.TestButlerTest#testTestButlerRotation"]))

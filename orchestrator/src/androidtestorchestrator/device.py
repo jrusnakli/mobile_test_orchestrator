@@ -137,6 +137,22 @@ class Device(object):
         self._ext_storage = Device.override_ext_storage.get(self.model)
         self._device_server_datetime_offset = None
         self._lock = asyncio.Semaphore()
+        self._api_level = None
+
+    @property
+    def api_level(self) -> str:
+        """
+        :return: api level of device
+        """
+        if self._api_level:
+            return self._api_level
+        try:
+            self._api_level = int(self.get_system_property("ro.build.version.sdk"))
+            #otherwise, assume default setting of 28 :-(
+        except:
+            log.warning("Unable to determine api level, assuming 28")
+            self._api_level = 28
+        return self._api_level
 
     @property
     def device_server_datetime_offset(self):
@@ -216,8 +232,13 @@ class Device(object):
             self._name = self.manufacturer + " " + self.model
         return self._name
 
-    def execute_remote_cmd(self, *args: str, timeout=None, capture_stdout: bool = True,
-                           fail_on_presence_of_stderr=False) -> Optional[str]:
+    def execute_remote_cmd(self, *args: str,
+                           timeout=None,
+                           capture_stdout: bool = True,
+                           stdout_redirect=subprocess.DEVNULL,
+                           fail_on_presence_of_stderr=False,
+                           fail_on_error_code=lambda x: x != 0) -> Optional[str]:
+        # TODO: remove capture_stdout argument
         """
         Execute a command on this device (via adb)
 
@@ -226,6 +247,8 @@ class Device(object):
         :param capture_stdout: whether to capture and return stdout output (otherwise return None)
         :param fail_on_presence_of_stderr: Some commands return code 0 and still fail, so must check stderr
            (NOTE however that some commands like monkey return 0 and use stderr as though it was stdout :-( )
+        :param fail_on_error_code: optional function that takes an error code and returns true if it represents an error,
+            False otherwise
 
         :return: None if no stdout output requested, otherwise a string containing the stdout output of the command
 
@@ -234,9 +257,9 @@ class Device(object):
         timeout = timeout or Device.TIMEOUT_ADB_CMD
         completed = subprocess.run(self.formulate_adb_cmd(*args), timeout=timeout,
                                    stderr=subprocess.PIPE,
-                                   stdout=subprocess.PIPE if capture_stdout else subprocess.DEVNULL,
+                                   stdout=subprocess.PIPE if capture_stdout and stdout_redirect==subprocess.DEVNULL else stdout_redirect,
                                    encoding='utf-8', errors='ignore')
-        if completed.returncode != 0 or (fail_on_presence_of_stderr and completed.stderr):
+        if fail_on_error_code(completed.returncode) or (fail_on_presence_of_stderr and completed.stderr):
             raise self.CommandExecutionFailureException(completed.returncode,
                                                         f"Failed to execute '{' '.join(args)}' on device {self.device_id} [{completed.stderr}]")
         if capture_stdout:
@@ -370,6 +393,8 @@ class Device(object):
         """
         try:
             output = self.execute_remote_cmd("shell", "settings", "get", namespace, key)
+            if output.startswith("Invalid namespace"):  # some devices output a message with no error return code
+                return None
             return output.rstrip()
         except Exception as e:
             log.error("Could not get setting for %s:%s [%s]" % (namespace, key, str(e)))
@@ -505,13 +530,13 @@ class Device(object):
         # Remember Android is always unix-like paths (aka do not use os.path.join):
         base_name = os.path.basename(local_screenshot_path)
         device_path = f"{self.external_storage_location}/{base_name}"
-        try:
+        with open(local_screenshot_path, 'w+b') as f:
+            # according to https://blog.shvetsov.com/2013/02/grab-android-screenshot-to-computer-via.html, need
+            # to use sed to remove unwanted carriage return/linefeeds
+            p = subprocess.Popen(["sed", "'s/\r$//'"], stdin=subprocess.PIPE, stdout=f)
             self.execute_remote_cmd("shell", "screencap", "-p", device_path, capture_stdout=False,
+                                    stdout_redirect=p.stdin,
                                     timeout=Device.TIMEOUT_SCREEN_CAPTURE)
-            self.execute_remote_cmd("pull", device_path, local_screenshot_path, capture_stdout=False)
-        finally:
-            with suppress(self.CommandExecutionFailureException):
-                self.execute_remote_cmd("shell", "rm", device_path)
 
     # PyCharm detects erroreously that parens below are not required when they are
     # noinspection PyRedundantParentheses
@@ -742,6 +767,12 @@ class Device(object):
 
         raise Exception(f"Max number of back button presses ({keycode_back_limit}) to get to Home screen has "
                         f"been reached. Found foreground activity {foreground_activity}. App closure failed.")
+
+    def go_home(self):
+        """
+        equivalent to hitting home button to go to home screen
+        """
+        self.input("KEYCODE_HOME")
 
     def _activity_stack_top(self, filter: Callable[[str], bool] = lambda x: True) -> Optional[str]:
         """
