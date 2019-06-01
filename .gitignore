@@ -1,12 +1,14 @@
 build/
 venv/*
 *.py[cod]
+*.apk
 __pycache__/
 .cache/*
 .coverage
-.idea/
+.idea
+.idea/misc.xml
 .gradle/
 *.egg-info
-resources/
 test-reports/
 orchestrator/venv/
+*.iml

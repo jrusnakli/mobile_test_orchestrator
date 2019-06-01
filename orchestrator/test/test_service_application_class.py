@@ -1,12 +1,6 @@
-# flake8: noqay: F811
-##########
-# Tests the lower level ServerApplication class against a running emulator.  These tests may
-# be better server in mdl-integration-server directory, but we cannot start up an emulator
-# from there
-##########
 import asyncio
 
-from androidtestorchestrator import DeviceLog, Device
+from androidtestorchestrator import DeviceLog, Device, test_butler_apk
 from androidtestorchestrator.application import ServiceApplication
 
 
@@ -14,10 +8,10 @@ class TestServiceApplication:
 
     @staticmethod
     def pidof(app):
-        # an inconsistency that appears either on older emulators or perhaps our own custom emaulators
+        # an inconsistency that appears either on older emulators or perhaps our own custom emulators
         # even if pidof fails due to it not being found, return code is 0, no exception is therefore
         # raised and worse, error is reported on stdout
-        # Anpther inconsitency with our emulators: pidof not on the emulator?  And return code shows success :-*
+        # Another inconsistency with our emulators: pidof not on the emulator?  And return code shows success :-*
 
         try:
             #Nomrally get an error code and an exception if package is not running:
@@ -32,8 +26,10 @@ class TestServiceApplication:
         except Exception as e:
             return False
 
-    def test_start(self, device: Device, test_butler_service: str):
-        app = ServiceApplication.from_apk(test_butler_service, device)
+    def test_start(self, device: Device):
+        with test_butler_apk() as test_butler_path:
+            app = ServiceApplication.from_apk(str(test_butler_path), device)
+
         try:
 
             device_log = DeviceLog(device)

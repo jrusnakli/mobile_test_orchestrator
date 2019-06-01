@@ -9,7 +9,6 @@ from androidtestorchestrator.parsing import TestButlerCommandParser
 from androidtestorchestrator.device import Device
 
 
-
 @pytest.fixture()
 def test_setup(request, device: Device, test_butler_service: str, support_test_app: str
                ) -> Tuple[ServiceApplication, Application]:

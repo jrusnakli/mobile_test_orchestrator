@@ -1,21 +1,46 @@
 # flake8: noqa: F401
 ##########
-# Tests the lower level Devivce class against a running emulator.  These tests may
+# Tests the lower level Device class against a running emulator.  These tests may
 # be better server in mdl-integration-server directory, but we cannot start up an emulator
 # from there
 ##########
 import asyncio
 import os
-import time
+from contextlib import suppress
+
+from apk_bitminer.parsing import AXMLParser
+
+import support
 
 import pytest
 
 from androidtestorchestrator.device import Device
 from androidtestorchestrator.devicestorage import DeviceStorage
 from androidtestorchestrator.application import Application, ServiceApplication
+from .conftest import TAG_MDC_DEVICE_ID
+from support import uninstall_apk
 
 RESOURCE_DIR = os.path.join(os.path.dirname(__file__), "resources")
 
+if TAG_MDC_DEVICE_ID not in os.environ:
+    expected_device_info = {
+        "model": "Android SDK built for x86_64",
+        "manufacturer": "unknown",
+        "brand": "Android",
+    }
+else:
+    # for debugging against local attached real device or user invoked emulator
+    # This is not the typical test flow, so we use the Device class code to get
+    # some attributes to compare against in test, which is not kosher for
+    # a true test flow, but this is only run under specific user-based conditions
+    android_sdk = support.find_sdk()
+    adb_path = os.path.join(android_sdk, "platform-tools", support.add_ext("adb"))
+    device = Device(os.environ[TAG_MDC_DEVICE_ID], adb_path=adb_path)
+    expected_device_info = {
+        "model": device.get_system_property("ro.product.model"),
+        "manufacturer": device.get_system_property("ro.product.manufacturer"),
+        "brand": device.get_system_property("ro.product.brand"),
+    }
 
 # noinspection PyShadowingNames
 class TestAndroidDevice:
@@ -36,12 +61,26 @@ class TestAndroidDevice:
         assert device.get_device_setting("system", "dim_screen") == new
 
     def test_get_invalid_decvice_setting(self, device: Device):
-        assert device.get_device_setting("invalid", "nosuchkey") is None
+        try:
+            if int(device.get_system_property("ro.product.first_api_level")) < 26:
+                assert device.get_device_setting("invalid", "nosuchkey") is ''
+            else:
+                assert device.get_device_setting("invalid", "nosuchkey") is None
+        except:
+            assert device.get_device_setting("invalid", "nosuchkey") is None
 
     def test_set_invalid_system_property(self, device: Device):
-        with pytest.raises(Exception) as exc_info:
+        try:
+            api_is_old =int(device.get_system_property("ro.build.version.sdk")) < 26
+        except:
+            api_is_old = False
+        if api_is_old:
             device.set_system_property("nosuchkey", "value")
-        assert "setprop: failed to set property 'nosuchkey' to 'value'" in str(exc_info.value)
+            assert device.get_system_property("nosuchkey") is ""
+        else:
+            with pytest.raises(Exception) as exc_info:
+                device.set_system_property("nosuchkey", "value")
+            assert "setprop: failed to set property 'nosuchkey' to 'value'" in str(exc_info.value)
 
     def test_get_set_system_property(self, device: Device):
         device.set_system_property("debug.mock2", "5555")
@@ -49,6 +88,7 @@ class TestAndroidDevice:
         device.set_system_property("debug.mock2", "\"\"\"\"")
 
     def test_install_uninstall_app(self, device: Device, support_app: str):
+        uninstall_apk(support_app, device)
         app = Application.from_apk(support_app, device)
         app.uninstall()
         assert app.package_name not in device.list_installed_packages()
@@ -59,6 +99,7 @@ class TestAndroidDevice:
         assert app.package_name not in device.list_installed_packages()
 
     def test_list_packages(self, device: Device, support_app: str):
+        uninstall_apk(support_app, device)
         app = Application.from_apk(support_app, device)
         try:
             pkgs = device.list_installed_packages()
@@ -70,10 +111,10 @@ class TestAndroidDevice:
         assert DeviceStorage(device).external_storage_location.startswith("/")
 
     def test_brand(self, device: Device):
-        assert "android" in device.brand.lower() or "google" in device.brand.lower()
+        assert device.brand == expected_device_info["brand"]
 
     def test_model(self, device: Device):
-        assert device.model == "Android SDK built for x86_64"
+        assert device.model == expected_device_info["model"]
 
     def test_manufacturer(self, device: Device):
         # the emulator used in test has no manufacturer
@@ -85,7 +126,7 @@ class TestAndroidDevice:
         [ro.product.vendor.model]: [Android SDK built for x86_64]
         [ro.product.vendor.name]: [sdk_phone_x86_64]
         """
-        assert device.manufacturer.lower() == "unknown"
+        assert device.manufacturer == expected_device_info["manufacturer"]
 
     def test_get_device_datetime(self, device: Device):
         import time
@@ -101,6 +142,7 @@ class TestAndroidDevice:
 
     @pytest.mark.skipif(True, reason="Test butler does not currently support system setting of locale")
     def test_get_set_locale(self, device: Device, local_changer_apk):  # noqa
+        uninstall_apk(local_changer_apk, device)
         app = Application.from_apk(local_changer_apk, device)
         try:
             app.grant_permissions([" android.permission.CHANGE_CONFIGURATION"])
@@ -111,8 +153,9 @@ class TestAndroidDevice:
         finally:
             app.uninstall()
 
-    def test_grant_permissions(self, device: Device, support_app: str):
-        app = Application.from_apk(support_app, device)
+    def test_grant_permissions(self, device: Device, support_test_app: str):
+        uninstall_apk(support_test_app, device)
+        app = Application.from_apk(support_test_app, device)
         try:
             app.grant_permissions(["android.permission.WRITE_EXTERNAL_STORAGE"])
         finally:
@@ -122,6 +165,8 @@ class TestAndroidDevice:
                             device: Device,
                             test_butler_service: str,
                             support_app: str):  # noqa
+        uninstall_apk(support_app, device)
+        uninstall_apk(test_butler_service, device)
         app = Application.from_apk(support_app, device)
         butler_app = ServiceApplication.from_apk(test_butler_service, device)
 
@@ -150,15 +195,3 @@ class TestAndroidDevice:
 
     def test_check_network_connect(self, device: Device):
         assert device.check_network_connection("localhost", count=3) == 0
-
-    def test_oneshot_cpu_mem(self, device: Device, support_app: str):
-        app = Application.from_apk(support_app, device)
-        try:
-            app.monkey()
-            time.sleep(1)
-            cpu, mem = device.oneshot_cpu_mem(app.package_name)
-            app.stop(force=True)
-            assert cpu is not None
-            assert mem is not None
-        finally:
-            app.uninstall()
