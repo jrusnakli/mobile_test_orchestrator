@@ -11,6 +11,16 @@ Please set ANDROID_SDK_ROOT to point to your Android SDK location
 For testing, $ANDROID_SDK_ROOT/tools/emulator -list-avds should show at least one emulator definition;  the first will
 be used for testing purposes.
 
+If you do not have an emulator listed, you can do the following to create a simple one:
+
+(1) Issue the following command to install an compatible Android system image with the SDK manager, in this example, Android 28
+
+$ $ANDROID_SDK_ROOT/tools/bin/sdkmanager "system-images;android-28;default;x86_64"
+
+(2) Issue the following command to create a basic emulator with the system image defined in the previous step:
+
+$ $ANDROID_SDK_ROOT/tools/bin/avdmanager create avd -n MTO_emulator -k "system-images;android-28;default;x86_64"
+
 Building the distribution:
 --------------------------
 
