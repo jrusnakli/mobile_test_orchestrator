@@ -30,7 +30,7 @@ class Application(RemoteDeviceBased):
     def __init__(self, package_name: str, device: Device):
         """
         Create an instance of a remote app and the interface to manipulate it.
-        It is recommended to  create instances via the class-method `install`:
+        It is recommended to create instances via the class-method `install`:
 
         :param package_name: package name of app
         :param device: which device app resides on
@@ -71,7 +71,7 @@ class Application(RemoteDeviceBased):
         return None
 
     @classmethod
-    async def from_apk_async(cls: Type[_Ty], apk_path: str, device: Device, as_upgrade=False) -> _Ty:
+    async def from_apk_async(cls: Type[_Ty], apk_path: str, device: Device, as_upgrade: bool = False) -> _Ty:
         """
         Install provided application asynchronously.  This allows the output of the install to be processed
         in a streamed fashion.  This can be useful on some devices that are non-standard android where installs
@@ -99,7 +99,7 @@ class Application(RemoteDeviceBased):
         return cls(package, device)
 
     @classmethod
-    def from_apk(cls: Type[_Ty], apk_path: str, device: Device, as_upgrade=False) -> _Ty:
+    def from_apk(cls: Type[_Ty], apk_path: str, device: Device, as_upgrade: bool = False) -> _Ty:
         """
         Install provided application, blocking until install is complete
 
@@ -256,7 +256,7 @@ class TestApplication(Application):
     Class representing an Android test application installed on a remote device
     """
 
-    def __init__(self, package_name: str, device: Device, target_package, runner):
+    def __init__(self, package_name: str, device: Device, target_package: str, runner):
         """
         Create an instance of a remote test app and the interface to manipulate it.
         It is recommended to  create instances via the class-method `install`:
@@ -299,7 +299,7 @@ class TestApplication(Application):
                 items.append(runner)
         return items
 
-    async def run(self, *options: str, loop=None, unresponsive_timeout=None,
+    async def run(self, *options: str, loop=None, unresponsive_timeout: int = None,
                   max_test_time: Union[float, None] = None) -> AsyncContextManager:
         """
         Run an instrumentation test package, yielding lines from std output
@@ -331,9 +331,9 @@ class TestApplication(Application):
                                                           loop=loop)
 
     @classmethod
-    async def from_apk_async(cls, apk_path: str, device: Device, as_upgrade=False) -> "TestApplication":
+    async def from_apk_async(cls, apk_path: str, device: Device, as_upgrade: bool = False) -> "TestApplication":
         """
-        install apk as a test application on the given device
+        Install apk as a test application on the given device
 
         :param apk_path: path to test apk (containing a runner)
         :param device: device to install on
@@ -355,9 +355,9 @@ class TestApplication(Application):
         return cls(parser.package_name, device, parser.instrumentation.target_package, parser.instrumentation.runner)
 
     @classmethod
-    def from_apk(cls, apk_path: str, device: Device, as_upgrade=False) -> "TestApplication":
+    def from_apk(cls, apk_path: str, device: Device, as_upgrade: bool = False) -> "TestApplication":
         """
-        install apk as a test application on the given device
+        Install apk as a test application on the given device
 
         :param apk_path: path to test apk (containing a runner)
         :param device: device to install on
@@ -374,6 +374,6 @@ class TestApplication(Application):
                  bool(parser.instrumentation.target_package) and bool(parser.instrumentation.runner))
         if not valid:
             raise Exception("Test application's manifest does not specify proper instrumentation element."
-                            "Are you sure this is a test app")
+                            "Are you sure this is a test app?")
         device.install_synchronous(apk_path, as_upgrade)
         return cls(parser.package_name, device, parser.instrumentation.target_package, parser.instrumentation.runner)
