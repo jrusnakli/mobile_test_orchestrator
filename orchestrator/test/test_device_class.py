@@ -49,6 +49,7 @@ class TestAndroidDevice:
         path = os.path.join(str(tmpdir), "test_screenshot.png")
         device.take_screenshot(os.path.join(str(tmpdir), path))
         assert os.path.isfile(path)
+        assert os.stat(path).st_size != 0
 
     def test_device_name(self, device: Device):  # noqa
         name = device.device_name
