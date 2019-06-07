@@ -1,10 +1,13 @@
 import os
-from collections import OrderedDict
+from asyncio import AbstractEventLoop
 
 import logging
-import psutil
+from subprocess import Popen
+from types import TracebackType
+
+import psutil  # type: ignore
 from contextlib import suppress
-from typing import AsyncContextManager, Dict, Tuple, ContextManager
+from typing import AsyncContextManager, Dict, Tuple, ContextManager, Optional, TextIO, Type, AsyncIterator
 
 from .timing import StopWatch
 from .parsing import LineParser
@@ -31,21 +34,21 @@ class DeviceLog(RemoteDeviceBased):
             :param output_path: file path where logcat output is to be captured
             """
             super(DeviceLog.LogCapture, self).__init__(device)
-            self._markers = OrderedDict()
-            self._proc = None
+            self._markers: Dict[str, int] = {}
+            self._proc: Optional[Popen] = None
             if os.path.exists(output_path):
                 raise Exception(f"Path {output_path} already exists; will not overwrite")
-            self._output_file = open(output_path, 'w')
+            self._output_file: TextIO = open(output_path, 'w')
 
-        def __enter__(self) -> StopWatch:
+        def __enter__(self) -> "DeviceLog.LogCapture":
             """
             start capturing logcat output from device with given id to given output path
             """
-            self._markers = OrderedDict()
+            self._markers = {}
             self._proc = self._device.execute_remote_cmd_background("logcat", stdout=self._output_file)
             return self
 
-        def _mark(self, marker: str, start_or_end: str) -> None:
+        def _mark(self, marker: str, start_or_end: str) -> int:
             """
             Capture the current position (after flushing buffers) within the log file as a start/end marker
 
@@ -57,8 +60,7 @@ class DeviceLog(RemoteDeviceBased):
             marker = f"{marker}.{start_or_end}"
             if marker in self._markers:
                 log.error(f"Duplicate test marker!: {marker}")
-            proc_active = self._proc and self._proc.poll() is None
-            if proc_active:
+            if self._proc and self._proc.poll() is None:
                 # For windows compat, we use psutil over os.kill(SIGSTOP/SIGCONT)
                 p = psutil.Process(self._proc.pid)
                 # pause logcat process, flush file, capture current file position and resume logcat
@@ -84,7 +86,8 @@ class DeviceLog(RemoteDeviceBased):
             """
             self._mark(name, "end")
 
-        def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        def __exit__(self, exc_type: Optional[Type[BaseException]], exc_val: Optional[BaseException],
+                     exc_tb: Optional[TracebackType]) -> None:
             """
             stop logcat capture.  markers will be "line_justifyd" so that starting markers will be placed at the
             beginning of the line at which the marker was captured and ending markers will be placed at the end of
@@ -96,10 +99,10 @@ class DeviceLog(RemoteDeviceBased):
                 self._proc.kill()
             self._proc = None
             self._output_file.close()
-            self._output_file = None
+            self._output_file = None  # type: ignore
 
         @property
-        def markers(self) -> OrderedDict:
+        def markers(self) -> Dict[str, int]:
             """
             Only call this function once log capture has stopped
 
@@ -156,12 +159,11 @@ class DeviceLog(RemoteDeviceBased):
 
     DEFAULT_LOGCAT_BUFFER_SIZE = "5M"
 
-    def __init__(self, device: Device):
+    def __init__(self, device: Device) -> None:
         super().__init__(device)
         device.execute_remote_cmd("logcat", "-G", self.DEFAULT_LOGCAT_BUFFER_SIZE)
 
-    @property
-    def logcat_buffer_size(self, channel='main'):
+    def get_logcat_buffer_size(self, channel: str = 'main') -> Optional[str]:
         """
         @:param channel: which channel's size ('main', 'system', or 'crash')
 
@@ -174,19 +176,22 @@ class DeviceLog(RemoteDeviceBased):
                 return line.split()[4]
         return None
 
-    def set_logcat_buffer_size(self, size_spec: str):
+    logcat_buffer_size = property(get_logcat_buffer_size)
+
+    def set_logcat_buffer_size(self, size_spec: str) -> None:
         """
         :param size_spec: string spec (per adb logcat --help) for size of buffer (e.g. 10M = 10 megabytes)
         """
         self.device.execute_remote_cmd("logcat", "-G", size_spec)
 
-    def clear(self):
+    def clear(self) -> None:
         """
         clear device log on the device and start fresh
         """
         self.device.execute_remote_cmd("logcat", "-c", capture_stdout=False)
 
-    async def logcat(self, *options: str, loop=None) -> AsyncContextManager:
+    async def logcat(self, *options: str, loop: Optional[AbstractEventLoop] = None
+                     ) -> AsyncContextManager[AsyncIterator[str]]:
         """
         async generator to continually output lines from logcat until client
         exits processing (exist async iterator), at which point process is killed
@@ -199,7 +204,7 @@ class DeviceLog(RemoteDeviceBased):
         """
         return await self.device.execute_remote_cmd_async("logcat", *options, proc_completion_timeout=0, loop=loop)
 
-    def capture_to_file(self, output_path: str) -> ContextManager["DeviceLog.LogCapture"]:
+    def capture_to_file(self, output_path: str) -> LogCapture:
         """
         :param output_path: path to capture log output to
 
@@ -230,7 +235,7 @@ class LogcatTagDemuxer(LineParser):
         super().__init__()
         self._handlers = {tag: handlers[tag][1] for tag in handlers}
 
-    def parse_line(self, line: str):
+    def parse_line(self, line: str) -> None:
         """
         farm each incoming line to associated handler based on adb tag
         :param line: line to be parsed

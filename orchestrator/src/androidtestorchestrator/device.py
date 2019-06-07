@@ -5,11 +5,13 @@ import os
 import re
 import subprocess
 import time
-
+from asyncio import AbstractEventLoop
 from contextlib import suppress, asynccontextmanager
-from typing import List, Iterable, Tuple, Dict, Optional, AsyncContextManager, Union, Callable, IO
+from types import TracebackType
+from typing import List, Tuple, Dict, Optional, AsyncContextManager, Union, Callable, IO, Any, AsyncIterator, Type, \
+    AnyStr
 
-from apk_bitminer.parsing import AXMLParser
+from apk_bitminer.parsing import AXMLParser  # type: ignore
 
 log = logging.getLogger(__name__)
 log.setLevel(logging.INFO)
@@ -39,8 +41,6 @@ class Device(object):
         # TODO: is this still needed (in lieu of updates to OS SW):
         "Google Pixel": "/sdcard"
     }
-
-    special_install_instructions = {}
 
     SLEEP_SET_PROPERTY = 2
     SLEEP_PKG_INSTALL = 5
@@ -126,29 +126,33 @@ class Device(object):
         self._adb_path = adb_path
 
         # These will be populated on as-needed basis and cached through the associated @property's
-        self._model = None
-        self._brand = None
-        self._manufacturer = None
+        self._model: Optional[str] = None
+        self._brand: Optional[str] = None
+        self._manufacturer: Optional[str] = None
 
-        self._name = None
+        self._name: Optional[str] = None
         self._ext_storage = Device.override_ext_storage.get(self.model)
-        self._device_server_datetime_offset = None
+        self._device_server_datetime_offset: Optional[datetime.timedelta] = None
         self._lock = asyncio.Semaphore()
-        self._api_level = None
+        self._api_level: Optional[int] = None
 
     @property
-    def api_level(self) -> str:
+    def api_level(self) -> int:
         """
         :return: api level of device
         """
         if self._api_level:
             return self._api_level
-        try:
-            self._api_level = int(self.get_system_property("ro.build.version.sdk"))
-            #otherwise, assume default setting of 28 :-(
-        except:
+
+        device_api_level = self.get_system_property("ro.build.version.sdk")
+
+        if device_api_level:
+            self._api_level = int(device_api_level)
+        else:
+            # assume default setting of 28 :-(
             log.warning("Unable to determine api level, assuming 28")
             self._api_level = 28
+
         return self._api_level
 
     @property
@@ -161,7 +165,7 @@ class Device(object):
             return self._device_server_datetime_offset
 
         # compute offset of clocks between host and device (roughly)
-        def _device_datetime():
+        def _device_datetime() -> Optional[datetime.datetime]:
             # There is a variable on Android devices that holds the current epoch time of the device. We use that to
             # retrieve the device's datetime so we can easily calculate the difference of the start time from
             # other times during the test.
@@ -180,7 +184,7 @@ class Device(object):
         return self._device_server_datetime_offset
 
     @property
-    def device_id(self):
+    def device_id(self) -> str:
         """
         :return: the unique serial id of this device
         """
@@ -198,7 +202,7 @@ class Device(object):
         return prop
 
     @property
-    def brand(self):
+    def brand(self) -> str:
         """
         :return: the brand of the device as provided in its system properties, or "UNKNOWN" if indeterminable
         """
@@ -207,7 +211,7 @@ class Device(object):
         return self._brand
 
     @property
-    def model(self):
+    def model(self) -> str:
         """
         :return: the model of this device, or "UNKNOWN" if indeterminable
         """
@@ -216,7 +220,7 @@ class Device(object):
         return self._model
 
     @property
-    def manufacturer(self):
+    def manufacturer(self) -> str:
         """
         :return: the manufacturer of this device, or "UNKNOWN" if indeterminable
         """
@@ -234,12 +238,13 @@ class Device(object):
         return self._name
 
     def execute_remote_cmd(self, *args: str,
-                           timeout: int = None,
+                           timeout: Optional[float] = None,
                            capture_stdout: bool = True,
-                           stdout_redirect: int = subprocess.DEVNULL,
+                           stdout_redirect: Union[None, int, IO[AnyStr]] = subprocess.DEVNULL,
                            fail_on_presence_of_stderr: bool = False,
-                           fail_on_error_code=lambda x: x != 0) -> Optional[str]:
+                           fail_on_error_code: Callable[[int], bool] = lambda x: x != 0) -> str:
         # TODO: remove capture_stdout argument
+        # TODO: return type is really Optional[str], dependent on capture_stdout or stdout_redirect arg...
         """
         Execute a command on this device (via adb)
 
@@ -264,10 +269,11 @@ class Device(object):
         if fail_on_error_code(completed.returncode) or (fail_on_presence_of_stderr and completed.stderr):
             raise self.CommandExecutionFailureException(completed.returncode,
                                                         f"Failed to execute '{' '.join(args)}' on device {self.device_id} [{completed.stderr}]")
-        if capture_stdout:
-            return completed.stdout
 
-    def execute_remote_cmd_background(self, *args, stdout: Optional[IO] = subprocess.PIPE, **kargs) -> subprocess.Popen:
+        return completed.stdout  # type: ignore
+
+    def execute_remote_cmd_background(self, *args: str, stdout: Union[None, int, IO[AnyStr]] = subprocess.PIPE,
+                                      **kwargs: Any) -> subprocess.Popen:
         """
         Run the given command args in the background.
 
@@ -278,18 +284,20 @@ class Device(object):
 
         :return: subprocess.Open
         """
-        args = [self._adb_path, "-s", self.device_id, *args]
+        args = (self._adb_path, "-s", self.device_id, *args)
         log.info(f"Executing: {' '.join(args)}")
-        if 'encoding' not in kargs:
-            kargs['encoding'] = 'utf-8'
-            kargs['errors'] = 'ignore'
+        if 'encoding' not in kwargs:
+            kwargs['encoding'] = 'utf-8'
+            kwargs['errors'] = 'ignore'
         return subprocess.Popen(args,
                                 stdout=stdout or subprocess.DEVNULL,
                                 stderr=subprocess.PIPE,
-                                **kargs)
+                                **kwargs)
 
-    async def execute_remote_cmd_async(self, *args: str, unresponsive_timeout: Union[float, None] = None,
-                                       proc_completion_timeout: float = 0.0, loop=None) -> AsyncContextManager:
+    async def execute_remote_cmd_async(self, *args: str, unresponsive_timeout: Optional[float] = None,
+                                       proc_completion_timeout: Optional[float] = 0.0,
+                                       loop: Optional[AbstractEventLoop] = None
+                                       ) -> AsyncContextManager[AsyncIterator[str]]:
         """
         Coroutine for executing a command on this remote device asynchronously, allowing the client to iterate over
         lines of output.
@@ -317,29 +325,34 @@ class Device(object):
         # to do the heavy lifting, but they provide a clean external-facing interface to perform those functions).
         cmd = self.formulate_adb_cmd(*args)
         print(f"Executing: {' '.join(cmd)}")
-        proc = await asyncio.subprocess.create_subprocess_exec(*cmd,
+        proc = await asyncio.subprocess.create_subprocess_exec(*cmd,  # type: ignore
                                                                stdout=asyncio.subprocess.PIPE,
                                                                stderr=asyncio.subprocess.PIPE,
-                                                               loop=loop,
+                                                               loop=loop,  # loop arg type is optional. bug in typeshed.
                                                                bufsize=0)
 
-        class LineGenerator(AsyncContextManager):
+        class LineGenerator:
             """
             Wraps below async generator in context manager to ensure proper closure
             """
-            async def __aenter__(self):
+            async def __aenter__(self) -> AsyncIterator[str]:
                 return self.lines()
 
-            async def __aexit__(self, exc_type, exc_val, exc_tb):
+            async def __aexit__(self, exc_type: Optional[Type[BaseException]], exc_val: Optional[BaseException],
+                                exc_tb: Optional[TracebackType]) -> None:
                 if proc_completion_timeout is None or proc_completion_timeout > 0.0:
-                    return_code = await asyncio.wait_for(proc.wait(), proc_completion_timeout, loop=loop)
+                    return_code = await asyncio.wait_for(proc.wait(), proc_completion_timeout,  # type: ignore
+                                                         loop=loop)  # loop arg type is optional. bug in typeshed.
                     if return_code != 0:
-                        stderr = await proc.stderr.read()
-                        stderr = stderr.decode('utf-8', errors='ignore`')
+                        assert proc.stderr, "Expected proc to have stderr pipe"
+                        stderr_bytes = await proc.stderr.read()
+                        stderr = stderr_bytes.decode('utf-8', errors='ignore')
                         error_msg = f"Remote command '{' '.join(args)}' exited with code {return_code} [{stderr}]"
                         raise Device.CommandExecutionFailureException(return_code, error_msg)
+                # todo: if timeout == 0.0, we should kill the proc immediately as the doc says
 
-            async def lines(self):
+            async def lines(self) -> AsyncIterator[str]:
+                assert proc.stdout, "Expected proc to have stdout pipe"
                 if unresponsive_timeout is not None:
                     line = await asyncio.wait_for(proc.stdout.readline(), timeout=unresponsive_timeout)
                 else:
@@ -351,7 +364,7 @@ class Device(object):
                     else:
                         line = await proc.stdout.readline()
 
-            async def stop(self, force: bool = False):
+            async def stop(self, force: bool = False) -> None:
                 if force:
                     proc.kill()
                 else:
@@ -360,7 +373,7 @@ class Device(object):
 
         return LineGenerator()
 
-    def set_device_setting(self, namespace: str, key: str, value: str) -> str:
+    def set_device_setting(self, namespace: str, key: str, value: str) -> Optional[str]:
         """
         Change a setting of the device
 
@@ -401,7 +414,7 @@ class Device(object):
             log.error(f"Could not get setting for {namespace}:{key} [{str(e)}]")
             return None
 
-    def set_system_property(self, key: str, value: str) -> str:
+    def set_system_property(self, key: str, value: str) -> Optional[str]:
         """
         Set a system property on this device
 
@@ -457,14 +470,18 @@ class Device(object):
         lang = lang.strip()
         country = self.get_system_property('persist.sys.country') or ""
         country = country.strip()
-        if not lang or not country:
-            # if no dice, try new:
-            device_locale = self.get_system_property('persist.sys.locale') or ""
-            if not device_locale:
-                device_locale = self.get_system_property("ro.product.locale").replace('-', '_')
-            device_locale = device_locale.replace('-', '_').strip()
-        else:
+
+        device_locale: Optional[str]
+
+        if lang and country:
             device_locale = '_'.join([lang.strip(), country.strip()])
+        else:
+            device_locale = self.get_system_property('persist.sys.locale')
+            if not device_locale:
+                device_locale = self.get_system_property("ro.product.locale")
+            assert device_locale, "ro.product.locale returned None?!"
+            device_locale = device_locale.replace('-', '_').strip()
+
         return device_locale
 
     # NOTE: This function currently does not work. We need to store the AdbChangeLanguage app and install it on
@@ -538,7 +555,7 @@ class Device(object):
 
     # PyCharm detects erroneously that parens below are not required when they are
     # noinspection PyRedundantParentheses
-    def formulate_adb_cmd(self, *args: str) -> Iterable[str]:
+    def formulate_adb_cmd(self, *args: str) -> Tuple[str, ...]:
         """
         :param args: args to the adb command
 
@@ -549,7 +566,7 @@ class Device(object):
         else:
             return (self._adb_path, *args)
 
-    def input(self, subject: str, source: str = None) -> None:
+    def input(self, subject: str, source: Optional[str] = None) -> None:
         """
         Send event subject through given source
 
@@ -636,13 +653,15 @@ class Device(object):
         :param as_upgrade: install as upgrade or not
         """
         if as_upgrade:
-            cmd = ("install", "-r", apk_path)
+            cmd: Tuple[str, ...] = ("install", "-r", apk_path)
         else:
             cmd = ("install", apk_path)
-        return self.execute_remote_cmd(*cmd, timeout=Device.TIMEOUT_LONG_ADB_CMD)
 
-    async def install(self, apk_path: str, as_upgrade: bool, conditions: List[str] = None,
-                      on_full_install: Optional[Callable] = None) -> None:
+        self.execute_remote_cmd(*cmd, timeout=Device.TIMEOUT_LONG_ADB_CMD)
+
+    async def install(self, apk_path: str, as_upgrade: bool,
+                      conditions: Optional[List[str]] = None,
+                      on_full_install: Optional[Callable[[], None]] = None) -> None:
         """
         Install given apk asynchronously, monitoring output for messages containing any of the given conditions,
         executing a callback if given when any such condition is met.
@@ -668,7 +687,7 @@ class Device(object):
 
         # Execute the installation of the app, monitoring output for completion in order to invoke any extra commands
         if as_upgrade:
-            cmd = ("install", "-r", apk_path)
+            cmd: Tuple[str, ...] = ("install", "-r", apk_path)
         else:
             cmd = ("install", apk_path)
         # Do not allow more than one install at a time on a specific device, as this can be problematic
@@ -691,7 +710,7 @@ class Device(object):
         self._verify_install(apk_path, package)  # raises exception on failure to verify
 
     @asynccontextmanager
-    async def lock(self):
+    async def lock(self) -> AsyncIterator["Device"]:
         await self._lock.acquire()
         yield self
         self._lock.release()
@@ -734,7 +753,7 @@ class Device(object):
         # Samsung device with silent packages in foreground. Need to check if that's the case, and app after them
         # is the launcher/home screen.
         foreground_activity = self.foreground_activity(ignore_silent_apps=True)
-        return foreground_activity.lower() == "com.sec.android.app.launcher"
+        return bool(foreground_activity and foreground_activity.lower() == "com.sec.android.app.launcher")
 
     def return_home(self, keycode_back_limit: int = 10) -> None:
         """
@@ -765,7 +784,7 @@ class Device(object):
         raise Exception(f"Max number of back button presses ({keycode_back_limit}) to get to Home screen has "
                         f"been reached. Found foreground activity {foreground_activity}. App closure failed.")
 
-    def go_home(self):
+    def go_home(self) -> None:
         """
         Equivalent to hitting home button to go to home screen
         """
@@ -788,7 +807,7 @@ class Device(object):
                 return app_package
         return None  # to be explicit
 
-    def foreground_activity(self, ignore_silent_apps: bool = True) -> str:
+    def foreground_activity(self, ignore_silent_apps: bool = True) -> Optional[str]:
         """
         :param ignore_silent_apps: whether or not to ignore silent-running apps (ignoring those if they are in the
             stack. They show up as the foreground activity, even if the normal activity we care about is behind it and
@@ -805,14 +824,14 @@ class RemoteDeviceBased(object):
     Classes that are based on the context of a remote device
     """
 
-    def __init__(self, device: Device):
+    def __init__(self, device: Device) -> None:
         """
         :param device: which device is associated with this instance
         """
         self._device = device
 
     @property
-    def device(self)->Device:
+    def device(self) -> Device:
         """
         :return: the device associated with this instance
         """

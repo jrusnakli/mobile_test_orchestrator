@@ -3,9 +3,12 @@ import logging
 import os
 import sys
 import traceback
+from asyncio import Task
 from contextlib import nullcontext
 from dataclasses import dataclass, field
 from importlib.resources import is_resource, path
+from pathlib import Path
+from types import TracebackType
 from typing import (Dict,
                     Iterator,
                     List,
@@ -13,6 +16,9 @@ from typing import (Dict,
                     Union,
                     Coroutine,
                     ContextManager,
+                    Optional,
+                    Any,
+                    Type,
                     AsyncIterator,
                     TypeVar)
 
@@ -37,12 +43,12 @@ if sys.platform == 'win32':
     asyncio.set_event_loop(loop)
 
 
-def test_butler_apk() -> ContextManager[str]:
+def test_butler_apk() -> ContextManager[Path]:
     assert is_resource(apks, "TestButlerLive.apk"), "Invalid distribution! TestButlerLive.apk does not exist!!"
     return path(apks, "TestButlerLive.apk")
 
 
-def trace(e: Exception):
+def trace(e: Exception) -> str:
     return str(e) + "\n\n" + traceback.format_exc()
 
 
@@ -169,15 +175,15 @@ class AndroidTestOrchestrator:
         Internal class to capture settings/properties changed during each test suite execution and restore original
         values
         """
-        def __init__(self, device: Device):
+        def __init__(self, device: Device) -> None:
             """
             :param device:  Android deice bridge used to communicate with device under test
             """
             self._device = device
-            self._restoration_properties = {}
-            self._restoration_settings = {}
+            self._restoration_properties: Dict[str, str] = {}
+            self._restoration_settings: Dict[Tuple[str, str], str] = {}
 
-        def device_setting_changed(self, namespace, key, previous, new_value):
+        def device_setting_changed(self, namespace: str, key: str, previous: str, new_value: str) -> None:
             """
             capture device setting change (first change only) during testing,
             to restore to original value on __exit__
@@ -193,7 +199,7 @@ class AndroidTestOrchestrator:
                 # no longer need to restore
                 del self._restoration_settings[(namespace, key)]
 
-        def device_property_changed(self, key, previous, new_value):
+        def device_property_changed(self, key: str, previous: Optional[str], new_value: str) -> None:
             """
             capture device property change (first change only) during testing,
             to restore original value on __exit__
@@ -203,12 +209,13 @@ class AndroidTestOrchestrator:
             :param new_value: new value property was set to
             """
             if key not in self._restoration_properties:
+                assert previous, f"Expected a previous value for property: {key}"
                 self._restoration_properties[key] = previous
             elif self._restoration_properties[key] == new_value:
                 # no longer need to restore
                 del self._restoration_properties[key]
 
-        def restore(self):
+        def restore(self) -> None:
             """
             Restore original values for any changed settings and properties
             """
@@ -221,9 +228,9 @@ class AndroidTestOrchestrator:
 
     def __init__(self,
                  artifact_dir: str,
-                 test_butler_apk_path: Union[str, None] = None,
-                 max_test_time: Union[float, None] = None,
-                 max_test_suite_time: Union[float, None] = None):
+                 test_butler_apk_path: Optional[str] = None,
+                 max_test_time: Optional[float] = None,
+                 max_test_suite_time: Optional[float] = None) -> None:
         """
         :param artifact_dir: directory where logs and screenshots are saved
         :param test_butler_apk_path: path to external test butler apk to use (e.g. for emulators);
@@ -248,18 +255,22 @@ class AndroidTestOrchestrator:
             raise FileNotFoundError("test butler apk specified, '%s', does not exists" % test_butler_apk_path)
 
         self._artifact_dir = artifact_dir
-        self._background_tasks = []
+        self._background_tasks: List[Task[Any]] = []
         self._instrumentation_timeout = max_test_suite_time
         self._test_timeout = max_test_time
-        self._test_butler_apk_context = nullcontext(test_butler_apk_path) or test_butler_apk()
+        if test_butler_apk_path:
+            self._test_butler_apk_context = nullcontext(Path(test_butler_apk_path))
+        else:
+            self._test_butler_apk_context = test_butler_apk()
         self._timer = None
-        self._test_butler_service = None
+        self._test_butler_service: Optional[ServiceApplication] = None
         self._tag_monitors: Dict[str, Tuple[str, LineParser]] = {}
 
-    def __enter__(self):
+    def __enter__(self) -> "AndroidTestOrchestrator":
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, exc_type: Optional[Type[BaseException]], exc_val: Optional[BaseException],
+                 exc_tb: Optional[TracebackType]) -> None:
         """
         cleanup
         """
@@ -269,7 +280,7 @@ class AndroidTestOrchestrator:
                                             intent="com.linkedin.android.testbutler.STOP")
             self._test_butler_service.uninstall()
 
-    def add_logcat_monitor(self, tag: str, handler: LineParser, priority: str= "*"):
+    def add_logcat_monitor(self, tag: str, handler: LineParser, priority: str = "*") -> None:
         """
         Add additional tag to be monitored out of logcat
 
@@ -295,7 +306,7 @@ class AndroidTestOrchestrator:
                             test_plan: AsyncIterator[TestSuite],
                             test_application: TestApplication,
                             test_listener: TestListener,
-                            device_restoration: "AndroidTestOrchestrator._DeviceRestoration"):
+                            device_restoration: "AndroidTestOrchestrator._DeviceRestoration") -> None:
         """
         Loop over items in test plan and execute one by one, restoring device settings and properties on each
         iteration.
@@ -356,7 +367,7 @@ class AndroidTestOrchestrator:
                     f.write("%s=%s\n" % (marker, str(pos)))
 
     # TASK-3: monitor logcat for TestButler commands
-    async def _process_logcat_tags(self, device: Device):
+    async def _process_logcat_tags(self, device: Device) -> None:
         """
         Process requested tags from logcat (including tag for test butler to process commands, if applicable)
 
@@ -377,7 +388,7 @@ class AndroidTestOrchestrator:
                           test_application: TestApplication,
                           test_plan: Union[AsyncIterator[TestSuite], Iterator[TestSuite]],
                           test_listener: TestListener,
-                          global_uploadables: List[Tuple[str, str]] = None):
+                          global_uploadables: Optional[List[Tuple[str, str]]] = None) -> None:
         """
         Execute a test plan (a collection of test suites)
 
@@ -394,27 +405,26 @@ class AndroidTestOrchestrator:
         device_storage = DeviceStorage(test_application.device)
 
         if not isinstance(test_plan, AsyncIterator):
-            async def _async_iter(test_plan):
+            async def _async_iter(test_plan: Iterator[TestSuite]) -> AsyncIterator[TestSuite]:
                 for i in test_plan:
                     yield i
             test_plan = _async_iter(test_plan)
 
         with self._test_butler_apk_context as test_butler_apk_path:
-            self._test_butler_service = ServiceApplication.from_apk(test_butler_apk_path, test_application.device)
+            self._test_butler_service = ServiceApplication.from_apk(str(test_butler_apk_path), test_application.device)
 
         # add testbutler tag for processing
-        if self._test_butler_service:
-            line_parser: LineParser = TestButlerCommandParser(self._test_butler_service,
-                                                              app_under_test=test_application,
-                                                              listener=device_restoration)
-            self.add_logcat_monitor("TestButler", line_parser, priority='I')
+        line_parser: LineParser = TestButlerCommandParser(self._test_butler_service,
+                                                          app_under_test=test_application,
+                                                          listener=device_restoration)
+        self.add_logcat_monitor("TestButler", line_parser, priority='I')
 
         if self._tag_monitors:
             log.debug("Creating logcat monitoring task")
             loop.create_task(self._process_logcat_tags(test_application.device))
 
         # ADD  USER-DEFINED TASKS
-        async def timer():
+        async def timer(test_plan: AsyncIterator[TestSuite]) -> None:
             """
             Timer to timeout if future is not presented in given timeout for overall test suite execution
             """
@@ -426,7 +436,7 @@ class AndroidTestOrchestrator:
                                                       device_restoration=device_restoration),
                                    self._instrumentation_timeout)
         try:
-            loop.run_until_complete(timer())  # execute plan until completed or until timeout is reached
+            loop.run_until_complete(timer(test_plan))  # execute plan until completed or until timeout is reached
         finally:
             for _, remote_path in global_uploadables or []:
                 device_storage.remove(remote_path, recursive=True)
@@ -435,7 +445,7 @@ class AndroidTestOrchestrator:
                            test_application: TestApplication,
                            test_suite: TestSuite,
                            test_listener: TestListener,
-                           global_uploadables: List[Tuple[str, str]] = None):
+                           global_uploadables: Optional[List[Tuple[str, str]]] = None) -> None:
         """
         Execute a suite of tests as given by the argument list, and report test results
 
@@ -454,7 +464,7 @@ class AndroidTestOrchestrator:
                                test_listener=test_listener,
                                global_uploadables=global_uploadables)
 
-    def add_background_task(self, coroutine: Coroutine):
+    def add_background_task(self, coroutine: Coroutine[Any, Any, Any]) -> None:
         """
         Add a user-define background task to be executed during test run.  Note that the coroutine
         will not be invoked until a call to `execute_test_plan` is called, and will be canceled

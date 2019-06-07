@@ -1,6 +1,6 @@
 import logging
 import os
-from typing import Union
+from typing import Union, Optional
 
 from .device import (
     Device,
@@ -56,7 +56,7 @@ class DeviceStorage(RemoteDeviceBased):
             log.warning("File %s already exists when pulling. Potential to overwrite files." % local_path)
         self.device.execute_remote_cmd('pull', '%s' % remote_path, '%s' % local_path)
 
-    def make_dir(self, path, run_as: Union[str, None] = None):
+    def make_dir(self, path: str, run_as: Optional[str] = None) -> None:
         """
         make a directory on remote device
 
@@ -70,7 +70,7 @@ class DeviceStorage(RemoteDeviceBased):
         else:
             self.device.execute_remote_cmd("shell", "mkdir", "-p", path, capture_stdout=False)
 
-    def remove(self, path: str, recursive: bool = False):
+    def remove(self, path: str, recursive: bool = False) -> None:
         """
         remove a file or directory from remote device
 

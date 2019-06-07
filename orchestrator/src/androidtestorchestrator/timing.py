@@ -2,7 +2,8 @@ import asyncio
 import logging
 
 from abc import ABC, abstractmethod
-
+from asyncio import Task, Future
+from typing import Optional
 
 log = logging.getLogger(__name__)
 
@@ -13,7 +14,7 @@ class StopWatch(ABC):
     """
 
     @abstractmethod
-    def mark_start(self, name: str)->None:
+    def mark_start(self, name: str) -> None:
         """
         mark start of some activity
         :param name:  name of activity
@@ -41,9 +42,9 @@ class Timer(StopWatch):
         """
         :param duration: duration at end of which timer will expire and raise an `asyncior.TimeoutError`
         """
-        self._future = asyncio.get_event_loop().create_future()
+        self._future: Optional[Future[bool]] = asyncio.get_event_loop().create_future()
         self._timeout = duration
-        self._task = None
+        self._task: Optional[Task[None]] = None
 
     def mark_end(self, name: str) -> None:
         """
@@ -60,7 +61,8 @@ class Timer(StopWatch):
         Mark the start of an activity by creating a timer (within the context of a running event loop)
         :param name: name associated with the activity
         """
-        async def timer():
+        async def timer() -> None:
+            assert self._future is not None, "Internal error: timer was run multiple times"
             try:
                 await asyncio.wait_for(self._future, timeout=self._timeout)
             except asyncio.TimeoutError:
@@ -68,5 +70,6 @@ class Timer(StopWatch):
                 asyncio.get_event_loop().stop()
             self._future = None  # timer is used up
 
-        # in principle, a loop is alread running, so just add another task to process:
+        assert not self._task, "Internal error: marking start multiple times"
+        # in principle, a loop is already running, so just add another task to process:
         self._task = asyncio.get_event_loop().create_task(timer())

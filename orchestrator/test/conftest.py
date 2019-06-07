@@ -11,8 +11,8 @@ from apk_bitminer.parsing import AXMLParser
 
 sys.path += [os.path.dirname(__file__), os.path.join(os.path.dirname(__file__), "..", "src")]
 
-import support
-from support import Config
+from . import support
+from .support import Config
 from androidtestorchestrator.device import Device
 
 TB_RESOURCES_DIR =os.path.abspath(os.path.join("..", "src", "androidtestorchestrator", "resources"))
