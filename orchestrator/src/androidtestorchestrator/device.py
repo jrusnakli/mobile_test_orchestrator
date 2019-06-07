@@ -527,15 +527,9 @@ class Device(object):
 
         :return: full path to file name pulled to server, or None if failed
         """
-        # Remember Android is always unix-like paths (aka do not use os.path.join):
-        base_name = os.path.basename(local_screenshot_path)
-        device_path = f"{self.external_storage_location}/{base_name}"
         with open(local_screenshot_path, 'w+b') as f:
-            # according to https://blog.shvetsov.com/2013/02/grab-android-screenshot-to-computer-via.html, need
-            # to use sed to remove unwanted carriage return/linefeeds
-            p = subprocess.Popen(["sed", "'s/\r$//'"], stdin=subprocess.PIPE, stdout=f)
-            self.execute_remote_cmd("shell", "screencap", "-p", device_path, capture_stdout=False,
-                                    stdout_redirect=p.stdin,
+            self.execute_remote_cmd("shell", "screencap", "-p", capture_stdout=False,
+                                    stdout_redirect=f.fileno(),
                                     timeout=Device.TIMEOUT_SCREEN_CAPTURE)
 
     # PyCharm detects erroreously that parens below are not required when they are
