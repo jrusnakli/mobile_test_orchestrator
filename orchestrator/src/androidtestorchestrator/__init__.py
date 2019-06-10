@@ -12,7 +12,9 @@ from typing import (Dict,
                     Tuple,
                     Union,
                     Coroutine,
-                    ContextManager)
+                    ContextManager,
+                    AsyncIterator,
+                    TypeVar)
 
 from androidtestorchestrator.resources import apks
 from .application import (TestApplication,
@@ -42,6 +44,26 @@ def test_butler_apk() -> ContextManager[str]:
 
 def trace(e: Exception):
     return str(e) + "\n\n" + traceback.format_exc()
+
+
+T = TypeVar('T')
+
+
+async def _preloading(it: AsyncIterator[T]) -> AsyncIterator[T]:
+    """
+    Wraps an async iterator to with one that pre-loads the next item in the background when yielding, rather than
+    waiting for __anext__() to start fetching the next item.
+    :param it: An async iterator
+    :return: A preloading async iterator
+    """
+    try:
+        next_suite = await it.__anext__()
+        while True:
+            task = asyncio.create_task(it.__anext__())
+            yield next_suite
+            next_suite = await task
+    except StopAsyncIteration:
+        return
 
 
 @dataclass(frozen=True)
@@ -160,7 +182,7 @@ class AndroidTestOrchestrator:
             capture device setting change (first change only) during testing,
             to restore to original value on __exit__
             :param namespace: setting's namespace
-            
+
             :param key: key for setting
             :param previous: previous value before change
             :param new_value: new value setting was changed to
@@ -175,7 +197,7 @@ class AndroidTestOrchestrator:
             """
             capture device property change (first change only) during testing,
             to restore original value on __exit__
-            
+
             :param key: name of property that changed
             :param previous: previous value
             :param new_value: new value property was set to
@@ -199,9 +221,9 @@ class AndroidTestOrchestrator:
 
     def __init__(self,
                  artifact_dir: str,
-                 test_butler_apk_path: Union[str, None]=None,
-                 max_test_time: Union[float, None]=None,
-                 max_test_suite_time: Union[float, None]=None):
+                 test_butler_apk_path: Union[str, None] = None,
+                 max_test_time: Union[float, None] = None,
+                 max_test_suite_time: Union[float, None] = None):
         """
         :param artifact_dir: directory where logs and screenshots are saved
         :param test_butler_apk_path: path to external test butler apk to use (e.g. for emulators);
@@ -257,7 +279,7 @@ class AndroidTestOrchestrator:
 
         :raises Exception: if attempting to add a monitor to an ongoing test execution.  The only way this
            could happen is if a user defined task attempts to add additional tags to monitor
-        
+
         :raises ValueError: if priority is invalid or is tag is already being monitored
         """
         if asyncio.get_event_loop().is_running():
@@ -270,7 +292,7 @@ class AndroidTestOrchestrator:
 
     # TASK-2: parsing of instrument output for test execuition status
     async def _execute_plan(self,
-                            test_plan: Iterator[TestSuite],
+                            test_plan: AsyncIterator[TestSuite],
                             test_application: TestApplication,
                             test_listener: TestListener,
                             device_restoration: "AndroidTestOrchestrator._DeviceRestoration"):
@@ -289,22 +311,6 @@ class AndroidTestOrchestrator:
             # sometimes logcat -c will give and error "failed to clear 'main' log';  Ugh
             log.error("clearing logcat failed: " + str(e))
 
-        async def single_buffered_test_suite():
-            """
-            This coroutine buffers one item out of the test plan to be immediately available
-
-            This is to accommodate the case where iteration over each item in the plan could take a
-            little bit of processing time (for example, being asynchronously pulled from a file).  It is
-            expected that this shouldn't take much time (10s of ms), but over 1000s of tests this allows
-            that overhead of getting the next test to be absorbed while a test is executing on the remote
-            device
-            """
-            test_suite = next(test_plan, (None, None))
-            for next_item in test_plan:
-                yield test_suite
-                test_suite = next_item
-            yield test_suite
-
         instrumentation_parser = InstrumentationOutputParser(test_listener)
 
         # add timer that times timeout if any INDIVIDUAL test takes too long
@@ -319,7 +325,7 @@ class AndroidTestOrchestrator:
             # log_capture is to listen to test status to mark beginning/end of each test run:
             instrumentation_parser.add_test_execution_listener(log_capture)
 
-            async for test_suite in single_buffered_test_suite():
+            async for test_suite in _preloading(test_plan):
                 test_listener.test_suite_started(test_suite.name)
                 try:
                     for local_path, remote_path in test_suite.uploadables:
@@ -349,7 +355,7 @@ class AndroidTestOrchestrator:
                 for marker, pos in log_capture.markers.items():
                     f.write("%s=%s\n" % (marker, str(pos)))
 
-    # TASK-3: monitor logact for TestButler commands
+    # TASK-3: monitor logcat for TestButler commands
     async def _process_logcat_tags(self, device: Device):
         """
         Process requested tags from logcat (including tag for test butler to process commands, if applicable)
@@ -369,16 +375,16 @@ class AndroidTestOrchestrator:
 
     def execute_test_plan(self,
                           test_application: TestApplication,
-                          test_plan: Iterator[TestSuite],
+                          test_plan: Union[AsyncIterator[TestSuite], Iterator[TestSuite]],
                           test_listener: TestListener,
-                          global_uploadables: List[Tuple[str, str]]=None):
+                          global_uploadables: List[Tuple[str, str]] = None):
         """
         Execute a test plan (a collection of test suites)
 
         :param test_application:  test application to run
-        :param test_plan: iterator with each element being a tuple of test suite name and list of string arguments
-           to provide to an executionof "adb instrument".  The test suit name is
-           used to report start and end of each test suite via the test_listener
+        :param test_plan: iterator or async iterator with each element being a tuple of test suite name and list of
+           string arguments to provide to an execution of "adb instrument".  The test suit name is used to report start
+           and end of each test suite via the test_listener
         :param test_listener: used to report test results as they occur
 
         :raises: asyncio.TimeoutError if test or test suite times out based on this orchestrator's configuration
@@ -386,6 +392,12 @@ class AndroidTestOrchestrator:
         loop = asyncio.get_event_loop()
         device_restoration = self._DeviceRestoration(test_application.device)
         device_storage = DeviceStorage(test_application.device)
+
+        if not isinstance(test_plan, AsyncIterator):
+            async def _async_iter(test_plan):
+                for i in test_plan:
+                    yield i
+            test_plan = _async_iter(test_plan)
 
         with self._test_butler_apk_context as test_butler_apk_path:
             self._test_butler_service = ServiceApplication.from_apk(test_butler_apk_path, test_application.device)
@@ -423,7 +435,7 @@ class AndroidTestOrchestrator:
                            test_application: TestApplication,
                            test_suite: TestSuite,
                            test_listener: TestListener,
-                           global_uploadables: List[Tuple[str, str]]=None):
+                           global_uploadables: List[Tuple[str, str]] = None):
         """
         Execute a suite of tests as given by the argument list, and report test results
 
