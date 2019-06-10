@@ -5,17 +5,16 @@
 # from there
 ##########
 
-import time
-
 import asyncio
+import time
+from unittest.mock import patch, PropertyMock
+
 import pytest
 
 from androidtestorchestrator import Device
 from androidtestorchestrator.application import Application
+from .support import uninstall_apk
 
-from support import uninstall_apk
-
-from unittest.mock import patch, PropertyMock
 
 # noinspection PyShadowingNames
 class TestApplication:

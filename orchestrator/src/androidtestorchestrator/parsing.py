@@ -6,7 +6,7 @@ from abc import abstractmethod, ABC
 from contextlib import suppress
 from typing import List, Tuple, Optional
 
-from . import ServiceApplication, Application
+from .application import ServiceApplication, Application
 from .reporting import TestStatus, TestListener
 from .timing import StopWatch
 
@@ -277,7 +277,7 @@ class TestButlerCommandParser(LineParser):
             self.CMD_PROPERTY_PREFIX: self._process_set_property_cmd,
             self.CMD_GRANT_PREFIX: self._process_grant_permission_cmd,
         }
-        self._service_app.start(".ButlerService", foreground=True);
+        self._service_app.start(".ButlerService", foreground=True)
 
     def parse_line(self, line: str) -> None:
         """

@@ -8,6 +8,8 @@ import subprocess
 import sys
 
 
+# todo: Remove this?
+
 BUTLER_SERVICE_SRC_DIR = os.path.join(os.path.abspath(os.path.dirname(__file__)), "..", "testbutlerservice")
 APK_RESOURCES_DIR = os.path.join(os.path.dirname(__file__), "src", "androidtestorchestrator", "resources", "apks")
 if not os.path.isdir(APK_RESOURCES_DIR):

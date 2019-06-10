@@ -18,6 +18,7 @@ jobs:
             python3.7 -m venv venv
             . venv/bin/activate
             pip install -r requirements.txt
+            echo 'export ANDROID_SDK_ROOT="$ANDROID_HOME"' >> $BASH_ENV 
       - run:
           name: Build support apps (debug)
           command: |
@@ -31,6 +32,11 @@ jobs:
             ./gradlew assembleDebug
             mkdir -p ../orchestrator/src/androidtestorchestrator/resources/apks
             cp app/build/outputs/apk/debug/app-debug.apk ../orchestrator/src/androidtestorchestrator/resources/apks/TestButlerLive.apk
+      - run:
+          name: build androidtestorchestrator
+          command: |
+            . venv/bin/activate
+            pip install -e ./orchestrator
       - save_cache:
           key: image2-{{ .Branch }}-{{ checksum "requirements.txt" }}
           paths:
@@ -42,7 +48,8 @@ jobs:
           command: |
             . venv/bin/activate
             cd orchestrator/src
-            mypy -p androidtestorchestrator
+            mypy androidtestorchestrator
+            flake8 .
       - run:
           name: Running tests
           command: |

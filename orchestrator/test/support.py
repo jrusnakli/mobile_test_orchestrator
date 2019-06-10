@@ -1,16 +1,16 @@
 import os
-import time
 # TODO: CAUTION: WE CANNOT USE asyncio.subprocess as we executein in a thread other than made and on unix-like systems, there
 # is bug in Python 3.7.
 import subprocess
 import sys
+import time
 from contextlib import suppress
 from queue import Queue
 from typing import Tuple
 
 from apk_bitminer.parsing import AXMLParser
 
-from androidtestorchestrator import Application
+from androidtestorchestrator.application import Application
 
 _BASE_DIR = os.path.join(os.path.dirname(__file__), "..", "..")
 

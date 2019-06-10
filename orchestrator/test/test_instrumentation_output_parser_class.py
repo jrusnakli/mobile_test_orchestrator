@@ -1,10 +1,9 @@
 import os
-import shutil
 
 import pytest
 
-from androidtestorchestrator.devicelog import DeviceLog
 from androidtestorchestrator.device import Device
+from androidtestorchestrator.devicelog import DeviceLog
 from androidtestorchestrator.parsing import InstrumentationOutputParser
 from androidtestorchestrator.reporting import TestListener
 

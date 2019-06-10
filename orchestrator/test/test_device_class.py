@@ -6,20 +6,17 @@
 ##########
 import asyncio
 import os
-from contextlib import suppress
-
-from apk_bitminer.parsing import AXMLParser
-
-import support
+from pathlib import Path
+from unittest.mock import patch, PropertyMock
 
 import pytest
 
+from androidtestorchestrator.application import Application, ServiceApplication
 from androidtestorchestrator.device import Device
 from androidtestorchestrator.devicestorage import DeviceStorage
-from androidtestorchestrator.application import Application, ServiceApplication
+from . import support
 from .conftest import TAG_MDC_DEVICE_ID
-from support import uninstall_apk
-from unittest.mock import patch, PropertyMock
+from .support import uninstall_apk
 
 RESOURCE_DIR = os.path.join(os.path.dirname(__file__), "resources")
 
@@ -242,7 +239,8 @@ class TestAndroidDevice:
         finally:
             app.uninstall()
 
-    def test_verify_install_on_non_installed_app(self, device: Device):
+    def test_verify_install_on_non_installed_app(self, device: Device, in_tmp_dir: Path):
         with pytest.raises(expected_exception=Exception) as excinfo:
             device._verify_install("fake/app/path", "com.linkedin.fake.app")
         assert "Failed to verify installation of app 'com.linkedin.fake.app'" in str(excinfo.value)
+        assert (in_tmp_dir / "install_failure-com.linkedin.fake.app.png").is_file()

@@ -7,10 +7,10 @@
 
 import asyncio
 import logging
+
 import pytest
 
 from androidtestorchestrator.application import TestApplication, Application, ServiceApplication
-
 
 log = logging.getLogger(__name__)
 

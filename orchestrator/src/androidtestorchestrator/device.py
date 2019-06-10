@@ -264,7 +264,7 @@ class Device(object):
         timeout = timeout or Device.TIMEOUT_ADB_CMD
         completed = subprocess.run(self.formulate_adb_cmd(*args), timeout=timeout,
                                    stderr=subprocess.PIPE,
-                                   stdout=subprocess.PIPE if capture_stdout and stdout_redirect==subprocess.DEVNULL else stdout_redirect,
+                                   stdout=subprocess.PIPE if capture_stdout and stdout_redirect == subprocess.DEVNULL else stdout_redirect,
                                    encoding='utf-8', errors='ignore')
         if fail_on_error_code(completed.returncode) or (fail_on_presence_of_stderr and completed.stderr):
             raise self.CommandExecutionFailureException(completed.returncode,
@@ -670,13 +670,13 @@ class Device(object):
         :param as_upgrade: whether as upgrade or not
         :param conditions: list of strings to look for in stdout as a trigger for callback. Some devices are
             non-standard and will provide a pop-up request explicit user permission for install once the apk is fully
-            uploaded and prepared. This param defaults to ["100\%", "pkg:", "Success"] as indication that bundle was
+            uploaded and prepared. This param defaults to ["100%", "pkg:", "Success"] as indication that bundle was
             fully prepared (pre-pop-up).
         :param on_full_install: if not None the callback to be called
 
         :raises Device.InsufficientStorageError: if there is not enough space on device
         """
-        conditions = conditions or ["100\%", "pkg:", "Success"]
+        conditions = conditions or ["100%", "pkg:", "Success"]
         parser = AXMLParser.parse(apk_path)
         package = parser.package_name
         if not as_upgrade:
@@ -715,7 +715,7 @@ class Device(object):
         yield self
         self._lock.release()
 
-    #todo: why this is a property instead of a function?
+    # todo: why this is a property instead of a function?
     @property
     def home_screen_active(self) -> bool:
         """

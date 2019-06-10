@@ -1,12 +1,11 @@
-import os
-
 import pytest
 
-from androidtestorchestrator import AndroidTestOrchestrator, TestApplication, ServiceApplication, Application, TestSuite
+from androidtestorchestrator import AndroidTestOrchestrator, TestApplication, ServiceApplication, TestSuite
+from androidtestorchestrator.application import Application
 from androidtestorchestrator.device import Device
 from androidtestorchestrator.parsing import LineParser
 from androidtestorchestrator.reporting import TestListener
-from support import uninstall_apk
+from ..support import uninstall_apk
 
 
 # noinspection PyShadowingNames

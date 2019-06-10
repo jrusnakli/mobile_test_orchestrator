@@ -5,3 +5,4 @@ pytest-html
 pytest-cov
 pytest-asyncio
 mypy
+flake8
