@@ -9,31 +9,17 @@ from dataclasses import dataclass, field
 from importlib.resources import is_resource, path
 from pathlib import Path
 from types import TracebackType
-from typing import (Dict,
-                    Iterator,
-                    List,
-                    Tuple,
-                    Union,
-                    Coroutine,
-                    ContextManager,
-                    Optional,
-                    Any,
-                    Type,
-                    AsyncIterator,
-                    TypeVar)
+from typing import Dict, Iterator, List, Tuple, Coroutine, ContextManager, Optional, Any, Type, AsyncIterator, \
+    TypeVar, Union
 
-from androidtestorchestrator.resources import apks
-from .application import (TestApplication,
-                          ServiceApplication,
-                          Application)
+from .application import TestApplication, ServiceApplication
 from .device import Device
 from .devicelog import DeviceLog, LogcatTagDemuxer
 from .devicestorage import DeviceStorage
-from .parsing import (InstrumentationOutputParser,
-                      LineParser,
-                      TestButlerCommandParser)
+from .parsing import InstrumentationOutputParser, LineParser, TestButlerCommandParser
 from .reporting import TestListener
-from .timing import StopWatch, Timer
+from .resources import apks
+from .timing import Timer
 
 log = logging.getLogger(__name__)
 
@@ -355,7 +341,7 @@ class AndroidTestOrchestrator:
                     for _, remote_path in test_suite.uploadables:
                         try:
                             device_storage.remove(remote_path, recursive=True)
-                        except Exception as e:
+                        except Exception:
                             log.error("Failed to remove temporary test vector %s from device" % remote_path)
 
             # capture logcat markers (begin/end of each test/test suite)

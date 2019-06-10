@@ -12,4 +12,4 @@ __pycache__/
 test-reports/
 orchestrator/venv/
 *.iml
-**/*.mypy_cache/
+.mypy_cache/

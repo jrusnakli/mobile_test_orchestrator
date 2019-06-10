@@ -1,12 +1,12 @@
 import json
+from typing import Tuple, Optional
 
 import pytest
 
-from typing import Tuple, Optional
-
-from androidtestorchestrator import ServiceApplication, Application
-from androidtestorchestrator.parsing import TestButlerCommandParser
+from androidtestorchestrator import ServiceApplication
+from androidtestorchestrator.application import Application
 from androidtestorchestrator.device import Device
+from androidtestorchestrator.parsing import TestButlerCommandParser
 
 
 @pytest.fixture()
@@ -29,7 +29,7 @@ class SettingListener(TestButlerCommandParser.DeviceChangeListener):
     For testing device setting-change callback when cmd to change setting is inovked on test butler;
     no property change should occur while listening for events, but known settings change should occur
     """
-    
+
     START_VALUE = "10"
     NEW_VALUE = "6"
 

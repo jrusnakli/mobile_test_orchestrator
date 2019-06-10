@@ -7,10 +7,7 @@ import pytest
 from androidtestorchestrator import ServiceApplication
 from androidtestorchestrator.device import Device
 from androidtestorchestrator.devicelog import DeviceLog
-
-
-# noinspection PyShadowingNames
-from support import uninstall_apk
+from .support import uninstall_apk
 
 
 class TestDeviceLog:

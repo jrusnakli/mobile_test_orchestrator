@@ -7,7 +7,7 @@ from types import TracebackType
 
 import psutil  # type: ignore
 from contextlib import suppress
-from typing import AsyncContextManager, Dict, Tuple, ContextManager, Optional, TextIO, Type, AsyncIterator
+from typing import AsyncContextManager, Dict, Tuple, Optional, TextIO, Type, AsyncIterator
 
 from .timing import StopWatch
 from .parsing import LineParser
@@ -204,7 +204,7 @@ class DeviceLog(RemoteDeviceBased):
         """
         return await self.device.execute_remote_cmd_async("logcat", *options, proc_completion_timeout=0, loop=loop)
 
-    def capture_to_file(self, output_path: str) -> LogCapture:
+    def capture_to_file(self, output_path: str) -> "LogCapture":
         """
         :param output_path: path to capture log output to
 

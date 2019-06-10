@@ -5,18 +5,15 @@ coded.  This is a little hokey, but allows us to test the very basics before any
 elaborate tests are done elsewhere
 """
 import logging
-import pytest
-
 from collections import deque
 
+import pytest
 from apk_bitminer.parsing import AXMLParser
 
+from androidtestorchestrator.application import ServiceApplication, Application
 from androidtestorchestrator.device import Device
 from androidtestorchestrator.devicelog import DeviceLog
-from androidtestorchestrator.application import ServiceApplication, Application
 from androidtestorchestrator.parsing import TestButlerCommandParser
-from typing import Callable
-
 
 TAG = "TestButler"
 log = logging.getLogger(__name__)

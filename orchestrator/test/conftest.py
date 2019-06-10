@@ -1,19 +1,14 @@
-import asyncio
 import os
+import shutil
+import sys
 import threading
+from pathlib import Path
 
 import pytest
-import shutil
 
-import sys
-
-from apk_bitminer.parsing import AXMLParser
-
-sys.path += [os.path.dirname(__file__), os.path.join(os.path.dirname(__file__), "..", "src")]
-
+from androidtestorchestrator.device import Device
 from . import support
 from .support import Config
-from androidtestorchestrator.device import Device
 
 TB_RESOURCES_DIR =os.path.abspath(os.path.join("..", "src", "androidtestorchestrator", "resources"))
 TAG_MDC_DEVICE_ID = "MDC_DEVICE_ID"
@@ -102,7 +97,7 @@ emulator_lock = threading.Semaphore(1)
 
 
 @pytest.fixture
-def device(sole_emulator, request):
+def device(sole_emulator):
     """
     test-specific fixture that allows other tests not dependent on this fixture to run in parallel,
     but forces dependent tests to run serially
@@ -111,12 +106,8 @@ def device(sole_emulator, request):
     :return: sole test emulator
     """
     emulator_lock.acquire()
-
-    def unlock():
-        emulator_lock.release()
-
-    request.addfinalizer(unlock)
-    return sole_emulator
+    yield sole_emulator
+    emulator_lock.release()
 
 
 @pytest.fixture
@@ -126,3 +117,11 @@ def fake_sdk(tmpdir_factory):
     with open(os.path.join(str(tmpdir), "platform-tools", "adb"), 'w'):
         pass  # create a dummy file so that test of its existence as file passes
     return str(tmpdir)
+
+
+@pytest.fixture
+def in_tmp_dir(tmp_path: Path) -> Path:
+    cwd = os.getcwd()
+    os.chdir(tmp_path)
+    yield tmp_path
+    os.chdir(cwd)

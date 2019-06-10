@@ -1,6 +1,6 @@
 import logging
 import os
-from typing import Union, Optional
+from typing import Optional
 
 from .device import (
     Device,
