@@ -1,6 +1,6 @@
 # flake8: noqa: F401
 ##########
-# Tests the lower level Device class against a running emulator.  These tests may
+# Tests the lower level Device class against a running emulator. These tests may
 # be better server in mdl-integration-server directory, but we cannot start up an emulator
 # from there
 ##########
@@ -19,6 +19,7 @@ from androidtestorchestrator.devicestorage import DeviceStorage
 from androidtestorchestrator.application import Application, ServiceApplication
 from .conftest import TAG_MDC_DEVICE_ID
 from support import uninstall_apk
+from unittest.mock import patch, PropertyMock
 
 RESOURCE_DIR = os.path.join(os.path.dirname(__file__), "resources")
 
@@ -61,7 +62,7 @@ class TestAndroidDevice:
         device.set_device_setting("system", "dim_screen", new)
         assert device.get_device_setting("system", "dim_screen") == new
 
-    def test_get_invalid_decvice_setting(self, device: Device):
+    def test_get_invalid_device_setting(self, device: Device):
         try:
             if int(device.get_system_property("ro.product.first_api_level")) < 26:
                 assert device.get_device_setting("invalid", "nosuchkey") is ''
@@ -196,3 +197,52 @@ class TestAndroidDevice:
 
     def test_check_network_connect(self, device: Device):
         assert device.check_network_connection("localhost", count=3) == 0
+
+    def test_get_device_properties(self, device: Device):
+        device_properties = device.get_device_properties()
+        assert device_properties.get("ro.build.product", None) is not None
+        assert device_properties.get("ro.build.user", None) is not None
+        assert device_properties.get("ro.build.version.sdk", None) is not None
+
+    def test_foreground_and_activity_detection(self, device: Device, support_app: str):
+        app = Application.from_apk(support_app, device)
+        try:
+            # By default, emulators should always start into the home screen
+            assert device.home_screen_active
+            # Start up an app and test home screen is no longer active, and foreground app is correct
+            app.start(activity=".MainActivity")
+            assert not device.home_screen_active
+            assert device.foreground_activity() == app.package_name
+        finally:
+            app.uninstall()
+
+    def test_return_home_succeeds(self, device: Device, support_app: str):
+        app = Application.from_apk(support_app, device)
+        try:
+            with patch('androidtestorchestrator.device.Device.home_screen_active', new_callable=PropertyMock) as mock_home_screen_active:
+                # Have to mock out call since inputting the KEYCODE_BACK event doesn't work for all devices/emulators
+                mock_home_screen_active.return_value = True
+                app.start(activity=".MainActivity")
+                assert device.foreground_activity() == app.package_name
+                device.return_home()
+                assert device.home_screen_active
+        finally:
+            app.uninstall()
+
+    def test_return_home_fails(self, device: Device, support_app: str):
+        app = Application.from_apk(support_app, device)
+        try:
+            app.start(activity=".MainActivity")
+            assert device.foreground_activity() == app.package_name
+            with pytest.raises(expected_exception=Exception) as excinfo:
+                # Nobody would ever really pass a negative number, but our test app has only one activity screen. So
+                # need to pass -1 to force the function to reach its back button key-press limit
+                device.return_home(keycode_back_limit=-1)
+            assert "Max number of back button presses" in str(excinfo.value)
+        finally:
+            app.uninstall()
+
+    def test_verify_install_on_non_installed_app(self, device: Device):
+        with pytest.raises(expected_exception=Exception) as excinfo:
+            device._verify_install("fake/app/path", "com.linkedin.fake.app")
+        assert "Failed to verify installation of app 'com.linkedin.fake.app'" in str(excinfo.value)
