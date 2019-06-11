@@ -3,27 +3,21 @@ jobs:
   build:
     working_directory: ~/code
     docker:
-      - image: jrusnakli/android:api-28-py3.7
+      - image: liwjohnson/android-api-28
     environment:
       JVM_OPTS: -Xmx3200m
       EMULATOR_OPTS: "-no-window -no-audio -no-accel"
       PYTHONASYNCIODEBUG: 1
-      ANDROID_SDK_ROOT: /opt/android/sdk
-      ANDROID_AVD_HOME: /opt/android/sdk/avds
     steps:
       - checkout
       - restore_cache:
-          key: deps1-{{ .Branch }}-{{ checksum "requirements.txt" }}
+          key: image2-{{ .Branch }}-{{ checksum "requirements.txt" }}
       - run:
           name: setup python venv
           command: |
-            /usr/local/bin/python3.7 -m venv venv
+            python3.7 -m venv venv
             . venv/bin/activate
             pip install -r requirements.txt
-      - run:
-          name: setup emulator
-          command: |
-             .circleci/setup_emulator.sh
       - run:
           name: Build support apps (debug)
           command: |
@@ -38,7 +32,7 @@ jobs:
             mkdir -p ../orchestrator/src/androidtestorchestrator/resources/apks
             cp app/build/outputs/apk/debug/app-debug.apk ../orchestrator/src/androidtestorchestrator/resources/apks/TestButlerLive.apk
       - save_cache:
-          key: deps1-{{ .Branch }}-{{ checksum "requirements.txt" }}
+          key: image2-{{ .Branch }}-{{ checksum "requirements.txt" }}
           paths:
             - "venv"
             - "testsupportapps/TestButlerTestApp/.gradle"
@@ -49,10 +43,6 @@ jobs:
             . venv/bin/activate
             cd orchestrator/test
             pytest -s . --html  test-reports/report.html --cov=../src . --cov-report html:test-reports/coverage
-      - save_cache:
-          key: deps1-{{ .Branch }}-{{ checksum "requirements.txt" }}
-          paths:
-            - "~/.android/avd/MTO_emulator.avd"
       - run:
           name: directory
           command: |
