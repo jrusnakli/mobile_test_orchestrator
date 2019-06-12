@@ -148,7 +148,7 @@ class AndroidTestOrchestrator:
     ...     def test_suite_started(self, test_suite_name:str):
     ...         print("Test execution started: " + test_suite_name)
     ...
-    ...     def test_suite_ended(self, test_suite_name: str, test_count: int):
+    ...     def test_suite_ended(self, test_suite_name: str, test_count: int, execution_time: float):
     ...         print("Test execution ended: " + test_suite_name)
     ...
     ...     def test_suite_errored(self, test_suite_name: str, status_code: int):
@@ -251,7 +251,10 @@ class AndroidTestOrchestrator:
         self._background_tasks = []
         self._instrumentation_timeout = max_test_suite_time
         self._test_timeout = max_test_time
-        self._test_butler_apk_context = nullcontext(test_butler_apk_path) or test_butler_apk()
+        if not test_butler_apk_path:
+            self._test_butler_apk_context = test_butler_apk()
+        else:
+            self._test_butler_apk_context = nullcontext(test_butler_apk_path)
         self._timer = None
         self._test_butler_service = None
         self._tag_monitors: Dict[str, Tuple[str, LineParser]] = {}
