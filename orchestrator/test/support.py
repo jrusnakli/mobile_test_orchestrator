@@ -136,10 +136,10 @@ def launch_emulator(port: int):
         return
 
     if sys.platform == 'win32':
-        emulator_path = os.path.join(android_sdk, "emulator", "emulator.exe")
+        emulator_path = os.path.join(android_sdk, "emulator", "emulator-headless.exe")
     else:
         # latest Android SDK should use $SDK_ROOT/emulator/emulator instead of $SDK_ROOT/tools/emulator
-        emulator_path = os.path.join(android_sdk, "emulator", "emulator")
+        emulator_path = os.path.join(android_sdk, "emulator", "emulator-headless")
     sdkmanager_path = os.path.join(android_sdk, "tools", "bin", "sdkmanager")
     avdmanager_path = os.path.join(android_sdk, "tools", "bin", "avdmanager")
     if sys.platform.lower() == 'win32':
