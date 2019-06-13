@@ -38,6 +38,12 @@ jobs:
             - "testsupportapps/TestButlerTestApp/.gradle"
             - "testbutlerservice/.gradle"
       - run:
+          name: Run static analysis
+          command: |
+            . venv/bin/activate
+            cd orchestrator/src
+            mypy -p androidtestorchestrator
+      - run:
           name: Running tests
           command: |
             . venv/bin/activate

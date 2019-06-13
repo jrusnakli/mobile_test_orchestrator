@@ -1,10 +1,10 @@
 import logging
 import subprocess
 import time
-from contextlib import suppress
+from asyncio import AbstractEventLoop
 
-from apk_bitminer.parsing import AXMLParser
-from typing import List, TypeVar, Type, Optional, AsyncContextManager, Union
+from apk_bitminer.parsing import AXMLParser  # type: ignore
+from typing import List, TypeVar, Type, Optional, AsyncContextManager, Union, AsyncIterator
 
 from .device import Device, RemoteDeviceBased
 
@@ -12,7 +12,8 @@ log = logging.getLogger(__name__)
 
 # for returning instance of "cls" in install class-method.  Recommended way of doing this, but there
 # may be better way in later Python 3 interpreters?
-_Ty = TypeVar('T', bound='Application')
+_TApp = TypeVar('_TApp', bound='Application')
+_TTestApp = TypeVar('_TTestApp', bound='TestApplication')
 
 
 class Application(RemoteDeviceBased):
@@ -41,7 +42,7 @@ class Application(RemoteDeviceBased):
         """
         super(Application, self).__init__(device)
         self._package_name = package_name
-        self._version = None  # loaded on-demand first time self.version called
+        self._version: Optional[str] = None  # loaded on-demand first time self.version called
 
     @property
     def package_name(self) -> str:
@@ -71,7 +72,7 @@ class Application(RemoteDeviceBased):
         return None
 
     @classmethod
-    async def from_apk_async(cls: Type[_Ty], apk_path: str, device: Device, as_upgrade: bool = False) -> _Ty:
+    async def from_apk_async(cls: Type[_TApp], apk_path: str, device: Device, as_upgrade: bool = False) -> _TApp:
         """
         Install provided application asynchronously.  This allows the output of the install to be processed
         in a streamed fashion.  This can be useful on some devices that are non-standard android where installs
@@ -99,7 +100,7 @@ class Application(RemoteDeviceBased):
         return cls(package, device)
 
     @classmethod
-    def from_apk(cls: Type[_Ty], apk_path: str, device: Device, as_upgrade: bool = False) -> _Ty:
+    def from_apk(cls: Type[_TApp], apk_path: str, device: Device, as_upgrade: bool = False) -> _TApp:
         """
         Install provided application, blocking until install is complete
 
@@ -118,7 +119,7 @@ class Application(RemoteDeviceBased):
         device.install_synchronous(apk_path, as_upgrade)
         return cls(package, device)
 
-    def uninstall(self):
+    def uninstall(self) -> None:
         """
         Uninstall this app from remote device.
         """
@@ -231,7 +232,9 @@ class ServiceApplication(Application):
     Class representing an Android application that is specifically a service
     """
 
-    def start(self, activity: str, *options: str, intent: Optional[str] = None, foreground: bool = True):
+    def start(self, activity: str,  # type: ignore # TODO: activity should be Optional, as it is in Application.
+              *options: str, intent: Optional[str] = None, foreground: bool = True):
+
         """
         invoke an intent associated with this service
 
@@ -241,10 +244,13 @@ class ServiceApplication(Application):
         :param foreground: whether to start in foreground or not (Android O+
             does not allow background starts any longer)
         """
+        # TODO: This is bad. Breaks liskov substitution principle.
+        assert activity, "Must provide an activity for ServiceApplication"
+
         activity = f"{self.package_name}/{activity}"
-        options = [f"\"{item}\"" for item in options]
+        options = tuple(f"\"{item}\"" for item in options)
         if intent:
-            options = ["-a", intent] + options
+            options = ("-a", intent) + options
         if foreground and self.device.api_level >= 26:
             self.device.execute_remote_cmd("shell", "am", "start-foreground-service", "-n", activity, *options, capture_stdout=False)
         else:
@@ -256,7 +262,7 @@ class TestApplication(Application):
     Class representing an Android test application installed on a remote device
     """
 
-    def __init__(self, package_name: str, device: Device, target_package: str, runner):
+    def __init__(self, package_name: str, device: Device, target_package: str, runner: str):
         """
         Create an instance of a remote test app and the interface to manipulate it.
         It is recommended to  create instances via the class-method `install`:
@@ -274,14 +280,14 @@ class TestApplication(Application):
         self._target_application = Application(target_package, device)
 
     @property
-    def target_application(self):
+    def target_application(self) -> Application:
         """
         :return: target application under test for this test app
         """
         return self._target_application
 
     @property
-    def runner(self):
+    def runner(self) -> str:
         """
         :return: runner associated with this test app
         """
@@ -299,8 +305,9 @@ class TestApplication(Application):
                 items.append(runner)
         return items
 
-    async def run(self, *options: str, loop=None, unresponsive_timeout: int = None,
-                  max_test_time: Union[float, None] = None) -> AsyncContextManager:
+    async def run(self, *options: str, loop: Optional[AbstractEventLoop] = None,
+                  unresponsive_timeout: Optional[float] = None, max_test_time: Optional[float] = None
+                  ) -> AsyncContextManager[AsyncIterator[str]]:
         """
         Run an instrumentation test package, yielding lines from std output
 
@@ -323,7 +330,7 @@ class TestApplication(Application):
         if self._target_application.package_name not in self.device.list_installed_packages():
             raise Exception("App under test, as designatee by this test app's manifest, is not installed!")
         # surround each arg with quotes to preserve spaces in any arguments when sent to remote device:
-        options = ['"%s"' % arg if not arg.startswith('"') else arg for arg in options]
+        options = tuple('"%s"' % arg if not arg.startswith('"') else arg for arg in options)
         return await self.device.execute_remote_cmd_async("shell", "am", "instrument", "-w", *options, "-r",
                                                           "/".join([self._package_name, self._runner]),
                                                           proc_completion_timeout=unresponsive_timeout,
@@ -331,7 +338,8 @@ class TestApplication(Application):
                                                           loop=loop)
 
     @classmethod
-    async def from_apk_async(cls, apk_path: str, device: Device, as_upgrade: bool = False) -> "TestApplication":
+    async def from_apk_async(cls: Type[_TTestApp], apk_path: str, device: Device, as_upgrade: bool = False
+                             ) -> _TTestApp:
         """
         Install apk as a test application on the given device
 
@@ -355,7 +363,7 @@ class TestApplication(Application):
         return cls(parser.package_name, device, parser.instrumentation.target_package, parser.instrumentation.runner)
 
     @classmethod
-    def from_apk(cls, apk_path: str, device: Device, as_upgrade: bool = False) -> "TestApplication":
+    def from_apk(cls: Type[_TTestApp], apk_path: str, device: Device, as_upgrade: bool = False) -> _TTestApp:
         """
         Install apk as a test application on the given device
 

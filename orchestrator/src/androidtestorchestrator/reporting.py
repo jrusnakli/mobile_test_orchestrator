@@ -8,8 +8,8 @@ class TestStatus(Enum):
     SKIPPED = "SKIPPED"
     ASSUMPTION_VIOLATED = "ASSUMPTION_VIOLATED"
 
-    def __repr__(self):
-        return self.value
+    def __repr__(self) -> str:
+        return self.value  # type: ignore
 
 
 class TestListener(ABC):
@@ -19,7 +19,7 @@ class TestListener(ABC):
     Clients implement this to receive live test status as they are executed.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """
         """
         # having constructor prevents pytest from picking this up ! :-(

@@ -4,9 +4,9 @@ import logging
 
 from abc import abstractmethod, ABC
 from contextlib import suppress
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 
-from androidtestorchestrator import ServiceApplication, Application
+from . import ServiceApplication, Application
 from .reporting import TestStatus, TestListener
 from .timing import StopWatch
 
@@ -51,11 +51,11 @@ class InstrumentationOutputParser(LineParser):
         test_no: int = -1
         stack: str = ""
         started: bool = False
-        result: TestStatus = None
+        result: Optional[TestStatus] = None
         runner: str = ""
-        start_time: datetime.datetime.date = datetime.datetime.utcnow()
+        start_time: datetime.datetime = datetime.datetime.utcnow()
 
-        def set(self, field_name: str, value: str):
+        def set(self, field_name: str, value: str) -> None:
             value = value.strip()
             if field_name == 'id':
                 self.runner = value
@@ -76,7 +76,7 @@ class InstrumentationOutputParser(LineParser):
             else:
                 log.warning("Unrecognized field: %s;  ignoring" % field_name)
 
-    def __init__(self, test_listener: TestListener):
+    def __init__(self, test_listener: TestListener) -> None:
         """
         :param test_listener: Reporter object to report test status on an on-going basis
         """
@@ -84,13 +84,13 @@ class InstrumentationOutputParser(LineParser):
         # internal attributes:
         self._reporter = test_listener
         self._execution_listeners: List[StopWatch] = []
-        self._test_result: InstrumentationOutputParser.InstrumentTestResult = None
-        self._current_key: str = None
+        self._test_result: Optional[InstrumentationOutputParser.InstrumentTestResult] = None
+        self._current_key: Optional[str] = None
         # attributes made public through getters:
         self._execution_time: float = -1.0
         self._total_test_count: int = 0
-        self._return_code = None
-        self._streamed = []
+        self._return_code: Optional[int] = None
+        self._streamed: List[str] = []
 
     # PROPERTIES
 
@@ -104,13 +104,14 @@ class InstrumentationOutputParser(LineParser):
 
     # PRIVATE API
 
-    def _process_test_code(self, code: int):
+    def _process_test_code(self, code: int) -> None:
         """
         parse test code value from an instrumentation output
         :param code: code to evaluate
 
         :raises: ValueError if code is unrecognized
         """
+        assert self._test_result, "expected self._test_result to be set"
         if code > 0:
             self._test_result.started = True
             self._test_result.start_time = datetime.datetime.utcnow()
@@ -202,6 +203,7 @@ class InstrumentationOutputParser(LineParser):
             self._test_result = None
         elif self._current_key:
             # A continuation of last processed key:
+            assert self._test_result, "expected self._test_result to be set"
             self._test_result.set(self._current_key, line)
         elif self._current_key == "stream" and line:
             self._streamed.append(line)
@@ -241,7 +243,7 @@ class TestButlerCommandParser(LineParser):
         """
 
         @abstractmethod
-        def device_setting_changed(self, namespace, key, previous, new) -> None:
+        def device_setting_changed(self, namespace: str, key: str, previous: str, new: str) -> None:
             """
 
             :param namespace: namespace of changed setting
@@ -251,7 +253,7 @@ class TestButlerCommandParser(LineParser):
             """
 
         @abstractmethod
-        def device_property_changed(self, key, previous, new):
+        def device_property_changed(self, key: str, previous: Optional[str], new: str) -> None:
             """
             :param key: key of changed property
             :param previous: previous value of property (for restoration purposes if desired)
@@ -259,7 +261,7 @@ class TestButlerCommandParser(LineParser):
             """
 
     def __init__(self, service: ServiceApplication, app_under_test: Application,
-                 listener: DeviceChangeListener=None):
+                 listener: Optional[DeviceChangeListener] = None) -> None:
         """
 
         :param service: the service app running test butler on the remote device
@@ -277,7 +279,7 @@ class TestButlerCommandParser(LineParser):
         }
         self._service_app.start(".ButlerService", foreground=True);
 
-    def parse_line(self, line: str):
+    def parse_line(self, line: str) -> None:
         """
         Main processing logic
         :param line: line of output from logcat containing a test butler command
@@ -295,8 +297,8 @@ class TestButlerCommandParser(LineParser):
         try:
             msg = line.split(':', 1)[-1]
             command_and_id, payload = msg.strip().split(":", 1)
-            command_id, command = command_and_id.split(' ')
-            command_id = int(command_id)
+            command_id_str, command = command_and_id.split(' ')
+            command_id = int(command_id_str)
             payload = payload.strip()
             if command not in self._method_map:
                 log.error("Unknown command received: %s" + line)
@@ -315,7 +317,7 @@ class TestButlerCommandParser(LineParser):
         except ValueError:
             log.error("Unexpected format for command and payload: '%s'" % line)
 
-    def _send_response(self, cmd_id: int, response_code: int, response_msg: str):
+    def _send_response(self, cmd_id: int, response_code: int, response_msg: str) -> None:
         """
         handshake to send command response back
         :param cmd_id: id of command
@@ -337,17 +339,20 @@ class TestButlerCommandParser(LineParser):
         try:
             namespace, key, value = cmd.split(' ', 2)
         except ValueError:
-            log.error("Received invalid format in command: %s" % cmd)
-            return
+            log.error(f"Received invalid format in command: {cmd}")
+            return 1, f"Received invalid format in command: {cmd}"
 
         if namespace is None or key is None or value is None:
             return 1, "Missing namespace, key or value in command: %s" % cmd
         previous = self._service_app.device.set_device_setting(namespace, key, value)
         if previous is None:
-            msg = "Test Butler command '%s' failed"
+            msg = f"Test Butler command '{cmd}' failed"
             return 1, msg
         else:
             new_value = self._service_app.device.get_device_setting(namespace, key)
+            if not new_value:
+                msg = f"Test Butler command '{cmd}' failed"
+                return 1, msg
             if value.startswith('+'):
                 if value[1:] not in new_value:
                     return self.CODE_ASSUMPTION_VIOLATION, \
@@ -383,13 +388,19 @@ class TestButlerCommandParser(LineParser):
         key = items[-2]
         value = items[-1]
         if key == "locale":
-            self._service_app.device.set_locale(value)
+            # todo: renable this once set_locale works
+            # try:
+            #     self._service_app.device.set_locale(value)
+            #     return 0, "Success"
+            # except:
+            msg = f"Test Butler command '{cmd}' failed"
+            return 1, msg
         else:
             previous = self._service_app.device.set_system_property(key, value)
             if self._listener is not None:
                 self._listener.device_property_changed(key, previous, value)
             if previous is None and key not in ["location_providers_allowed"]:
-                msg = "Test Butler command %s failed" % cmd
+                msg = f"Test Butler command '{cmd}' failed"
                 return 1, msg
             else:
                 new_value = self._service_app.device.get_system_property(key)
@@ -415,8 +426,8 @@ class TestButlerCommandParser(LineParser):
         if grant_type == "permission":
             package = grant_json.get('package', None)
             if package is None:
-                log.error("Missing package for grant request: %s" % cmd)
-                return
+                log.error(f"Missing package for grant request: {cmd}")
+                return 1, f"Missing package for grant request: {cmd}"
             permissions = grant_json.get('permissions', [])
             if not permissions:
                 msg = "Missing permissions for grant request: %s" % cmd

@@ -4,3 +4,4 @@ pytest
 pytest-html
 pytest-cov
 pytest-asyncio
+mypy
