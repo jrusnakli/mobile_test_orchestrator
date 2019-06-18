@@ -6,9 +6,10 @@ from pathlib import Path
 
 import pytest
 
+from androidtestorchestrator.application import Application, TestApplication, ServiceApplication
 from androidtestorchestrator.device import Device
 from . import support
-from .support import Config
+from .support import Config, uninstall_apk
 
 TB_RESOURCES_DIR =os.path.abspath(os.path.join("..", "src", "androidtestorchestrator", "resources"))
 TAG_MDC_DEVICE_ID = "MDC_DEVICE_ID"
@@ -125,3 +126,19 @@ def in_tmp_dir(tmp_path: Path) -> Path:
     os.chdir(tmp_path)
     yield tmp_path
     os.chdir(cwd)
+
+
+@pytest.fixture
+def install_app(device: Device):
+    apps = []
+
+    def do_install(app_cls: Application, package_name: str):
+        uninstall_apk(package_name, device)
+        app = app_cls.from_apk(package_name, device)
+        apps.append(app)
+        return app
+
+    yield do_install
+
+    for app in apps:
+        app.uninstall()
