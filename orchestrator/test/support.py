@@ -215,7 +215,8 @@ def gradle_build(*target_and_q: Tuple[str, Queue]):
     except Exception as e:
         for _, q in target_and_q:
             q.put(None)
-        raise
+        # harsh exit to prevent tests from attempting to run that require apk that wasn't built
+        sys.exit(-1)
     else:
         print(f"Built {apk_path}")
 

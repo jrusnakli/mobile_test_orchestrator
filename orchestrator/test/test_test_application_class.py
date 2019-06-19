@@ -10,34 +10,18 @@ import logging
 
 import pytest
 
-from androidtestorchestrator.application import TestApplication, Application, ServiceApplication
+from androidtestorchestrator.application import Application, TestApplication, ServiceApplication
 
 log = logging.getLogger(__name__)
 
 
 # noinspection PyShadowingNames
-@pytest.fixture  # (scope='class')
-def test_app(device, request, support_app, support_test_app, test_butler_service):
-    butler_app = Application.from_apk(support_app, device)
-    test_app = TestApplication.from_apk(support_test_app, device)
-    service = ServiceApplication.from_apk(test_butler_service, device)
-
-    def fin():
-        """
-        cleanup after test
-        """
-        butler_app.uninstall()
-        test_app.uninstall()
-        service.uninstall()
-
-    request.addfinalizer(fin)
-    return test_app
-
-
-# noinspection PyShadowingNames
 class TestTestApplication(object):
 
-    def test_run(self, test_app: TestApplication):
+    def test_run(self, install_app, support_app: str, support_test_app: str, test_butler_service: str):
+        install_app(Application, support_app)
+        install_app(ServiceApplication, test_butler_service)
+        test_app = install_app(TestApplication, support_test_app)
         # More robust testing of this is done in test of AndroidTestOrchestrator
         async def parse_output():
             async with await test_app.run("-e", "class", "com.linkedin.mdctest.TestButlerTest#testTestButlerRotation")  as lines:
@@ -49,7 +33,8 @@ class TestTestApplication(object):
 
         asyncio.get_event_loop().run_until_complete(timer())  # no Exception thrown
 
-    def test_list_runners(self, test_app: TestApplication):
+    def test_list_runners(self, install_app, support_test_app):
+        test_app = install_app(TestApplication, support_test_app)
         instrumentation = test_app.list_runners()
         for instr in instrumentation:
             if "Runner" in instr:
