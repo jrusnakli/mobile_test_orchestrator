@@ -341,7 +341,7 @@ class Device(object):
             async def __aexit__(self, exc_type: Optional[Type[BaseException]], exc_val: Optional[BaseException],
                                 exc_tb: Optional[TracebackType]) -> None:
                 if proc_completion_timeout is None or proc_completion_timeout > 0.0:
-                    return_code = await asyncio.wait_for(proc.wait(), proc_completion_timeout,  # type: ignore
+                    return_code = await asyncio.wait_for(proc.wait(), proc_completion_timeout,
                                                          loop=loop)  # loop arg type is optional. bug in typeshed.
                     if return_code != 0:
                         assert proc.stderr, "Expected proc to have stderr pipe"
