@@ -15,7 +15,6 @@
  */
 package com.linkedin.android.testbutler;
 
-import android.app.IntentService;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.res.Configuration;
@@ -23,16 +22,15 @@ import android.os.IBinder;
 import android.os.RemoteException;
 import android.provider.Settings;
 import android.support.annotation.Nullable;
+import android.support.v4.app.JobIntentService;
 import android.util.Log;
-
-import java.lang.InterruptedException;
-import java.lang.reflect.Method;
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.util.Locale;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import java.util.Locale;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
@@ -46,27 +44,28 @@ import com.google.gson.JsonObject;
  * to make test runs more reliable, as well as enable tests to modify system settings on the fly
  * to test application behavior under a given configuration.</p>
  * <p>
- * This implementation is for us in the mobile cloud, and operates in a manner similar to the way
- * Instrumentation Android TestRunner communicates test status: via stdout over the Android device bridge
+ * This implementation is for us in the mobile cloud, and operates in a manner simiar to the way
+ * Instrumentation Andrdoi TestRunner communicates test status: via stdout over the Android device bridge
  * (adb) connection.  Here, the setting to change M communicated on stdout as a command that is to
  * be picked up by the server and effected.  The code will look for a change in the value before
  * returning control back to the client, or will timeout if the change doesn't happen in a timely manner.</p>
  */
 @SuppressWarnings("deprecation")
-public class ButlerService extends IntentService {
+public class ButlerService extends JobIntentService {
+    private Intent mForegroundIntent = null;
     //for debug:
     private static final String TAG = CommandInvocation.TAG;
 
     private static final Gson GSON = new Gson();
 
-    // These should match declaration of intent in Manifest.xml
+    // These should match declaration of intents in Manifest.xml
     final static String ACTION_CMD_RESPONSE = "com.linkedin.android.testbutler.COMMAND_RESPONSE";
     final static String ACTION_TEST_ONLY_SEND_CMD = "com.linkedin.android.testbutler.FOR_TEST_ONLY_SEND_CMD";
     final static String ACTION_SET_SYSTEM_LOCALE = "com.linkedin.android.testbutler.SET_SYSTEM_LOCALE";
 
     private final ButlerApi.Stub butlerApi = new ButlerApi.Stub() {
 
-        // should match Python scripting in orchestrator module:
+        // should match Python scripting on server side code (in mdl-integration MP):
         private static final String SETTING_PREFIX = "TEST_BUTLER_SETTING:";
         private static final String GRANT_PREFIX = "TEST_BUTLER_GRANT:";
 
@@ -96,6 +95,13 @@ public class ButlerService extends IntentService {
             return returnValue == null ? "" : returnValue;
         }
 
+        /**
+         *
+         * @param namespace namespace of property being requested
+         * @param key key name of property being requested
+         * @return Integer property requested
+         * @throws Settings.SettingNotFoundException
+         */
         private Integer getIntProperty(final String namespace, final String key) throws Settings.SettingNotFoundException {
             if (key.equals("location_providers_allowed")) {
                 return getIntProperty(namespace, "location_mode");
@@ -111,11 +117,19 @@ public class ButlerService extends IntentService {
             }
         }
 
+        /**
+         * Invoke a command, wait for and return the response
+         * @param cmd text of command
+         * @return the CommandResponse from the host
+         * @throws InterruptedException if interrupted while waiting for response
+         * @throws ExecutionException on execution exception while waiting for response
+         * @throws TimeoutException if response takes more than 1 second
+         */
         private CommandResponse invoke(final String cmd) throws
-                                                         RemoteException, InterruptedException, ExecutionException, TimeoutException {
-            // TODO: in future possible can allow multiple parallel invocations
-            Future<CommandResponse> future = CommandInvocation.invoke(cmd);
-            CommandResponse response = future.get(1, TimeUnit.SECONDS);
+                                                         InterruptedException, ExecutionException, TimeoutException {
+            Future<CommandResponse> futureResponse = CommandInvocation.invoke(cmd);
+
+            CommandResponse response = futureResponse.get(1, TimeUnit.SECONDS);
             if (response.getStatusCode() != 0) {
                 // log debug message, as server should handle as error/exception
                 Log.d(TAG, "Server-side error granting permission: " + response.getMessage());
@@ -133,8 +147,7 @@ public class ButlerService extends IntentService {
          * @return CommandResponse from host, or null if no property change was needed
          */
         private CommandResponse sendSetStringProperty(final String namespace, final String key,
-            String value)
-            throws  RemoteException{
+            String value){
             try {
                 if (getStringProperty(namespace, key).toLowerCase().equals(value.toLowerCase())) {
                     return null;
@@ -151,9 +164,15 @@ public class ButlerService extends IntentService {
             }
         }
 
+        /**
+         * Send a text command to set a integer property via stdout over adb to signal server to take action
+         * @param namespace Namespace of param to set
+         * @param key  key name of param to set
+         * @param value value to set parameter to
+         * @return CommandResponse from host, or null if no property change was needed
+         */
         private CommandResponse sendSetIntProperty(final String namespace, final String key,
-            int value)
-            throws  RemoteException{
+            int value) {
             try {
                 if (getIntProperty(namespace, key).equals(value)) {
                     return null;
@@ -214,12 +233,18 @@ public class ButlerService extends IntentService {
             }
             if (response != null) {
                 Log.e(TAG, "Message from host: " + response.getMessage());
+            } else {
+                Log.e(TAG, "Response was null");
             }
         }
 
+        /**
+         * Request host to set the wifi state of device
+         * @param enabled whether to enable or disable wifi
+         * @return true if successfully set
+         */
         @Override
-        public boolean setWifiState(boolean enabled)
-            throws RemoteException {
+        public boolean setWifiState(boolean enabled){
             CommandResponse response = sendSetIntProperty(NS_GLOBAL, "wifi_on", enabled ? 1 : 0);
             if (response == null || response.getStatusCode() != 0){
                 onError(NS_GLOBAL,"wifi_on", enabled ? "1" : "0", response);
@@ -257,9 +282,9 @@ public class ButlerService extends IntentService {
         }
 
         @Override
-        public boolean setRotation(int rotation)
-            throws RemoteException {
+        public boolean setRotation(int rotation) {
             CommandResponse response = sendSetIntProperty(NS_SYSTEM, "accelerometer_rotation", 0);
+            Log.d(TAG, "ROTATION: " + response);
             if (response == null || response.getStatusCode() != 0){
                 onErrorInt(NS_SYSTEM, "accelerometer_rotation", 0, response);
             }
@@ -272,12 +297,12 @@ public class ButlerService extends IntentService {
         }
 
         @Override
-        public boolean setGsmState(boolean enabled) throws RemoteException {
+        public boolean setGsmState(boolean enabled) {
             return false;
         }
 
         @Override
-        public boolean grantPermission(String packageName, String permission) throws RemoteException {
+        public boolean grantPermission(String packageName, String permission) {
             int hasPerm = getApplicationContext().getPackageManager().checkPermission(permission,
                 packageName);
             if (hasPerm == PackageManager.PERMISSION_GRANTED) {
@@ -305,17 +330,17 @@ public class ButlerService extends IntentService {
         }
 
         @Override
-        public boolean setSpellCheckerState(boolean enabled) throws RemoteException {
+        public boolean setSpellCheckerState(boolean enabled) {
             return false;
         }
 
         @Override
-        public boolean setShowImeWithHardKeyboardState(boolean enabled) throws RemoteException {
+        public boolean setShowImeWithHardKeyboardState(boolean enabled) {
             return false;
         }
 
         @Override
-        public boolean setImmersiveModeConfirmation(boolean enabled) throws RemoteException {
+        public boolean setImmersiveModeConfirmation(boolean enabled) {
             CommandResponse response = sendSetStringProperty(NS_SECURE, "immersive_mode_confirmation",
                 enabled ? "\"\"\"\"" : "confirmed");
             if (response == null || response.getStatusCode() != 0){
@@ -327,19 +352,19 @@ public class ButlerService extends IntentService {
     };
 
     public ButlerService() {
-        super("ButlerService");
+        super();
     }
 
     @Override
     public void onCreate() {
         super.onCreate();
-        //Log.d(TAG, "MDC ButlerService starting up...");
+        Log.d(TAG, "MDC ButlerService starting up...");
     }
 
     @Override
     public void onDestroy() {
         super.onDestroy();
-        //Log.d(TAG, "MDC ButlerService shutting down...");
+        Log.d(TAG, "MDC ButlerService shutting down...");
     }
 
     @Nullable
@@ -352,10 +377,15 @@ public class ButlerService extends IntentService {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         super.onStartCommand(intent, flags, startId);
+        onHandleIntent(intent);
         return android.app.Service.START_STICKY;
     }
 
     @Override
+    protected void onHandleWork(Intent intent) {
+        onHandleIntent(intent);
+    }
+
     protected void onHandleIntent(Intent intent){
         /**
          * A test-only intent ACTION_TEST_ONLY_SEND_CMD is provided for use in testing
@@ -366,7 +396,6 @@ public class ButlerService extends IntentService {
          * that could make debugging the basics far more difficult.
          */
         if (intent.getAction() == null){
-            Log.w(TAG, "Got null intent action? Ignoring");
             return;
         }
         if (intent.getAction().equals(ACTION_CMD_RESPONSE)) {
@@ -380,13 +409,9 @@ public class ButlerService extends IntentService {
         } else if (intent.getAction().equals(ACTION_TEST_ONLY_SEND_CMD)){
             // This is only for test purposes to send a command over to server
             // and allow server to test response logic
-            Log.d(TAG, "Sending command ");
-            Log.d(TAG, intent.getStringExtra("command"));
-            try {
-                CommandInvocation.invoke("TEST_ONLY " + intent.getStringExtra("command"));
-            } catch (Exception e) {
-                Log.e(TAG, "Failed to send test-only command");
-            }
+            Log.d(TAG, "Sending command \"" + intent.getStringExtra("command") + "\"");
+            CommandInvocation.invoke("TEST_ONLY " + intent.getStringExtra("command"));
+
         } else if (intent.getAction().equals(ACTION_SET_SYSTEM_LOCALE)) {
             Log.d(TAG, "Setting system locale");
             Log.d(TAG, intent.getStringExtra("locale"));
