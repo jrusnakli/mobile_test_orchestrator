@@ -1,18 +1,17 @@
 package com.linkedin.mdctest;
 
-import android.app.Activity;
+import android.Manifest;
 import android.content.Context;
 import android.content.pm.PackageManager;
-import android.os.Environment;
 import android.provider.Settings;
-import android.support.annotation.IntegerRes;
 import android.support.test.InstrumentationRegistry;
 import android.support.test.rule.ActivityTestRule;
 import android.support.test.runner.AndroidJUnit4;
+import android.support.v4.content.ContextCompat;
 import android.util.Log;
 import android.view.Surface;
-
-import org.junit.Before;
+import com.linkedin.android.testbutler.TestButler;
+import org.junit.AssumptionViolatedException;
 import org.junit.BeforeClass;
 import org.junit.FixMethodOrder;
 import org.junit.Rule;
@@ -21,12 +20,6 @@ import org.junit.runner.RunWith;
 import org.junit.runners.MethodSorters;
 
 import static org.junit.Assert.*;
-import com.linkedin.android.testbutler.TestButler;
-
-import java.io.File;
-import java.util.Set;
-
-import org.junit.AssumptionViolatedException;
 
 /**
  * Instrumentation tests that provide a fixed test status for known output to cloud test runs.
@@ -163,6 +156,23 @@ public class TestButlerTest {
                     Settings.Secure.LOCATION_MODE));
             assertEquals(after, Integer.toString(Settings.Secure.LOCATION_MODE_BATTERY_SAVING));
         }
+    }
+
+    @Test
+    public void testTestButlerGrantPermission() {
+        // Context of the test app
+        Context testContext = InstrumentationRegistry.getContext();
+
+        // Check the test app has no READ_EXTERNAL_STORAGE permission granted
+        assertTrue(ContextCompat.checkSelfPermission(testContext, Manifest.permission.READ_EXTERNAL_STORAGE)
+            != PackageManager.PERMISSION_GRANTED);
+
+        // Now grant permission
+        TestButler.grantPermission(testContext, Manifest.permission.READ_EXTERNAL_STORAGE);
+
+        // test app should have the permission now
+        assertEquals(ContextCompat.checkSelfPermission(testContext, Manifest.permission.READ_EXTERNAL_STORAGE),
+            PackageManager.PERMISSION_GRANTED);
     }
 
 }

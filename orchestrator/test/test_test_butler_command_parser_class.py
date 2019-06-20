@@ -167,7 +167,7 @@ class TestTestButlerCommandParser(object):
         for line in output.splitlines():
             assert "%s: granted=true" % permission_to_grant not in line
 
-        # process commdand through parser
+        # process command through parser
         parser = TestButlerCommandParser(butler_service, app_under_test=app, listener=None)
         assert parser._process_grant_permission_cmd(cmd=json.dumps({'type': 'permission',
                                                                     'package': app.package_name,

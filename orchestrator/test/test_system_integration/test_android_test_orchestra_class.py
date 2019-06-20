@@ -111,7 +111,8 @@ class TestAndroidTestOrchestrator(object):
                                      "testTestButlerSetLocationModeBatterySaver",
                                      "testTestButlerSetLocationModeSensorsOnly",
                                      "testTestButlerSetLocationModeHigh",
-                                     "testTestButlerStress"
+                                     "testTestButlerStress",
+                                     "testTestButlerGrantPermission"
                                      ]
                 assert test_class == self.expected_test_class[current_test_suite]
 
