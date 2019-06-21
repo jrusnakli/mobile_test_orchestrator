@@ -121,6 +121,7 @@ class TestAndroidTestOrchestrator(object):
                 nonlocal test_count, current_test_suite
                 test_count += 1
                 assert test_class == self.expected_test_class[current_test_suite]
+                assert test_name == "testFailure"  # this test case is designed to be failed
 
             def test_ignored(self, test_name: str, test_class: str, test_no: int, msg: str = ""):
                 nonlocal test_count
@@ -148,7 +149,7 @@ class TestAndroidTestOrchestrator(object):
                              arguments=["-e", "class", "com.linkedin.mdctest.TestButlerStressTest"]))
 
         with AndroidTestOrchestrator(test_butler_apk_path=test_butler_service,
-                                     artifact_dir=str(tmpdir)) as orchestrator:
+                                     artifact_dir=str("/tmp/tmplog")) as orchestrator:
 
             orchestrator.execute_test_plan(test_plan=test_generator(),
                                            test_application=android_test_app,

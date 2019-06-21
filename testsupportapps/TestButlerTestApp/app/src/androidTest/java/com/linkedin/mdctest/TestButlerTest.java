@@ -7,7 +7,6 @@ import android.provider.Settings;
 import android.support.test.InstrumentationRegistry;
 import android.support.test.rule.ActivityTestRule;
 import android.support.test.runner.AndroidJUnit4;
-import android.support.v4.content.ContextCompat;
 import android.util.Log;
 import android.view.Surface;
 import com.linkedin.android.testbutler.TestButler;
@@ -162,17 +161,25 @@ public class TestButlerTest {
     public void testTestButlerGrantPermission() {
         // Context of the test app
         Context testContext = InstrumentationRegistry.getContext();
+        Log.d(TAG, "current permission" + testContext.getPackageManager().checkPermission(Manifest.permission.READ_EXTERNAL_STORAGE, testContext.getPackageName()));
 
         // Check the test app has no READ_EXTERNAL_STORAGE permission granted
-        assertTrue(ContextCompat.checkSelfPermission(testContext, Manifest.permission.READ_EXTERNAL_STORAGE)
-            != PackageManager.PERMISSION_GRANTED);
+        assertEquals(PackageManager.PERMISSION_DENIED,
+            testContext.getPackageManager().checkPermission(Manifest.permission.READ_EXTERNAL_STORAGE, testContext.getPackageName()));
 
         // Now grant permission
         TestButler.grantPermission(testContext, Manifest.permission.READ_EXTERNAL_STORAGE);
 
         // test app should have the permission now
-        assertEquals(ContextCompat.checkSelfPermission(testContext, Manifest.permission.READ_EXTERNAL_STORAGE),
-            PackageManager.PERMISSION_GRANTED);
+        Log.d(TAG, "after grant" + testContext.getPackageManager().checkPermission(Manifest.permission.READ_EXTERNAL_STORAGE, testContext.getPackageName()));
+        assertEquals(PackageManager.PERMISSION_GRANTED,
+            testContext.getPackageManager().checkPermission(Manifest.permission.READ_EXTERNAL_STORAGE, testContext.getPackageName()));
+    }
+
+    @Test
+    public void testFailure() {
+        // test meant to be failed
+        fail();
     }
 
 }
