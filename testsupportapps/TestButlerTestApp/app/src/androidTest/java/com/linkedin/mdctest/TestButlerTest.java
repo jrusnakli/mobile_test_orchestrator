@@ -161,7 +161,6 @@ public class TestButlerTest {
     public void testTestButlerGrantPermission() {
         // Context of the test app
         Context testContext = InstrumentationRegistry.getContext();
-        Log.d(TAG, "current permission" + testContext.getPackageManager().checkPermission(Manifest.permission.READ_EXTERNAL_STORAGE, testContext.getPackageName()));
 
         // Check the test app has no READ_EXTERNAL_STORAGE permission granted
         assertEquals(PackageManager.PERMISSION_DENIED,
@@ -171,14 +170,12 @@ public class TestButlerTest {
         TestButler.grantPermission(testContext, Manifest.permission.READ_EXTERNAL_STORAGE);
 
         // test app should have the permission now
-        Log.d(TAG, "after grant" + testContext.getPackageManager().checkPermission(Manifest.permission.READ_EXTERNAL_STORAGE, testContext.getPackageName()));
         assertEquals(PackageManager.PERMISSION_GRANTED,
             testContext.getPackageManager().checkPermission(Manifest.permission.READ_EXTERNAL_STORAGE, testContext.getPackageName()));
     }
 
     @Test
     public void testFailure() {
-        // test meant to be failed
         fail();
     }
 

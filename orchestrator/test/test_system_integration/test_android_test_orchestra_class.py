@@ -149,7 +149,7 @@ class TestAndroidTestOrchestrator(object):
                              arguments=["-e", "class", "com.linkedin.mdctest.TestButlerStressTest"]))
 
         with AndroidTestOrchestrator(test_butler_apk_path=test_butler_service,
-                                     artifact_dir=str("/tmp/tmplog")) as orchestrator:
+                                     artifact_dir=str(tmpdir)) as orchestrator:
 
             orchestrator.execute_test_plan(test_plan=test_generator(),
                                            test_application=android_test_app,
