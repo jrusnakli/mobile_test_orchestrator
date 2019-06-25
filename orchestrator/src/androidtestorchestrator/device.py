@@ -262,6 +262,8 @@ class Device(object):
         :raises CommandExecutionFailureException: if command fails to execute on remote device
         """
         timeout = timeout or Device.TIMEOUT_ADB_CMD
+        # TODO: will set to info introduce too much noise?
+        log.debug(f"Executing remote command: {self.formulate_adb_cmd(*args)}")
         completed = subprocess.run(self.formulate_adb_cmd(*args), timeout=timeout,
                                    stderr=subprocess.PIPE,
                                    stdout=subprocess.PIPE if capture_stdout and stdout_redirect == subprocess.DEVNULL else stdout_redirect,
@@ -285,7 +287,7 @@ class Device(object):
         :return: subprocess.Open
         """
         args = (self._adb_path, "-s", self.device_id, *args)
-        log.info(f"Executing: {' '.join(args)}")
+        log.debug(f"Executing: {' '.join(args)} in background")
         if 'encoding' not in kwargs:
             kwargs['encoding'] = 'utf-8'
             kwargs['errors'] = 'ignore'

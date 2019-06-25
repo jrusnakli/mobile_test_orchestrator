@@ -11,7 +11,6 @@ import android.util.Log;
 import android.view.Surface;
 import com.linkedin.android.testbutler.TestButler;
 import org.junit.AssumptionViolatedException;
-import org.junit.BeforeClass;
 import org.junit.FixMethodOrder;
 import org.junit.Rule;
 import org.junit.Test;
@@ -34,12 +33,6 @@ public class TestButlerTest {
 
     @Rule
     public final ActivityTestRule<MainActivity> mRule = new ActivityTestRule<MainActivity>(MainActivity.class);
-
-    @BeforeClass
-    public static void setUp() {
-        Log.d(TAG, "Setting up Test Butler");
-        TestButler.setup(InstrumentationRegistry.getTargetContext());
-    }
 
     /**
      * These tests will only pass when server-side script is active and working

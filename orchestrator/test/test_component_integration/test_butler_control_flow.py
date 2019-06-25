@@ -51,8 +51,8 @@ class TestButlerControlFlow:
             @staticmethod
             def request_command(cmd: str):
                 cmd = cmd.replace(" ", "\\ ")
-                butler_service.start(".ButlerService", "--es", "command", cmd,
-                                     intent="com.linkedin.android.testbutler.FOR_TEST_ONLY_SEND_CMD")
+                butler_service.broadcast(".ButlerServiceBroadcastReceiver", "--es", "command", cmd,
+                                         intent="com.linkedin.android.testbutler.FOR_TEST_ONLY_SEND_CMD")
                 print("SENT REQUEST FOR BUTLER COMMAND")
 
             def parse_line(self, line: str):

@@ -49,12 +49,13 @@ class CommandInvocation {
     }
 
     /**
-     * process string respomnse message from host (host of this Android device)
+     * process string response message from host (host of this Android device)
      * @param response String response to process
      * @throws Exception on invalid format in response (expected to be space-separated:
      *   <int cmd-id> <int return-code> <string message>
      */
     static void processServerResponse(final String response) throws Exception{
+        Log.d(TAG, "Process server response: " + response);
         final String[] elements = response.split(",", 3);
         // if not a valid lookup id as first element, throw Exception right away
         try{

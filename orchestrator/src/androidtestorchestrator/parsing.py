@@ -277,7 +277,7 @@ class TestButlerCommandParser(LineParser):
             self.CMD_PROPERTY_PREFIX: self._process_set_property_cmd,
             self.CMD_GRANT_PREFIX: self._process_grant_permission_cmd,
         }
-        self._service_app.start(".ButlerService", foreground=True)
+        # no need to explicitly start the test butler service as the bind() call in TestButler setup will take care of serice start
 
     def parse_line(self, line: str) -> None:
         """
@@ -324,9 +324,9 @@ class TestButlerCommandParser(LineParser):
         :param response_code: integer code (0 for success, 1 for error -- for now)
         :param response_msg: textual response message
         """
-        msg = "\"%d,%d,%s\"" % (cmd_id, response_code, response_msg)
-        self._service_app.start(".ButlerService", "--es", "response", msg,
-                                intent="com.linkedin.android.testbutler.COMMAND_RESPONSE")
+        msg = f"{cmd_id},{response_code},{response_msg}"
+        self._service_app.broadcast(".ButlerServiceBroadcastReceiver", "--es", "response", msg,
+                                    intent="com.linkedin.android.testbutler.COMMAND_RESPONSE")
 
     # Command-handling methods
 

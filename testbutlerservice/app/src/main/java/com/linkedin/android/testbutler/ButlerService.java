@@ -15,26 +15,23 @@
  */
 package com.linkedin.android.testbutler;
 
+import android.app.Notification;
 import android.content.Intent;
 import android.content.pm.PackageManager;
-import android.content.res.Configuration;
 import android.os.IBinder;
 import android.os.RemoteException;
 import android.provider.Settings;
 import android.support.annotation.Nullable;
 import android.support.v4.app.JobIntentService;
+import android.support.v4.app.NotificationCompat;
 import android.util.Log;
-import java.lang.reflect.Field;
-import java.lang.reflect.Method;
-import java.util.Locale;
+import com.google.gson.Gson;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonObject;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-
-import com.google.gson.Gson;
-import com.google.gson.JsonArray;
-import com.google.gson.JsonObject;
 
 
 /**
@@ -52,16 +49,11 @@ import com.google.gson.JsonObject;
  */
 @SuppressWarnings("deprecation")
 public class ButlerService extends JobIntentService {
-    private Intent mForegroundIntent = null;
     //for debug:
     private static final String TAG = CommandInvocation.TAG;
 
     private static final Gson GSON = new Gson();
 
-    // These should match declaration of intents in Manifest.xml
-    final static String ACTION_CMD_RESPONSE = "com.linkedin.android.testbutler.COMMAND_RESPONSE";
-    final static String ACTION_TEST_ONLY_SEND_CMD = "com.linkedin.android.testbutler.FOR_TEST_ONLY_SEND_CMD";
-    final static String ACTION_SET_SYSTEM_LOCALE = "com.linkedin.android.testbutler.SET_SYSTEM_LOCALE";
 
     private final ButlerApi.Stub butlerApi = new ButlerApi.Stub() {
 
@@ -80,7 +72,6 @@ public class ButlerService extends JobIntentService {
          * @throws Settings.SettingNotFoundException
          */
         private String getStringProperty(final String namespace, final String key) throws Settings.SettingNotFoundException {
-
             String returnValue;
             if (namespace.equals(NS_GLOBAL)) {
                 returnValue = Settings.Global.getString(getContentResolver(), key);
@@ -132,7 +123,7 @@ public class ButlerService extends JobIntentService {
             CommandResponse response = futureResponse.get(1, TimeUnit.SECONDS);
             if (response.getStatusCode() != 0) {
                 // log debug message, as server should handle as error/exception
-                Log.d(TAG, "Server-side error granting permission: " + response.getMessage());
+                Log.d(TAG, "Server-side error: " + response.getMessage());
             }
             return response;
         }
@@ -150,7 +141,7 @@ public class ButlerService extends JobIntentService {
             String value){
             try {
                 if (getStringProperty(namespace, key).toLowerCase().equals(value.toLowerCase())) {
-                    return null;
+                    return new CommandResponse(0, "System string property " + namespace + ": " + key + " is already set to " + value);
                 }
                 final String put_cmd = SETTING_PREFIX + " " + namespace + " " + key + " " + value + "\n";
                 return invoke(put_cmd);
@@ -175,7 +166,7 @@ public class ButlerService extends JobIntentService {
             int value) {
             try {
                 if (getIntProperty(namespace, key).equals(value)) {
-                    return null;
+                    return new CommandResponse(0, "System integer property " + namespace + ": " + key + " is already set to " + value);
                 }
                 final String put_cmd = SETTING_PREFIX + " " + namespace + " " + key + " " + value + "\n";
                 return invoke(put_cmd);
@@ -342,11 +333,11 @@ public class ButlerService extends JobIntentService {
         @Override
         public boolean setImmersiveModeConfirmation(boolean enabled) {
             CommandResponse response = sendSetStringProperty(NS_SECURE, "immersive_mode_confirmation",
-                enabled ? "\"\"\"\"" : "confirmed");
+                enabled ? "confirmed": "\"\"\"\"");
             if (response == null || response.getStatusCode() != 0){
-                onError(NS_SECURE, "immersive_mode_confirmation", enabled ? "" : "confirmed", response);
+                onError(NS_SECURE, "immersive_mode_confirmation", enabled ? "confirmed" : "", response);
             }
-            return validateStringProperty(NS_SECURE, "immersive_mode_confirmation", enabled ? "" : "confirmed");
+            return validateStringProperty(NS_SECURE, "immersive_mode_confirmation", enabled ? "confirmed" : "");
         }
 
     };
@@ -357,6 +348,10 @@ public class ButlerService extends JobIntentService {
 
     @Override
     public void onCreate() {
+        Notification notification = new NotificationCompat.Builder(this, "test_butler_channel_id_01")
+            .setContentTitle("")
+            .setContentText("").build();
+        this.startForeground(0, notification);
         super.onCreate();
         Log.d(TAG, "MDC ButlerService starting up...");
     }
@@ -376,82 +371,18 @@ public class ButlerService extends JobIntentService {
     @Nullable
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        Log.d(TAG, "OnstartCommand is called with " + "Action: " + intent.getAction());
+        Notification notification = new NotificationCompat.Builder(this, "test_butler_channel_id_01")
+            .setContentTitle("")
+            .setContentText("").build();
+        this.startForeground(0, notification);
         super.onStartCommand(intent, flags, startId);
-        onHandleIntent(intent);
         return android.app.Service.START_STICKY;
     }
 
+    @Nullable
     @Override
     protected void onHandleWork(Intent intent) {
-        onHandleIntent(intent);
     }
 
-    protected void onHandleIntent(Intent intent){
-        /**
-         * A test-only intent ACTION_TEST_ONLY_SEND_CMD is provided for use in testing
-         * this TestButler code (only to be used for that purpose).  This provides
-         * an easy mechanism to test the very fundamentals of interaction between
-         * TestButler running on a device and the server to which the device is connected.
-         * It eliminates the complexity of needing a third component (an explicit test app)
-         * that could make debugging the basics far more difficult.
-         */
-        if (intent.getAction() == null){
-            return;
-        }
-        if (intent.getAction().equals(ACTION_CMD_RESPONSE)) {
-            final String response = intent.getStringExtra("response");
-            try {
-                CommandInvocation.processServerResponse(response);
-            } catch (Exception e){
-                CommandInvocation.signalError("ERROR: exception encountered while handling command response " +
-                    e.getMessage());
-            }
-        } else if (intent.getAction().equals(ACTION_TEST_ONLY_SEND_CMD)){
-            // This is only for test purposes to send a command over to server
-            // and allow server to test response logic
-            Log.d(TAG, "Sending command \"" + intent.getStringExtra("command") + "\"");
-            CommandInvocation.invoke("TEST_ONLY " + intent.getStringExtra("command"));
-
-        } else if (intent.getAction().equals(ACTION_SET_SYSTEM_LOCALE)) {
-            Log.d(TAG, "Setting system locale");
-            Log.d(TAG, intent.getStringExtra("locale"));
-            Locale locale = new Locale(intent.getStringExtra("locale"));
-
-            /**
-             * There is very fuzzy documentation on how to set the system (device global) local
-             * setting.  Many solutions only change it for the current app, which is not what
-             * we want.
-             */
-            try {
-                Class amnClass = Class.forName("android.app.ActivityManagerNative");
-                Object amn = null;
-                Configuration config = null;
-
-                // amn = ActivityManagerNative.getDefault();
-                Method methodGetDefault = amnClass.getMethod("getDefault");
-                methodGetDefault.setAccessible(true);
-                amn = methodGetDefault.invoke(amnClass);
-
-                // config = amn.getConfiguration();
-                Method methodGetConfiguration = amnClass.getMethod("getConfiguration");
-                methodGetConfiguration.setAccessible(true);
-                config = (Configuration) methodGetConfiguration.invoke(amn);
-
-                // config.userSetLocale = true;
-                Class configClass = config.getClass();
-                Field f = configClass.getField("userSetLocale");
-                f.setBoolean(config, true);
-
-                // set the locale to the new value
-                config.locale = locale;
-
-                // amn.updateConfiguration(config);
-                Method methodUpdateConfiguration = amnClass.getMethod("updateConfiguration", Configuration.class);
-                methodUpdateConfiguration.setAccessible(true);
-                methodUpdateConfiguration.invoke(amn, config);
-            } catch (Exception e){
-                Log.e(TAG, "Failed to set system locale. " + e.getMessage(), e);
-            }
-        }
-    }
 }

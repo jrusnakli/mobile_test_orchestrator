@@ -3,10 +3,6 @@
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <uses-sdk
-        android:minSdkVersion="15"
-        android:targetSdkVersion="28" />
-
     <!-- Normal permissions -->
     <uses-permission android:name='android.permission.WAKE_LOCK'/>
     <uses-permission android:name='android.permission.BIND_JOB_SERVICE'/>
@@ -20,12 +16,17 @@
             android:enabled="true"
             tools:ignore="ExportedService">
             <intent-filter>
-                <action android:name="com.linkedin.android.testbutler.COMMAND_RESPONSE" />
-                <action android:name="com.linkedin.android.testbutler.SEND_TEST_COMMAND" />
-
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </service>
+
+        <receiver android:name=".ButlerServiceBroadcastReceiver">
+            <intent-filter>
+                <action android:name="com.linkedin.android.testbutler.COMMAND_RESPONSE" />
+                <action android:name="com.linkedin.android.testbutler.SEND_TEST_COMMAND" />
+
+            </intent-filter>
+        </receiver>
 
     </application>
 
