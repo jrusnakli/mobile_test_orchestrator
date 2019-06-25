@@ -252,12 +252,14 @@ class ServiceApplication(Application):
         if intent:
             options = ("-a", intent) + options
         if foreground and self.device.api_level >= 26:
-            self.device.execute_remote_cmd("shell", "am", "start-foreground-service", "-n", activity, *options, capture_stdout=False)
+            self.device.execute_remote_cmd("shell", "am", "start-foreground-service", "-n", activity, *options,
+                                           capture_stdout=False)
         else:
-            self.device.execute_remote_cmd("shell", "am", "startservice", "-n", activity, *options, capture_stdout=False)
+            self.device.execute_remote_cmd("shell", "am", "startservice", "-n", activity, *options,
+                                           capture_stdout=False)
 
-    def broadcast(self, activity: str,  # type: ignore # TODO: activity should be Optional, as it is in Application.
-              *options: str, intent: Optional[str] = None) -> None:
+    def broadcast(self, activity: str,  # TODO: activity should be Optional, as it is in Application.
+                  *options: str, intent: Optional[str] = None) -> None:
         """
         Invoke an intent associated with this service by broadcasting an event
         :param activity: activity defaulting to "MainActivity" if None
@@ -272,6 +274,7 @@ class ServiceApplication(Application):
         if intent:
             options = ("-a", intent) + options
         self.device.execute_remote_cmd("shell", "am", "broadcast", "-n", activity, *options, capture_stdout=False)
+
 
 class TestApplication(Application):
     """
