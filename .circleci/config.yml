@@ -55,7 +55,7 @@ jobs:
           command: |
             . venv/bin/activate
             cd orchestrator/test
-            pytest -s . --html  test-reports/report.html --cov=../src . --cov-report html:test-reports/coverage
+            pytest -s . --html  test-reports/report.html --junitxml=test-reports/all-result.xml --basetemp=test-reports/tmp --cov=../src . --cov-report html:test-reports/coverage
       - run:
           name: directory
           command: |
@@ -65,3 +65,7 @@ jobs:
       - store_artifacts:
           path: orchestrator/test/test-reports/
           destination: python_app
+
+      - store_test_results:
+          path: test-results
+
