@@ -43,14 +43,14 @@ class TestDeviceLog:
 
             for _ in range(length+5):
                 # use test butler to introduce log cat messages:
-                service.start(".ButlerService", "--es", "command", "just for logcat",
+                service.broadcast(".ButlerServiceBroadcastReceiver", "--es", "command", "just for logcat",
                               intent="com.linkedin.android.testbutler.FOR_TEST_ONLY_SEND_CMD")
             asyncio.get_event_loop().run_until_complete(timer())
             assert len(output) >= length
 
             for _ in range(length+5):
                 # use test butler to introduce log cat messages:
-                service.start(".ButlerService", "--es", "command", "just for logcat",
+                service.broadcast(".ButlerServiceBroadcastReceiver", "--es", "command", "just for logcat",
                               intent="com.linkedin.android.testbutler.FOR_TEST_ONLY_SEND_CMD")
 
             output_before = output[:]

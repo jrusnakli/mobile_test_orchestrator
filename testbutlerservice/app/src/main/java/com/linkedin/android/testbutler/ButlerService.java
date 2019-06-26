@@ -54,6 +54,7 @@ public class ButlerService extends JobIntentService {
     private static final String TAG = CommandInvocation.TAG;
 
     private static final Gson GSON = new Gson();
+    public static int TESTBUTLER_TIMEOUT = getTestbutlerTimeout();
 
     private final ButlerApi.Stub butlerApi = new ButlerApi.Stub() {
 
@@ -122,7 +123,7 @@ public class ButlerService extends JobIntentService {
             throws InterruptedException, ExecutionException, TimeoutException {
             Future<CommandResponse> futureResponse = CommandInvocation.invoke(cmd);
 
-            CommandResponse response = futureResponse.get(1, TimeUnit.SECONDS);
+            CommandResponse response = futureResponse.get(TESTBUTLER_TIMEOUT, TimeUnit.SECONDS);
             if (response.getStatusCode() != 0) {
                 // log debug message, as server should handle as error/exception
                 Log.d(TAG, "Server-side error: " + response.getMessage());
@@ -343,6 +344,17 @@ public class ButlerService extends JobIntentService {
 
     public ButlerService() {
         super();
+    }
+
+    private static int getTestbutlerTimeout() {
+        String timeout = System.getenv("TESTBUTLER_TIMEOUT");
+        if (timeout != null) {
+            Log.d(TAG, "OVERRIDE TESTBUTLER_TIMEOUT=" + timeout);
+            return Integer.valueOf(timeout);
+        } else {
+            Log.d(TAG, "TESTBUTLER_TIMEOUT=1");
+            return 1;
+        }
     }
 
     @Override
