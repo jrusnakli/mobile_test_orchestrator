@@ -352,8 +352,8 @@ public class ButlerService extends JobIntentService {
             Log.d(TAG, "OVERRIDE TESTBUTLER_TIMEOUT=" + timeout);
             return Integer.valueOf(timeout);
         } else {
-            Log.d(TAG, "TESTBUTLER_TIMEOUT=1");
-            return 1;
+            Log.d(TAG, "TESTBUTLER_TIMEOUT=5");
+            return 5;
         }
     }
 
