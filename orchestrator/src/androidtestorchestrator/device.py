@@ -262,7 +262,6 @@ class Device(object):
         :raises CommandExecutionFailureException: if command fails to execute on remote device
         """
         timeout = timeout or Device.TIMEOUT_ADB_CMD
-        # TODO: will set to info introduce too much noise?
         log.debug(f"Executing remote command: {self.formulate_adb_cmd(*args)}")
         completed = subprocess.run(self.formulate_adb_cmd(*args), timeout=timeout,
                                    stderr=subprocess.PIPE,

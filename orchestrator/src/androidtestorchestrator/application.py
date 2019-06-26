@@ -239,7 +239,7 @@ class ServiceApplication(Application):
         invoke an intent associated with this service by calling start the service
 
         :param options: string list of options to supply to "am startservice" command
-        :param activity: activity defaulting to "MainActivity" if None
+        :param activity: activity handles the intent
         :param intent: if not None, invoke specific intent otherwise invoke default intent
         :param foreground: whether to start in foreground or not (Android O+
             does not allow background starts any longer)
@@ -262,7 +262,7 @@ class ServiceApplication(Application):
                   *options: str, intent: Optional[str] = None) -> None:
         """
         Invoke an intent associated with this service by broadcasting an event
-        :param activity: activity defaulting to "MainActivity" if None
+        :param activity: activity that handles the intent
         :param options: string list of options to supply to "am broadcast" command
         :param intent: if not None, invoke specific intent otherwise invoke default intent
         :return:
