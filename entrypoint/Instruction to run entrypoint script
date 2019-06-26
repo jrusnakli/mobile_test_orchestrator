@@ -1,0 +1,10 @@
+Instruction to run entrypoint script 
+
+--entrypoint.py calls the pre-packed and pre-installed “orchestrator” lib in python3.7 lib 
+to install “orchestrator” lib to python3.7 lib in venv:
+Run:
+ $ python3 -m pip install --index-url https://test.pypi.org/simple/ --no-deps androidtestorchestratorwithsupport
+
+--To run entrypoint.py manually for Android espresso test, pass arguments of app.apk path, test_app.apk path and device path from command line.
+
+-- To run entrypoint.py automatically through Azure custom script extension agent see details in doc (link) Section 5 
