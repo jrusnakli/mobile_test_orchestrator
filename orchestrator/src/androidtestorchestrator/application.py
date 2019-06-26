@@ -245,10 +245,12 @@ class ServiceApplication(Application):
             does not allow background starts any longer)
         """
         # TODO: This is bad. Breaks liskov substitution principle.
-        assert activity, "Must provide an activity for ServiceApplication"
+
+        if not activity:
+            raise Exception("Must provide an activity for ServiceApplication")
 
         activity = f"{self.package_name}/{activity}"
-        options = tuple(f"\"{item}\"" for item in options)
+        options = tuple(f'"{item}"' for item in options)
         if intent:
             options = ("-a", intent) + options
         if foreground and self.device.api_level >= 26:
@@ -267,10 +269,11 @@ class ServiceApplication(Application):
         :param intent: if not None, invoke specific intent otherwise invoke default intent
         :return:
         """
-        assert activity, "Must provide an activity for ServiceApplication"
+        if not activity:
+            raise Exception("Must provide an activity for ServiceApplication")
 
         activity = f"{self.package_name}/{activity}"
-        options = tuple(f"\"{item}\"" for item in options)
+        options = tuple(f'"{item}"' for item in options)
         if intent:
             options = ("-a", intent) + options
         self.device.execute_remote_cmd("shell", "am", "broadcast", "-n", activity, *options, capture_stdout=False)

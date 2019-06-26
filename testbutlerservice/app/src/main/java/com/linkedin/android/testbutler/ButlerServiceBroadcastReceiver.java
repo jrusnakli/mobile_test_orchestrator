@@ -20,9 +20,9 @@ public class ButlerServiceBroadcastReceiver extends BroadcastReceiver {
     private static final String TAG = CommandInvocation.TAG;
 
     // These should match declaration of intents in Manifest.xml
+    final static String ACTION_SET_SYSTEM_LOCALE = "com.linkedin.android.testbutler.SET_SYSTEM_LOCALE";
     final static String ACTION_CMD_RESPONSE = "com.linkedin.android.testbutler.COMMAND_RESPONSE";
     final static String ACTION_TEST_ONLY_SEND_CMD = "com.linkedin.android.testbutler.FOR_TEST_ONLY_SEND_CMD";
-    final static String ACTION_SET_SYSTEM_LOCALE = "com.linkedin.android.testbutler.SET_SYSTEM_LOCALE";
 
     @Override
     public void onReceive(Context context, Intent intent) {
