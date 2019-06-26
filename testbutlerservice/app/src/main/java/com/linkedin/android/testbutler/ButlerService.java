@@ -18,6 +18,7 @@ package com.linkedin.android.testbutler;
 import android.app.Notification;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.os.Build;
 import android.os.IBinder;
 import android.os.RemoteException;
 import android.provider.Settings;
@@ -346,14 +347,24 @@ public class ButlerService extends JobIntentService {
         super();
     }
 
+    public static boolean isEmulator() {
+        return Build.FINGERPRINT.startsWith("generic")
+            || Build.FINGERPRINT.startsWith("unknown")
+            || Build.MODEL.contains("google_sdk")
+            || Build.MODEL.contains("Emulator")
+            || Build.MODEL.contains("Android SDK built for x86")
+            || Build.MANUFACTURER.contains("Genymotion")
+            || (Build.BRAND.startsWith("generic") && Build.DEVICE.startsWith("generic"))
+            || "google_sdk".equals(Build.PRODUCT);
+    }
+
     private static int getTestbutlerTimeout() {
-        String timeout = System.getenv("TESTBUTLER_TIMEOUT");
-        if (timeout != null) {
-            Log.d(TAG, "OVERRIDE TESTBUTLER_TIMEOUT=" + timeout);
-            return Integer.valueOf(timeout);
-        } else {
-            Log.d(TAG, "TESTBUTLER_TIMEOUT=5");
+        if (isEmulator()) {
+            Log.d(TAG,"Running on emulator. Set processing server response timeout to 5");
             return 5;
+        } else {
+            Log.d(TAG, "Running on real device. Set processing server response timeout to 1");
+            return 1;
         }
     }
 
