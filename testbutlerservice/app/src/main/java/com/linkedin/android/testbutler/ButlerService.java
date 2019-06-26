@@ -175,7 +175,7 @@ public class ButlerService extends JobIntentService {
             } catch (InterruptedException | TimeoutException | ExecutionException e) {
                 CommandInvocation.signalError(
                     "ERROR: Set of new system property " + namespace + ":" + key + " failed: Interrupted: "
-                        + e.getMessage());
+                        + e.toString() + ":" + e.getMessage());
                 return null;
             } catch (Settings.SettingNotFoundException snfe) {
                 Log.e(TAG, "Setting not found!: " + namespace + ":" + key);

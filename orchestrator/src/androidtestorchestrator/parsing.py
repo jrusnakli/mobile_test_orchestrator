@@ -358,7 +358,7 @@ class TestButlerCommandParser(LineParser):
                     return self.CODE_ASSUMPTION_VIOLATION, \
                            "Setting of %s to %s not supported on this device" % (namespace + ':' + key, value)
                 else:
-                    return 0, "Success"
+                    return 0, f"Successfully execute command '{cmd}'"
             elif value.startswith('-'):
                 if value[1:] in new_value:
                     return 1, "Unable to remove from setting: %s" % value
@@ -372,7 +372,7 @@ class TestButlerCommandParser(LineParser):
                 if previous != "null" and self._listener is not None:
                     self._listener.device_setting_changed(namespace, key, previous, value)
                 log.debug("Successful return status from test butler command '%s': new value of %s" % (cmd, value))
-                return 0, "Success"
+                return 0, f"Successfully execute command '{cmd}'"
 
     def _process_set_property_cmd(self, cmd: str) -> Tuple[int, str]:
         """
