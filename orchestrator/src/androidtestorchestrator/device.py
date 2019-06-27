@@ -329,8 +329,8 @@ class Device(object):
         proc = await asyncio.subprocess.create_subprocess_exec(*cmd,  # type: ignore
                                                                stdout=asyncio.subprocess.PIPE,
                                                                stderr=asyncio.subprocess.PIPE,
-                                                               loop=loop,  # type: ignore
-                                                               bufsize=0)
+                                                               loop=loop,  # noqa
+                                                               bufsize=0)  # noqa
 
         class LineGenerator:
             """
