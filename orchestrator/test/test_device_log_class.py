@@ -39,7 +39,7 @@ class TestDeviceLog:
                             break
 
             async def timer():
-                await asyncio.wait_for(parse_logcat(), timeout=30)
+                await asyncio.wait_for(parse_logcat(), timeout=60)
 
             for _ in range(length+5):
                 # use test butler to introduce log cat messages:
