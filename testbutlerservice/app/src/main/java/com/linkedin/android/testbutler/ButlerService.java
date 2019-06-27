@@ -15,28 +15,25 @@
  */
 package com.linkedin.android.testbutler;
 
-import android.app.IntentService;
 import android.app.Notification;
-import android.app.Service;
 import android.content.Intent;
 import android.content.pm.PackageManager;
-import android.content.res.Configuration;
+import android.os.Build;
 import android.os.IBinder;
 import android.os.RemoteException;
 import android.provider.Settings;
 import android.support.annotation.Nullable;
 import android.support.v4.app.JobIntentService;
+import android.support.v4.app.NotificationCompat;
 import android.util.Log;
-
-import java.lang.InterruptedException;
-import java.lang.reflect.Method;
-import java.lang.reflect.Field;
+import com.google.gson.Gson;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonObject;
+import java.text.MessageFormat;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
-import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import java.util.Locale;
 
 
 /**
@@ -54,14 +51,11 @@ import java.util.Locale;
  */
 @SuppressWarnings("deprecation")
 public class ButlerService extends JobIntentService {
-    private Intent mForegroundIntent = null;
     //for debug:
     private static final String TAG = CommandInvocation.TAG;
 
-    // These should match declaration of intents in Manifest.xml
-    final static String ACTION_CMD_RESPONSE = "com.linkedin.android.testbutler.COMMAND_RESPONSE";
-    final static String ACTION_TEST_ONLY_SEND_CMD = "com.linkedin.android.testbutler.FOR_TEST_ONLY_SEND_CMD";
-    final static String ACTION_SET_SYSTEM_LOCALE = "com.linkedin.android.testbutler.SET_SYSTEM_LOCALE";
+    private static final Gson GSON = new Gson();
+    public static int TESTBUTLER_TIMEOUT = getTestbutlerTimeout();
 
     private final ButlerApi.Stub butlerApi = new ButlerApi.Stub() {
 
@@ -79,8 +73,8 @@ public class ButlerService extends JobIntentService {
          * @return String value of property
          * @throws Settings.SettingNotFoundException
          */
-        private String getStringProperty(final String namespace, final String key) throws Settings.SettingNotFoundException {
-
+        private String getStringProperty(final String namespace, final String key)
+            throws Settings.SettingNotFoundException {
             String returnValue;
             if (namespace.equals(NS_GLOBAL)) {
                 returnValue = Settings.Global.getString(getContentResolver(), key);
@@ -90,7 +84,7 @@ public class ButlerService extends JobIntentService {
                 returnValue = Settings.System.getString(getContentResolver(), key);
             } else {
                 throw new Settings.SettingNotFoundException(
-                        "Internal error: invalid namespace received on getting property: " + namespace);
+                    "Internal error: invalid namespace received on getting property: " + namespace);
             }
             return returnValue == null ? "" : returnValue;
         }
@@ -102,7 +96,8 @@ public class ButlerService extends JobIntentService {
          * @return Integer property requested
          * @throws Settings.SettingNotFoundException
          */
-        private Integer getIntProperty(final String namespace, final String key) throws Settings.SettingNotFoundException {
+        private Integer getIntProperty(final String namespace, final String key)
+            throws Settings.SettingNotFoundException {
             if (key.equals("location_providers_allowed")) {
                 return getIntProperty(namespace, "location_mode");
             } else if (namespace.equals(NS_GLOBAL)) {
@@ -113,7 +108,7 @@ public class ButlerService extends JobIntentService {
                 return Settings.System.getInt(getContentResolver(), key);
             } else {
                 throw new Settings.SettingNotFoundException(
-                        "Internal error: invalid namespace received on getting property: " + namespace);
+                    "Internal error: invalid namespace received on getting property: " + namespace);
             }
         }
 
@@ -125,18 +120,17 @@ public class ButlerService extends JobIntentService {
          * @throws ExecutionException on execution exception while waiting for response
          * @throws TimeoutException if response takes more than 1 second
          */
-        private CommandResponse invoke(final String cmd) throws
-                InterruptedException, ExecutionException, TimeoutException {
+        private CommandResponse invoke(final String cmd)
+            throws InterruptedException, ExecutionException, TimeoutException {
             Future<CommandResponse> futureResponse = CommandInvocation.invoke(cmd);
 
-            CommandResponse response = futureResponse.get(1, TimeUnit.SECONDS);
+            CommandResponse response = futureResponse.get(TESTBUTLER_TIMEOUT, TimeUnit.SECONDS);
             if (response.getStatusCode() != 0) {
                 // log debug message, as server should handle as error/exception
-                Log.d(TAG, "Server-side error granting permission: " + response.getMessage());
+                Log.d(TAG, "Server-side error: " + response.getMessage());
             }
             return response;
         }
-
 
         /**
          * Send a text command to set a property via stdout over adb to signal server to take action
@@ -146,17 +140,18 @@ public class ButlerService extends JobIntentService {
          * @param value value to set parameter to
          * @return CommandResponse from host, or null if no property change was needed
          */
-        private CommandResponse sendSetStringProperty(final String namespace, final String key,
-                                              String value){
+        private CommandResponse sendSetStringProperty(final String namespace, final String key, String value) {
             try {
                 if (getStringProperty(namespace, key).toLowerCase().equals(value.toLowerCase())) {
-                    return null;
+                    return new CommandResponse(0,
+                        "System string property " + namespace + ": " + key + " is already set to " + value);
                 }
                 final String put_cmd = SETTING_PREFIX + " " + namespace + " " + key + " " + value + "\n";
                 return invoke(put_cmd);
-            } catch (InterruptedException| TimeoutException | ExecutionException e) {
-                CommandInvocation.signalError("ERROR: Set of new system property " + namespace +
-                        ":" + key + " failed: Interrupted: " + e.getMessage());
+            } catch (InterruptedException | TimeoutException | ExecutionException e) {
+                CommandInvocation.signalError(
+                    "ERROR: Set of new system property " + namespace + ":" + key + " failed: Interrupted: "
+                        + e.getMessage());
                 return null;
             } catch (Settings.SettingNotFoundException snfe) {
                 Log.e(TAG, "Setting not found!: " + namespace + ":" + key);
@@ -171,17 +166,18 @@ public class ButlerService extends JobIntentService {
          * @param value value to set parameter to
          * @return CommandResponse from host, or null if no property change was needed
          */
-        private CommandResponse sendSetIntProperty(final String namespace, final String key,
-                                           int value) {
+        private CommandResponse sendSetIntProperty(final String namespace, final String key, int value) {
             try {
                 if (getIntProperty(namespace, key).equals(value)) {
-                    return null;
+                    return new CommandResponse(0,
+                        "System integer property " + namespace + ": " + key + " is already set to " + value);
                 }
                 final String put_cmd = SETTING_PREFIX + " " + namespace + " " + key + " " + value + "\n";
                 return invoke(put_cmd);
-            } catch (InterruptedException| TimeoutException | ExecutionException e) {
-                CommandInvocation.signalError("ERROR: Set of new system property " + namespace +
-                        ":" + key + " failed: Interrupted: " + e.getMessage());
+            } catch (InterruptedException | TimeoutException | ExecutionException e) {
+                CommandInvocation.signalError(
+                    "ERROR: Set of new system property " + namespace + ":" + key + " failed: Interrupted: "
+                        + e.toString() + ":" + e.getMessage());
                 return null;
             } catch (Settings.SettingNotFoundException snfe) {
                 Log.e(TAG, "Setting not found!: " + namespace + ":" + key);
@@ -207,27 +203,27 @@ public class ButlerService extends JobIntentService {
             }
         }
 
-        private void onError(String namespace, String key, String expectedValue, CommandResponse response){
-            CommandInvocation.signalError("ERROR: Set of new system property " + namespace +
-                    ":" + key + " to " + expectedValue + " failed");
+        private void onError(String namespace, String key, String expectedValue, CommandResponse response) {
+            CommandInvocation.signalError(
+                "ERROR: Set of new system property " + namespace + ":" + key + " to " + expectedValue + " failed");
             try {
-                Log.d(TAG, "Value is now at: " + getStringProperty(namespace, key) +
-                        " but looking for " + expectedValue.toLowerCase());
+                Log.d(TAG, "Value is now at: " + getStringProperty(namespace, key) + " but looking for " + expectedValue
+                    .toLowerCase());
             } catch (Settings.SettingNotFoundException e) {
                 // not log message to present
             }
             if (response != null) {
-                Log.e(TAG, "Message from host: " + response.getMessage());
+                Log.e(TAG, MessageFormat.format("Message from host: {0}", response.getMessage()));
             }
         }
 
-        private void onErrorInt(String namespace, String key, int expectedValue,
-                             CommandResponse response){
-            CommandInvocation.signalError("ERROR: Set of new system property " + namespace +
-                    ":" + key + " to " + String.valueOf(expectedValue) + " failed");
+        private void onErrorInt(String namespace, String key, int expectedValue, CommandResponse response) {
+            CommandInvocation.signalError(
+                "ERROR: Set of new system property " + namespace + ":" + key + " to " + String.valueOf(expectedValue)
+                    + " failed");
             try {
-                Log.d(TAG, "Value is now at: " + String.valueOf(getIntProperty(namespace, key)) +
-                        " but looking for " + String.valueOf(expectedValue));
+                Log.d(TAG, "Value is now at: " + String.valueOf(getIntProperty(namespace, key)) + " but looking for "
+                    + String.valueOf(expectedValue));
             } catch (Settings.SettingNotFoundException e) {
                 // not log message to present
             }
@@ -244,17 +240,16 @@ public class ButlerService extends JobIntentService {
          * @return true if successfully set
          */
         @Override
-        public boolean setWifiState(boolean enabled){
+        public boolean setWifiState(boolean enabled) {
             CommandResponse response = sendSetIntProperty(NS_GLOBAL, "wifi_on", enabled ? 1 : 0);
-            if (response == null || response.getStatusCode() != 0){
-                onError(NS_GLOBAL,"wifi_on", enabled ? "1" : "0", response);
+            if (response == null || response.getStatusCode() != 0) {
+                onError(NS_GLOBAL, "wifi_on", enabled ? "1" : "0", response);
             }
-            return validateIntProperty(NS_GLOBAL, "wifi_on", enabled? 1 : 0);
+            return validateIntProperty(NS_GLOBAL, "wifi_on", enabled ? 1 : 0);
         }
 
         @Override
-        public boolean setLocationMode(int locationMode)
-                throws RemoteException {
+        public boolean setLocationMode(int locationMode) throws RemoteException {
             if (Settings.Secure.LOCATION_MODE_HIGH_ACCURACY == locationMode) {
                 sendSetStringProperty(NS_SECURE, "location_providers_allowed", "+gps");
                 sendSetStringProperty(NS_SECURE, "location_providers_allowed", "+network");
@@ -264,7 +259,7 @@ public class ButlerService extends JobIntentService {
                 sendSetStringProperty(NS_SECURE, "location_providers_allowed", "-network");
                 sendSetStringProperty(NS_SECURE, "location_providers_allowed", "-wifi");
             } else if (Settings.Secure.LOCATION_MODE_BATTERY_SAVING == locationMode) {
-                if(!getPackageManager().hasSystemFeature(PackageManager.FEATURE_LOCATION)){
+                if (!getPackageManager().hasSystemFeature(PackageManager.FEATURE_LOCATION)) {
                     throw new RemoteException("Location not supported on this device");
                 }
                 sendSetStringProperty(NS_SECURE, "location_providers_allowed", "+network");
@@ -285,15 +280,15 @@ public class ButlerService extends JobIntentService {
         public boolean setRotation(int rotation) {
             CommandResponse response = sendSetIntProperty(NS_SYSTEM, "accelerometer_rotation", 0);
             Log.d(TAG, "ROTATION: " + response);
-            if (response == null || response.getStatusCode() != 0){
+            if (response == null || response.getStatusCode() != 0) {
                 onErrorInt(NS_SYSTEM, "accelerometer_rotation", 0, response);
             }
             response = sendSetIntProperty(NS_SYSTEM, "user_rotation", rotation);
-            if (response == null || response.getStatusCode() != 0){
+            if (response == null || response.getStatusCode() != 0) {
                 onErrorInt(NS_SYSTEM, "user_rotation", rotation, response);
             }
-            return validateIntProperty(NS_SYSTEM, "accelerometer_rotation", 0) &&
-                validateIntProperty(NS_SYSTEM, "user_rotation", rotation);
+            return validateIntProperty(NS_SYSTEM, "accelerometer_rotation", 0) && validateIntProperty(NS_SYSTEM,
+                "user_rotation", rotation);
         }
 
         @Override
@@ -303,22 +298,28 @@ public class ButlerService extends JobIntentService {
 
         @Override
         public boolean grantPermission(String packageName, String permission) {
-            int hasPerm = getApplicationContext().getPackageManager().checkPermission(permission,
-                    packageName);
+            int hasPerm = getApplicationContext().getPackageManager().checkPermission(permission, packageName);
             if (hasPerm == PackageManager.PERMISSION_GRANTED) {
                 Log.i(TAG, "Already granted: permission " + permission + " to pacakge " + packageName);
                 return true;
             }
-            final String cmd = GRANT_PREFIX + " permission " + packageName + " " + permission;
-            try{
+            JsonObject json = new JsonObject();
+            json.addProperty("type", "permission");
+            json.addProperty("package", packageName);
+            JsonArray permissionsJsonArray = new JsonArray();
+            permissionsJsonArray.add(permission);
+            json.add("permissions", permissionsJsonArray);
+            String jsonString = GSON.toJson(json);
+
+            final String cmd = GRANT_PREFIX + jsonString;
+            try {
                 invoke(cmd);
-            } catch (InterruptedException | ExecutionException |TimeoutException e) {
-                CommandInvocation.signalError("ERROR: Execution error granting permission: " +
-                        e.getMessage());
+            } catch (InterruptedException | ExecutionException | TimeoutException e) {
+                CommandInvocation.signalError("ERROR: Execution error granting permission: " + e.getMessage());
                 return false;
             }
-           return getApplicationContext().getPackageManager().checkPermission(permission, packageName) ==
-                   PackageManager.PERMISSION_GRANTED;
+            return getApplicationContext().getPackageManager().checkPermission(permission, packageName)
+                == PackageManager.PERMISSION_GRANTED;
         }
 
         @Override
@@ -333,22 +334,47 @@ public class ButlerService extends JobIntentService {
 
         @Override
         public boolean setImmersiveModeConfirmation(boolean enabled) {
-            CommandResponse response = sendSetStringProperty(NS_SECURE, "immersive_mode_confirmation",
-				      enabled ? "\"\"\"\"" : "confirmed");
-            if (response == null || response.getStatusCode() != 0){
-                onError(NS_SECURE, "immersive_mode_confirmation", enabled ? "" : "confirmed", response);
+            CommandResponse response =
+                sendSetStringProperty(NS_SECURE, "immersive_mode_confirmation", enabled ? "confirmed" : "\"\"\"\"");
+            if (response == null || response.getStatusCode() != 0) {
+                onError(NS_SECURE, "immersive_mode_confirmation", enabled ? "confirmed" : "", response);
             }
-            return validateStringProperty(NS_SECURE, "immersive_mode_confirmation", enabled ? "" : "confirmed");
+            return validateStringProperty(NS_SECURE, "immersive_mode_confirmation", enabled ? "confirmed" : "");
         }
-
     };
 
     public ButlerService() {
         super();
     }
 
+    public static boolean isEmulator() {
+        return Build.FINGERPRINT.startsWith("generic")
+            || Build.FINGERPRINT.startsWith("unknown")
+            || Build.MODEL.contains("google_sdk")
+            || Build.MODEL.contains("Emulator")
+            || Build.MODEL.contains("Android SDK built for x86")
+            || Build.MANUFACTURER.contains("Genymotion")
+            || (Build.BRAND.startsWith("generic") && Build.DEVICE.startsWith("generic"))
+            || "google_sdk".equals(Build.PRODUCT);
+    }
+
+    private static int getTestbutlerTimeout() {
+        if (isEmulator()) {
+            Log.d(TAG,"Running on emulator. Set processing server response timeout to 5");
+            return 5;
+        } else {
+            Log.d(TAG, "Running on real device. Set processing server response timeout to 1");
+            return 1;
+        }
+    }
+
     @Override
     public void onCreate() {
+        Notification notification =
+            new NotificationCompat.Builder(this, "test_butler_channel_id_01").setContentTitle("")
+                .setContentText("")
+                .build();
+        this.startForeground(0, notification);
         super.onCreate();
         Log.d(TAG, "MDC ButlerService starting up...");
     }
@@ -368,82 +394,18 @@ public class ButlerService extends JobIntentService {
     @Nullable
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        Log.d(TAG, "OnstartCommand is called with " + "Action: " + intent.getAction());
+        Notification notification =
+            new NotificationCompat.Builder(this, "test_butler_channel_id_01").setContentTitle("")
+                .setContentText("")
+                .build();
+        this.startForeground(0, notification);
         super.onStartCommand(intent, flags, startId);
-        onHandleIntent(intent);
         return android.app.Service.START_STICKY;
     }
 
+    @Nullable
     @Override
     protected void onHandleWork(Intent intent) {
-        onHandleIntent(intent);
-    }
-
-    protected void onHandleIntent(Intent intent){
-        /**
-         * A test-only intent ACTION_TEST_ONLY_SEND_CMD is provided for use in testing
-         * this TestButler code (only to be used for that purpose).  This provides
-         * an easy mechanism to test the very fundamentals of interaction between
-         * TestButler running on a device and the server to which the device is connected.
-         * It eliminates the complexity of needing a third component (an explicit test app)
-         * that could make debugging the basics far more difficult.
-         */
-        if (intent.getAction() == null){
-            return;
-        }
-        if (intent.getAction().equals(ACTION_CMD_RESPONSE)) {
-            final String response = intent.getStringExtra("response");
-            try {
-                CommandInvocation.processServerResponse(response);
-            } catch (Exception e){
-                CommandInvocation.signalError("ERROR: exception encountered while handling command response " +
-                                               e.getMessage());
-            }
-        } else if (intent.getAction().equals(ACTION_TEST_ONLY_SEND_CMD)){
-            // This is only for test purposes to send a command over to server
-            // and allow server to test response logic
-            Log.d(TAG, "Sending command \"" + intent.getStringExtra("command") + "\"");
-            CommandInvocation.invoke("TEST_ONLY " + intent.getStringExtra("command"));
-
-        } else if (intent.getAction().equals(ACTION_SET_SYSTEM_LOCALE)) {
-            Log.d(TAG, "Setting system locale");
-            Log.d(TAG, intent.getStringExtra("locale"));
-            Locale locale = new Locale(intent.getStringExtra("locale"));
-
-            /**
-             * There is very fuzzy documentation on how to set the system (device global) local
-             * setting.  Many solutions only change it for the current app, which is not what
-             * we want.
-             */
-            try {
-                Class amnClass = Class.forName("android.app.ActivityManagerNative");
-                Object amn = null;
-                Configuration config = null;
-
-                // amn = ActivityManagerNative.getDefault();
-                Method methodGetDefault = amnClass.getMethod("getDefault");
-                methodGetDefault.setAccessible(true);
-                amn = methodGetDefault.invoke(amnClass);
-
-                // config = amn.getConfiguration();
-                Method methodGetConfiguration = amnClass.getMethod("getConfiguration");
-                methodGetConfiguration.setAccessible(true);
-                config = (Configuration) methodGetConfiguration.invoke(amn);
-
-                // config.userSetLocale = true;
-                Class configClass = config.getClass();
-                Field f = configClass.getField("userSetLocale");
-                f.setBoolean(config, true);
-
-                // set the locale to the new value
-                config.locale = locale;
-
-                // amn.updateConfiguration(config);
-                Method methodUpdateConfiguration = amnClass.getMethod("updateConfiguration", Configuration.class);
-                methodUpdateConfiguration.setAccessible(true);
-                methodUpdateConfiguration.invoke(amn, config);
-            } catch (Exception e){
-                Log.e(TAG, "Failed to set system locale. " + e.getMessage(), e);
-            }
-        }
     }
 }

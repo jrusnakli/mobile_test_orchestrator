@@ -111,7 +111,8 @@ class TestAndroidTestOrchestrator(object):
                                      "testTestButlerSetLocationModeBatterySaver",
                                      "testTestButlerSetLocationModeSensorsOnly",
                                      "testTestButlerSetLocationModeHigh",
-                                     "testTestButlerStress"
+                                     "testTestButlerStress",
+                                     "testTestButlerGrantPermission"
                                      ]
                 assert test_class == self.expected_test_class[current_test_suite]
 
@@ -120,6 +121,7 @@ class TestAndroidTestOrchestrator(object):
                 nonlocal test_count, current_test_suite
                 test_count += 1
                 assert test_class == self.expected_test_class[current_test_suite]
+                assert test_name == "testFailure"  # this test case is designed to be failed
 
             def test_ignored(self, test_name: str, test_class: str, test_no: int, msg: str = ""):
                 nonlocal test_count

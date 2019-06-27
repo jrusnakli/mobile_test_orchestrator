@@ -262,6 +262,7 @@ class Device(object):
         :raises CommandExecutionFailureException: if command fails to execute on remote device
         """
         timeout = timeout or Device.TIMEOUT_ADB_CMD
+        log.debug(f"Executing remote command: {self.formulate_adb_cmd(*args)}")
         completed = subprocess.run(self.formulate_adb_cmd(*args), timeout=timeout,
                                    stderr=subprocess.PIPE,
                                    stdout=subprocess.PIPE if capture_stdout and stdout_redirect == subprocess.DEVNULL else stdout_redirect,
@@ -285,7 +286,7 @@ class Device(object):
         :return: subprocess.Open
         """
         args = (self._adb_path, "-s", self.device_id, *args)
-        log.info(f"Executing: {' '.join(args)}")
+        log.debug(f"Executing: {' '.join(args)} in background")
         if 'encoding' not in kwargs:
             kwargs['encoding'] = 'utf-8'
             kwargs['errors'] = 'ignore'
@@ -341,7 +342,7 @@ class Device(object):
             async def __aexit__(self, exc_type: Optional[Type[BaseException]], exc_val: Optional[BaseException],
                                 exc_tb: Optional[TracebackType]) -> None:
                 if proc_completion_timeout is None or proc_completion_timeout > 0.0:
-                    return_code = await asyncio.wait_for(proc.wait(), proc_completion_timeout,  # type: ignore
+                    return_code = await asyncio.wait_for(proc.wait(), proc_completion_timeout,
                                                          loop=loop)  # loop arg type is optional. bug in typeshed.
                     if return_code != 0:
                         assert proc.stderr, "Expected proc to have stderr pipe"

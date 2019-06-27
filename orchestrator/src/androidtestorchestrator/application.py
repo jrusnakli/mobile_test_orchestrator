@@ -233,28 +233,50 @@ class ServiceApplication(Application):
     """
 
     def start(self, activity: str,  # type: ignore # TODO: activity should be Optional, as it is in Application.
-              *options: str, intent: Optional[str] = None, foreground: bool = True):
+              *options: str, intent: Optional[str] = None, foreground: bool = True) -> None:
 
         """
-        invoke an intent associated with this service
+        invoke an intent associated with this service by calling start the service
 
         :param options: string list of options to supply to "am startservice" command
-        :param activity: activity defaulting to "MainActivity" if None
+        :param activity: activity handles the intent
         :param intent: if not None, invoke specific intent otherwise invoke default intent
         :param foreground: whether to start in foreground or not (Android O+
             does not allow background starts any longer)
         """
         # TODO: This is bad. Breaks liskov substitution principle.
-        assert activity, "Must provide an activity for ServiceApplication"
+
+        if not activity:
+            raise Exception("Must provide an activity for ServiceApplication")
 
         activity = f"{self.package_name}/{activity}"
-        options = tuple(f"\"{item}\"" for item in options)
+        options = tuple(f'"{item}"' for item in options)
         if intent:
             options = ("-a", intent) + options
         if foreground and self.device.api_level >= 26:
-            self.device.execute_remote_cmd("shell", "am", "start-foreground-service", "-n", activity, *options, capture_stdout=False)
+            self.device.execute_remote_cmd("shell", "am", "start-foreground-service", "-n", activity, *options,
+                                           capture_stdout=False)
         else:
-            self.device.execute_remote_cmd("shell", "am", "startservice", "-n", activity, *options, capture_stdout=False)
+            self.device.execute_remote_cmd("shell", "am", "startservice", "-n", activity, *options,
+                                           capture_stdout=False)
+
+    def broadcast(self, activity: str,  # TODO: activity should be Optional, as it is in Application.
+                  *options: str, intent: Optional[str] = None) -> None:
+        """
+        Invoke an intent associated with this service by broadcasting an event
+        :param activity: activity that handles the intent
+        :param options: string list of options to supply to "am broadcast" command
+        :param intent: if not None, invoke specific intent otherwise invoke default intent
+        :return:
+        """
+        if not activity:
+            raise Exception("Must provide an activity for ServiceApplication")
+
+        activity = f"{self.package_name}/{activity}"
+        options = tuple(f'"{item}"' for item in options)
+        if intent:
+            options = ("-a", intent) + options
+        self.device.execute_remote_cmd("shell", "am", "broadcast", "-n", activity, *options, capture_stdout=False)
 
 
 class TestApplication(Application):

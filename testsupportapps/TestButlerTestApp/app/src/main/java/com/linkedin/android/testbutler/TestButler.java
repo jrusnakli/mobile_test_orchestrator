@@ -241,6 +241,33 @@ public class TestButler {
         }
     }
 
+    /**
+     * A helper method for granting runtime permissions to apps under test on API 23+
+     * <p>
+     * Note: Before API 23, this method is a no-op
+     * <p>
+     * A common use case for this is when running tests from Android Studio where you can't (currently) pass the
+     * -g flag to adb install when installing the app to run tests.
+     *
+     * @param context the "target context"; i.e. Context of the app under test (not the test apk context!)
+     * @see <a href="https://code.google.com/p/android/issues/detail?id=198813">
+     * https://code.google.com/p/android/issues/detail?id=198813</a>
+     */
+    public static void grantPermission(@NonNull Context context, @NonNull String permission) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+            Log.i(TAG, "No need to grantPermission before API 23");
+            return;
+        }
+        verifyApiReady();
+        try {
+            if (!butlerApi.grantPermission(context.getPackageName(), permission)) {
+                throw new IllegalArgumentException("Failed to grant permission " + permission);
+            }
+        } catch (RemoteException e) {
+            throw new IllegalStateException("Failed to communicate with ButlerService", e);
+        }
+    }
+
     private static void verifyApiReady() {
         if (butlerApi == null) {
             throw new IllegalStateException("ButlerService is not started!");
