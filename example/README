@@ -12,4 +12,4 @@ Example command line:
 python entrypoint.py "/mobile_test_orchestrator/testsupportapps/TestButlerTestApp/app/build/outputs/apk/debug/app-debug.apk"
 "/mobile_test_orchestrator/testsupportapps/TestButlerTestApp/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk" "emulator-5554"
 
--- To run entrypoint.py automatically through Azure custom script extension agent see details in doc (link) Section 5 
+-- To run entrypoint.py automatically through Azure custom script extension agent see details in (link) Section 5
