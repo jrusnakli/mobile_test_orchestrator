@@ -1,6 +1,7 @@
 Instruction to run entrypoint script
 
 --entrypoint.py file runs as an independent file
+--entrypoint will start the emulator for users.
 --entrypoint.py calls the pre-packed and pre-installed “orchestrator” lib in python3.7 lib 
 to install “orchestrator” lib to python3.7 lib in venv:
 
@@ -12,4 +13,22 @@ Example command line:
 python entrypoint.py "/mobile_test_orchestrator/testsupportapps/TestButlerTestApp/app/build/outputs/apk/debug/app-debug.apk"
 "/mobile_test_orchestrator/testsupportapps/TestButlerTestApp/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk" "emulator-5554"
 
--- To run entrypoint.py automatically through Azure custom script extension agent see details in (link) Section 5
+Example output:
+
+emulator: INFO: boot completed
+emulator: INFO: boot time 30255 ms
+emulator: Increasing screen off timeout, logcat buffer size to 2M.
+emulator: Revoking microphone permissions for Google App.
+Please use ANDROID_SDK_ROOT over ANDROID_HOME
+Executing: /Users/hewei/Library/Android/sdk/platform-tools/adb -s emulator-5554 logcat -v brief -s TestButler:I
+Test execution started: test_suite
+Executing: /Users/hewei/Library/Android/sdk/platform-tools/adb -s emulator-5554 shell am instrument -w -r com.linkedin.mdctest.test/android.support.test.runner.AndroidJUnitRunner
+Test testTestButlerStress failed
+Test testTestButlerGrantPermission passed
+Test testTestButlerRotation failed
+Test testTestButlerSetImmersiveModeConfirmation passed
+Test testTestButlerSetLocationModeBatterySaver passed
+Test testTestButlerSetLocationModeHigh passed
+Test testTestButlerSetLocationModeSensorsOnly passed
+Test testTestButlerSetWifiState passed
+Test execution ended: test_suite

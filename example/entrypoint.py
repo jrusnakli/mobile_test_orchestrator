@@ -26,6 +26,7 @@ class EspressoTestRunner(object):
         # install app
         app = Application.from_apk(self._app, self._device, as_upgrade=True)
 
+        # TODO: generate comprehensive report
         class Listener(TestListener):
             def test_ended(self, test_name: str, test_class: str, test_no: int, duration: float, msg: str = ""):
                 print("Test %s passed" % test_name)
