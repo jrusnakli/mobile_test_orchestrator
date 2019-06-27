@@ -329,7 +329,7 @@ class Device(object):
         proc = await asyncio.subprocess.create_subprocess_exec(*cmd,  # type: ignore
                                                                stdout=asyncio.subprocess.PIPE,
                                                                stderr=asyncio.subprocess.PIPE,
-                                                               loop=loop,  # loop arg type is optional. bug in typeshed.
+                                                               loop=loop,  # type: ignore
                                                                bufsize=0)
 
         class LineGenerator:
