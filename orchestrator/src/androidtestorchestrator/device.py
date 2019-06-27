@@ -342,10 +342,8 @@ class Device(object):
             async def __aexit__(self, exc_type: Optional[Type[BaseException]], exc_val: Optional[BaseException],
                                 exc_tb: Optional[TracebackType]) -> None:
                 if proc_completion_timeout is None or proc_completion_timeout > 0.0:
-                    # TODO: mypy has type check issue on loop
-                    # mypy: begin ignore
                     return_code = await asyncio.wait_for(proc.wait(), proc_completion_timeout,
-                                                         loop=loop)  # noqa
+                                                         loop=loop)  # type: ignore
                     # mypy: end ignore
                     if return_code != 0:
                         assert proc.stderr, "Expected proc to have stderr pipe"
