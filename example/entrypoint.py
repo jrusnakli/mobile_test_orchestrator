@@ -64,7 +64,6 @@ class EspressoTestRunner(object):
             test_suite = TestSuite('test_suite', [])
             test_plan = iter([test_suite])
             orchestrator.execute_test_plan(test_application, test_plan, Listener())
-            # orchestrator.execute_test_suite(test_suite, Listener())
 
 
 def add_ext(app):
@@ -134,8 +133,6 @@ def wait_for_emulator_boot(port: int, avd: str, adb_path: str, emulator_path: st
         if tries == 0:
             proc.kill()
             raise Exception(f"Emulator failed to boot in time \n {completed.stderr}")
-
-    # Config.proc_q.put(proc)
 
 
 def launch(port: int, avd: str, adb_path: str, emulator_path: str):
