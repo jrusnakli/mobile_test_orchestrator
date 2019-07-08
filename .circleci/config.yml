@@ -1,0 +1,72 @@
+version: 2
+jobs:
+  build:
+    working_directory: ~/code
+    docker:
+      - image: liwjohnson/android-api-28
+    environment:
+      JVM_OPTS: -Xmx3200m
+      EMULATOR_OPTS: "-no-window -no-audio -no-accel"
+      PYTHONASYNCIODEBUG: 1
+    steps:
+      - checkout
+      - restore_cache:
+          key: image2-{{ .Branch }}-{{ checksum "requirements.txt" }}
+      - run:
+          name: setup python venv
+          command: |
+            python3.7 -m venv venv
+            . venv/bin/activate
+            pip install --upgrade -r requirements.txt
+            echo 'export ANDROID_SDK_ROOT="$ANDROID_HOME"' >> $BASH_ENV 
+      - run:
+          name: Build support apps (debug)
+          command: |
+            ./testbutlerservice/gradlew androidDependencies
+            ./testbutlerservice/gradlew testsupportapps:TestButlerTestApp:app:assembleDebug
+            ./testbutlerservice/gradlew testsupportapps:TestButlerTestApp:app:assembleAndroidTest
+      - run:
+          name: Build test butler (debug)
+          command: |
+            cd testbutlerservice
+            ./gradlew assembleDebug
+            mkdir -p ../orchestrator/src/androidtestorchestrator/resources/apks
+            cp app/build/outputs/apk/debug/app-debug.apk ../orchestrator/src/androidtestorchestrator/resources/apks/TestButlerLive.apk
+      - run:
+          name: build androidtestorchestrator
+          command: |
+            . venv/bin/activate
+            pip install -e ./orchestrator
+      - save_cache:
+          key: image2-{{ .Branch }}-{{ checksum "requirements.txt" }}
+          paths:
+            - "venv"
+            - "testsupportapps/TestButlerTestApp/.gradle"
+            - "testbutlerservice/.gradle"
+      - run:
+          name: Run static analysis
+          command: |
+            . venv/bin/activate
+            cd orchestrator/src
+            mypy androidtestorchestrator
+            flake8 .
+      - run:
+          name: Running tests
+          command: |
+            . venv/bin/activate
+            cd orchestrator/test
+            mkdir -p test-reports/tmp
+            pytest -s . --html  test-reports/report.html --junitxml=test-reports/all-result.xml --basetemp=test-reports/tmp --cov=../src . --cov-report html:test-reports/coverage
+      - run:
+          name: directory
+          command: |
+            ls /home/circleci/code/orchestrator/test/../../testsupportapps/TestButlerTestApp/app/build/outputs/apk
+            ls /home/circleci/code/orchestrator/test/../../testsupportapps/TestButlerTestApp/app/build/outputs/apk/debug
+            find /home/circleci/code/orchestrator/ -name \*.apk
+      - store_artifacts:
+          path: orchestrator/test/test-reports/
+          destination: python_app
+
+      - store_test_results:
+          path: orchestrator/test/test-reports/
+
