@@ -1,8 +1,4 @@
-import os
 import logging
-import pytest
-
-import support
 
 from androidtestorchestrator import Device
 from androidtestorchestrator.reporting import TestListener
