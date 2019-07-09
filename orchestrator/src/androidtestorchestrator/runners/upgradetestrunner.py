@@ -28,7 +28,7 @@ class UpgradeTestRunner(object):
         self._upgrade_apks = upgrade_apks
         self._upgrade_test = UpgradeTest(device, base_apk, test_listener)
 
-    def setup(self):
+    def setup(self) -> bool:
         """
         Setup device and do pre-checks for upgrade test.
         Ensure upgrade APKs list contains unique entries.
@@ -49,7 +49,7 @@ class UpgradeTestRunner(object):
             seen_apks[package].append(version)
         return True
 
-    def execute(self):
+    def execute(self) -> None:
         """
         Attempt to execute the upgrade test suite for all upgrade_apks
         :return: None
@@ -66,7 +66,7 @@ class UpgradeTestRunner(object):
                 self._upgrade_test.test_uninstall_upgrade(upgrade_apk=upgrade_apk)
                 self._upgrade_test.test_uninstall_base()
 
-    def teardown(self):
+    def teardown(self) -> None:
         """
         Tear down device and restore to pre-test conditions
         :return: None
@@ -81,7 +81,7 @@ class UpgradeTest(object):
         self._base_apk = base_apk
         self._reporter = test_listener
 
-    def test_uninstall_base(self):
+    def test_uninstall_base(self) -> None:
         _name = _get_func_name()
         start = time.perf_counter()
         package = AXMLParser.parse(self._base_apk).package_name
@@ -99,7 +99,7 @@ class UpgradeTest(object):
                                   duration=time.perf_counter() - start,
                                   msg=f"Un-installation of package {package} successful")
 
-    def test_install_base(self):
+    def test_install_base(self) -> None:
         _name = _get_func_name()
         start = time.perf_counter()
         try:
@@ -119,7 +119,7 @@ class UpgradeTest(object):
         self._reporter.test_ended(test_name=_name, test_class=self.__class__.__name__, test_no=2,
                                   duration=time.perf_counter() - start)
 
-    def test_upgrade_to_target(self, target_apk: str):
+    def test_upgrade_to_target(self, target_apk: str) -> None:
         _name = _get_func_name()
         start = time.perf_counter()
         try:
@@ -145,7 +145,7 @@ class UpgradeTest(object):
         self._reporter.test_ended(test_name=_name, test_class=self.__class__.__name__, test_no=3,
                                   duration=time.perf_counter() - start)
 
-    def test_uninstall_upgrade(self, upgrade_apk: str):
+    def test_uninstall_upgrade(self, upgrade_apk: str) -> None:
         _name = _get_func_name()
         start = time.perf_counter()
         package = AXMLParser.parse(upgrade_apk).package_name
@@ -180,5 +180,5 @@ class UpgradeTest(object):
         return os.path.isfile(path)
 
 
-def _get_func_name():
+def _get_func_name() -> str:
     return sys._getframe(1).f_code.co_name
