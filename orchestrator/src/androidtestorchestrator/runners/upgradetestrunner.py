@@ -6,7 +6,7 @@ import time
 from apk_bitminer.parsing import AXMLParser  # type: ignore
 from collections import defaultdict
 from pipes import quote
-from typing import List
+from typing import DefaultDict, List, Tuple
 
 from androidtestorchestrator.device import Device
 from androidtestorchestrator.application import Application
@@ -34,11 +34,11 @@ class UpgradeTestRunner(object):
         Ensure upgrade APKs list contains unique entries.
         :return: bool (True == setup success, False == setup failure)
         """
-        def apk_info(apk_file_name):
+        def apk_info(apk_file_name: str) -> Tuple[str, str]:
             attrs = {attr.name: attr.value for attr in AXMLParser.parse(apk_file_name).xml_head.attributes}
             return attrs.get('package'), attrs.get('versionName')
 
-        seen_apks = defaultdict(list)
+        seen_apks: DefaultDict[str, list] = defaultdict(list)
         for apk in self._upgrade_apks:
             package, version = apk_info(apk)
             if package in seen_apks and version in seen_apks[package]:
