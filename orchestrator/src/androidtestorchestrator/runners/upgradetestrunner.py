@@ -6,7 +6,7 @@ import time
 from apk_bitminer.parsing import AXMLParser  # type: ignore
 from collections import defaultdict
 from pipes import quote
-from typing import DefaultDict, List, Tuple
+from typing import Any, DefaultDict, List, Optional, Tuple
 
 from androidtestorchestrator.device import Device
 from androidtestorchestrator.application import Application
@@ -34,11 +34,11 @@ class UpgradeTestRunner(object):
         Ensure upgrade APKs list contains unique entries.
         :return: bool (True == setup success, False == setup failure)
         """
-        def apk_info(apk_file_name: str) -> Tuple[str, str]:
+        def apk_info(apk_file_name: str) -> Tuple[Optional[Any], Optional[Any]]:
             attrs = {attr.name: attr.value for attr in AXMLParser.parse(apk_file_name).xml_head.attributes}
             return attrs.get('package'), attrs.get('versionName')
 
-        seen_apks: DefaultDict[str, list] = defaultdict(list)
+        seen_apks: DefaultDict[Any, List[Any]] = defaultdict(list)
         for apk in self._upgrade_apks:
             package, version = apk_info(apk)
             if package in seen_apks and version in seen_apks[package]:
@@ -61,7 +61,7 @@ class UpgradeTestRunner(object):
                 self._upgrade_test.test_upgrade_to_target(upgrade_apk)
             except Exception as e:
                 self._upgrade_reporter.test_suite_errored(test_suite_name=f"UpgradeTest-{upgrade_apk}: {str(e)}",
-                                                          status_code=None)
+                                                          status_code=999)
             finally:
                 self._upgrade_test.test_uninstall_upgrade(upgrade_apk=upgrade_apk)
                 self._upgrade_test.test_uninstall_base()
