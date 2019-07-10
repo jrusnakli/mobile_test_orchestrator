@@ -127,7 +127,7 @@ class TestApplicationClass:
             assert device.foreground_activity() == app.package_name
             with pytest.raises(Exception) as exc_info:
                 app.clean_kill()
-            assert "Failed to background current foreground app" in str(exc_info)
+            assert "Failed to background current foreground app" in str(exc_info.value)
 
     def test_clean_kill_throws_exception_when_pid_still_existing(self, install_app, device: Device, support_app: str):
         app = install_app(Application, support_app)
@@ -142,7 +142,7 @@ class TestApplicationClass:
                 assert device.foreground_activity() == app.package_name
                 with pytest.raises(Exception) as exc_info:
                     app.clean_kill()
-                assert "Detected app process is still running" in str(exc_info)
+                assert "Detected app process is still running" in str(exc_info.value)
 
     def test_clean_kill_succeeds(self, install_app, device: Device, support_app: str):
         app = install_app(Application, support_app)
