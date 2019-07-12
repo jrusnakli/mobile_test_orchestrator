@@ -111,8 +111,8 @@ class TestResult(object):
 
     def __init__(self) -> None:
         self.status: TestStatus = TestStatus.INCOMPLETE
-        self.start_time: datetime = datetime.datetime.utcnow()
-        self.end_time: Optional[datetime] = None
+        self.start_time: datetime.datetime = datetime.datetime.utcnow()
+        self.end_time: Optional[datetime.datetime] = None
         self.stack_trace: Optional[str] = None
         self.data: Dict[str, Any] = {}
 
@@ -165,11 +165,11 @@ class TestRunResult(TestListener):
 
     def __init__(self) -> None:
         super().__init__()
-        self.test_suite_name = "not started"
-        self.duration = 0
-        self.start_time = None
-        self.end_time = None
-        self.error_message = None
+        self.test_suite_name: str = "not started"
+        self.duration: Optional[int, datetime.timedelta] = 0
+        self.start_time: Optional[datetime.datetime] = None
+        self.end_time: Optional[datetime.datetime] = None
+        self.error_message: str = ""
         self.test_results: Dict[TestId, TestResult] = {}
 
     @property
