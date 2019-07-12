@@ -117,10 +117,10 @@ class TestResult(object):
         self.data: Dict[str, Any] = {}
 
     @property
-    def duration(self) -> Optional[int, datetime.timedelta]:
+    def duration(self) -> float:
         if self.end_time is not None and self.start_time is not None:
             return (self.end_time - self.start_time).total_seconds()
-        return 0
+        return 0.0
 
     def failed(self, stack_trace: str) -> None:
         """
@@ -167,7 +167,7 @@ class TestRunResult(TestListener):
     def __init__(self) -> None:
         super().__init__()
         self.test_suite_name: str = "not started"
-        self.duration: Union[int, datetime.timedelta] = 0
+        self.duration: float = 0.0
         self.start_time: Optional[datetime.datetime] = None
         self.end_time: Optional[datetime.datetime] = None
         self.error_message: str = ""
