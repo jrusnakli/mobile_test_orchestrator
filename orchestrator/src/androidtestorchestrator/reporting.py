@@ -117,7 +117,8 @@ class TestResult(object):
         self.data: Dict[str, Any] = {}
 
     @property
-    def duration(self) -> datetime.timedelta:
+    def duration(self) -> Any:
+        # Returns timedelta, but flake8 complains about it returning 'Any'
         return (self.end_time - self.start_time).total_seconds()
 
     def failed(self, stack_trace: str) -> None:
@@ -169,7 +170,7 @@ class TestRunResult(TestListener):
         self.start_time = None
         self.end_time = None
         self.error_message = None
-        self.test_results = Dict[TestId, TestResult] = {}
+        self.test_results: Dict[TestId, TestResult] = {}
 
     @property
     def is_complete(self) -> bool:
