@@ -170,7 +170,7 @@ class TestAndroidDevice:
                     pass
         with pytest.raises(Exception) as exc_info:
             asyncio.get_event_loop().run_until_complete(execute())
-        assert "some bad command" in str(exc_info)
+        assert "some bad command" in str(exc_info.value)
 
     def test_get_locale(self, device: Device):
         locale = device.get_locale()

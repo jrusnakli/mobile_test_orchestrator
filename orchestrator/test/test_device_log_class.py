@@ -93,7 +93,7 @@ class TestDeviceLog:
             pass
         with pytest.raises(Exception) as exc_info:
             DeviceLog.LogCapture(device, tmpfile)
-        assert "Path %s already exists; will not overwrite" % tmpfile in str(exc_info)
+        assert "Path %s already exists; will not overwrite" % tmpfile in str(exc_info.value)
 
         with pytest.raises(Exception):
             logcap = DeviceLog.LogCapture(device, os.path.join(tmpdir, "newfile"))
