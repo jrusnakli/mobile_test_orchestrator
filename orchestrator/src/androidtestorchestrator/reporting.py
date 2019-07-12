@@ -161,7 +161,7 @@ class TestRunResult(TestListener):
     Result of a whole test run.
 
     Base implementation of TestListener that collects results into a dictionary, and extracts need for timing and
-    result collection operations away from test methods.
+    result collection operations away from test methods. Used mainly for Upgrade tests as of now.
     """
 
     def __init__(self) -> None:
