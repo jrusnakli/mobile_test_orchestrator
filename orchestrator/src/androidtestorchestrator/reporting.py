@@ -2,7 +2,7 @@ import datetime
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Union
 
 
 class TestStatus(Enum):
@@ -117,9 +117,10 @@ class TestResult(object):
         self.data: Dict[str, Any] = {}
 
     @property
-    def duration(self) -> Any:
-        # Returns timedelta, but flake8 complains about it returning 'Any'
-        return (self.end_time - self.start_time).total_seconds()
+    def duration(self) -> Optional[int, datetime.timedelta]:
+        if self.end_time is not None and self.start_time is not None:
+            return (self.end_time - self.start_time).total_seconds()
+        return 0
 
     def failed(self, stack_trace: str) -> None:
         """
@@ -166,7 +167,7 @@ class TestRunResult(TestListener):
     def __init__(self) -> None:
         super().__init__()
         self.test_suite_name: str = "not started"
-        self.duration: Optional[int, datetime.timedelta] = 0
+        self.duration: Union[int, datetime.timedelta] = 0
         self.start_time: Optional[datetime.datetime] = None
         self.end_time: Optional[datetime.datetime] = None
         self.error_message: str = ""
@@ -199,6 +200,8 @@ class TestRunResult(TestListener):
         self.error_message = None
 
     def test_suite_ended(self, test_suite_name: str, test_count: int, execution_time: float = None) -> None:
+        if self.start_time is None:
+            raise Exception("test_suite_ended called before calling test_suite_started")
         self.end_time = datetime.datetime.utcnow()
         self.duration += execution_time if execution_time is not None \
             else (self.end_time - self.start_time).total_seconds()
