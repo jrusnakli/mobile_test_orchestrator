@@ -125,7 +125,7 @@ class TestResult(object):
         Marks this test as failed
         :param stack_trace: A stack trace for the failure
         """
-        self.status = TestStatus.FAILURE
+        self.status = TestStatus.FAILED
         self.stack_trace = stack_trace
 
     def assumption_failure(self, stack_trace: str) -> None:
@@ -133,14 +133,14 @@ class TestResult(object):
         Marks this test as an assumption failure
         :param stack_trace: A stack trace for the assumption violation
         """
-        self.status = TestStatus.ASSUMPTION_FAILURE
+        self.status = TestStatus.ASSUMPTION_VIOLATED
         self.stack_trace = stack_trace
 
     def ignored(self) -> None:
         """
         Marks this test as ignored (skipped)
         """
-        self.status = TestStatus.IGNORED
+        self.status = TestStatus.SKIPPED
 
     def ended(self) -> None:
         """
