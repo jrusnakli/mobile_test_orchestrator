@@ -197,13 +197,13 @@ class TestRunResult(TestListener):
         self.duration = 0
         self.start_time = datetime.datetime.utcnow()
         self.end_time = None
-        self.error_message = None
+        self.error_message = ""
 
-    def test_suite_ended(self, test_suite_name: str, test_count: int, execution_time: float = None) -> None:
+    def test_suite_ended(self, test_suite_name: str, test_count: int, execution_time: float = -1.0) -> None:
         if self.start_time is None:
             raise Exception("test_suite_ended called before calling test_suite_started")
         self.end_time = datetime.datetime.utcnow()
-        self.duration += execution_time if execution_time is not None \
+        self.duration += execution_time if execution_time != -1.0 \
             else (self.end_time - self.start_time).total_seconds()
 
     def test_suite_errored(self, test_suite_name: str, status_code: int, exc_message: str = "") -> None:
