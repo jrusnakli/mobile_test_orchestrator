@@ -102,6 +102,9 @@ class TestAndroidTestOrchestrator(object):
                 nonlocal expected_test_suite
                 assert test_suite_name == expected_test_suite
 
+            def test_started(self, test_name: str, test_class: str, test_no: int, msg: str = ""):
+                pass
+
             def test_ended(self, test_name: str, test_class: str, test_no: int, duration: float, msg: str = ""):
                 nonlocal test_count, current_test_suite
                 test_count += 1
@@ -187,6 +190,9 @@ class TestAndroidTestOrchestrator(object):
                 pass
 
             def test_assumption_violated(self, test_name: str, test_class: str, test_no: int, reason: str):
+                pass
+
+            def test_started(self, test_name: str, test_class: str, test_no: int, msg: str = ""):
                 pass
 
             def test_ended(self, test_name: str, test_class: str, test_no: int, duration: float, msg: str = ""):

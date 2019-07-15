@@ -1,3 +1,4 @@
+import inspect
 import logging
 import os
 import sys
@@ -10,25 +11,34 @@ from typing import Any, DefaultDict, List, Optional, Tuple
 
 from androidtestorchestrator.device import Device
 from androidtestorchestrator.application import Application
-from androidtestorchestrator.reporting import TestListener
+from androidtestorchestrator.reporting import TestRunResult
 
 log = logging.getLogger(__name__)
 log.setLevel(logging.INFO)
 
 
+class UpgradeTestException(Exception):
+    """
+    Custom exception type to signify an exception during an upgrade test
+    """
+    pass
+
+
 class UpgradeTestRunner(object):
+    """
+    Runner for performing the setup, execution and teardown of an upgrade test. The methods are meant to be run in
+    order they are written in the class:
 
-    TEST_SCREENSHOTS_FOLDER = "screenshots"
+    Class initialization -> setup() -> execute() -> teardown()
+    """
 
-    def __init__(self, device: Device, base_apk: str, upgrade_apks: List[str], test_listener: TestListener):
-        if not os.path.exists(self.TEST_SCREENSHOTS_FOLDER):
-            os.makedirs(self.TEST_SCREENSHOTS_FOLDER)
+    def __init__(self, device: Device, base_apk: str, upgrade_apks: List[str], test_listener: TestRunResult):
         self._device = device
         self._upgrade_reporter = test_listener
         self._upgrade_apks = upgrade_apks
-        self._upgrade_test = UpgradeTest(device, base_apk, test_listener)
+        self._upgrade_test = UpgradeTest(device, base_apk)
 
-    def setup(self) -> bool:
+    def setup(self) -> None:
         """
         Setup device and do pre-checks for upgrade test.
         Ensure upgrade APKs list contains unique entries.
@@ -45,26 +55,41 @@ class UpgradeTestRunner(object):
                 self._upgrade_reporter.test_assumption_violated("Upgrade setup", "UpgradeTestRunner", 1,
                                                                 f"APK with package: {package} with version: {version} "
                                                                 f"already found in upgrade apk list.")
-                return False
+                raise UpgradeTestException(f"APK with package: {package} with version: {version} already found in "
+                                           f"upgrade apk list.")
             seen_apks[package].append(version)
-        return True
 
     def execute(self) -> None:
         """
         Attempt to execute the upgrade test suite for all upgrade_apks
         :return: None
         """
+        test_suite = [self._upgrade_test.test_uninstall_base,
+                      self._upgrade_test.test_install_base,
+                      self._upgrade_test.test_upgrade_to_target,
+                      self._upgrade_test.test_uninstall_upgrade,
+                      self._upgrade_test.test_uninstall_base]
+        self._upgrade_reporter.test_suite_started(test_suite_name="UpgradeTest")
         for upgrade_apk in self._upgrade_apks:
-            try:
-                self._upgrade_test.test_uninstall_base()
-                self._upgrade_test.test_install_base()
-                self._upgrade_test.test_upgrade_to_target(upgrade_apk)
-            except Exception as e:
-                self._upgrade_reporter.test_suite_errored(test_suite_name=f"UpgradeTest-{upgrade_apk}: {str(e)}",
-                                                          status_code=999)
-            finally:
-                self._upgrade_test.test_uninstall_upgrade(upgrade_apk=upgrade_apk)
-                self._upgrade_test.test_uninstall_base()
+            for i, test in enumerate(test_suite):
+                self._upgrade_reporter.test_started(test_name=test.__name__, test_class=test.__class__, test_no=i)
+                try:
+                    if "upgrade_apk" in inspect.signature(test).parameters.keys():
+                        test(upgrade_apk)
+                    else:
+                        test()
+                except UpgradeTestException as e:
+                    self._upgrade_reporter.test_failed(test_name=test.__name__, test_class=test.__class__, test_no=i,
+                                                       stack=str(e))
+                    self._upgrade_reporter.test_suite_errored(test_suite_name="UpgradeTest", status_code=999,
+                                                              exc_message=str(e))
+                finally:
+                    # TODO: Look into removing requirement for duration, or add default value to interface
+                    # since TestRunResult class explicitly keeps track of this elsewhere
+                    self._upgrade_reporter.test_ended(test_name=test.__name__, test_class=test.__class__, test_no=i,
+                                                      duration=-1.0)
+        # TODO: What is the test_count useful for here? Need to look into this more
+        self._upgrade_reporter.test_suite_ended(test_suite_name="UpgradeTest", test_count=0)
 
     def teardown(self) -> None:
         """
@@ -75,91 +100,69 @@ class UpgradeTestRunner(object):
 
 
 class UpgradeTest(object):
+    """
+    Class representing the individual tests that make up a full upgrade test. This class is not meant to be called
+    individually. It is meant to be used by the UpgradeTestRunner specifically.
+    """
 
-    def __init__(self, device: Device, base_apk: str, test_listener: TestListener):
+    TEST_SCREENSHOTS_FOLDER = "screenshots"
+
+    def __init__(self, device: Device, base_apk: str):
         self._device = device
         self._base_apk = base_apk
-        self._reporter = test_listener
 
     def test_uninstall_base(self) -> None:
-        _name = _get_func_name()
-        start = time.perf_counter()
         package = AXMLParser.parse(self._base_apk).package_name
         if package not in self._device.list_installed_packages():
-            self._reporter.test_ended(test_name=_name, test_class=self.__class__.__name__, test_no=1,
-                                      duration=time.perf_counter() - start,
-                                      msg=f"No un-installation needed. Package {package} does not exist on device")
             return
         app = Application(package, self._device)
         app.uninstall()
         if package in self._device.list_installed_packages():
-            self._reporter.test_failed(test_name=_name, test_class=self.__class__.__name__, test_no=1, stack="")
-            raise Exception(f"Uninstall base package {package} failed")
-        self._reporter.test_ended(test_name=_name, test_class=self.__class__.__name__, test_no=1,
-                                  duration=time.perf_counter() - start,
-                                  msg=f"Un-installation of package {package} successful")
+            raise UpgradeTestException(f"Uninstall base package {package} failed")
 
     def test_install_base(self) -> None:
         _name = _get_func_name()
-        start = time.perf_counter()
         try:
             app = Application.from_apk(apk_path=self._base_apk, device=self._device, as_upgrade=False)
             app.start(activity=".MainActivity")
             if not self._ensure_activity_in_foreground(app.package_name):
-                msg = "Unable to start up package within timeout threshold"
-                self._reporter.test_failed(test_name=_name, test_class=self.__class__.__name__, test_no=2, stack="",
-                                           msg=msg)
-                raise Exception(msg)
+                raise UpgradeTestException("Unable to start up package within timeout threshold")
             time.sleep(1)  # Give the application activity an extra second to actually get to foreground completely
             if not self._take_screenshot(test_case=_name):
                 log.warning(f"Unable to take screenshot for test: {_name}")
         except Exception as e:
-            self._reporter.test_failed(test_name=_name, test_class=self.__class__.__name__, test_no=2, stack=str(e))
-            raise
-        self._reporter.test_ended(test_name=_name, test_class=self.__class__.__name__, test_no=2,
-                                  duration=time.perf_counter() - start)
+            raise UpgradeTestException(str(e))
 
-    def test_upgrade_to_target(self, target_apk: str) -> None:
+    def test_upgrade_to_target(self, upgrade_apk: str) -> None:
         _name = _get_func_name()
-        start = time.perf_counter()
         try:
             base_package_name = AXMLParser.parse(self._base_apk).package_name
-            app = Application.from_apk(apk_path=target_apk, device=self._device, as_upgrade=True)
+            app = Application.from_apk(apk_path=upgrade_apk, device=self._device, as_upgrade=True)
             if app.package_name != base_package_name:
-                msg = f"Target APK package does not match base APK package: {app.package_name}/{base_package_name}"
-                self._reporter.test_failed(test_name=_name, test_class=self.__class__.__name__, test_no=3, stack="",
-                                           msg=msg)
-                raise Exception(msg)
+                raise UpgradeTestException(f"Target APK package does not match base APK package: "
+                                           f"{app.package_name}/{base_package_name}")
             app.start(activity=".MainActivity")
             if not self._ensure_activity_in_foreground(app.package_name):
-                msg = "Unable to start up package within timeout threshold"
-                self._reporter.test_failed(test_name=_name, test_class=self.__class__.__name__, test_no=3, stack="",
-                                           msg=msg)
-                raise Exception(msg)
+                raise UpgradeTestException("Unable to start up package within timeout threshold")
             time.sleep(1)  # Give the application activity an extra second to actually get to foreground completely
             if not self._take_screenshot(test_case=_name):
                 log.warning(f"Unable to take screenshot for test: {_name}")
         except Exception as e:
-            self._reporter.test_failed(test_name=_name, test_class=self.__class__.__name__, test_no=3, stack=str(e))
-            raise
-        self._reporter.test_ended(test_name=_name, test_class=self.__class__.__name__, test_no=3,
-                                  duration=time.perf_counter() - start)
+            raise UpgradeTestException(str(e))
 
     def test_uninstall_upgrade(self, upgrade_apk: str) -> None:
-        _name = _get_func_name()
-        start = time.perf_counter()
         package = AXMLParser.parse(upgrade_apk).package_name
         if package not in self._device.list_installed_packages():
-            self._reporter.test_ended(test_name=_name, test_class=self.__class__.__name__, test_no=4,
-                                      duration=time.perf_counter() - start)
+            return
         app = Application(package, self._device)
         app.stop()
         app.uninstall()
         if package in self._device.list_installed_packages():
-            self._reporter.test_failed(test_name=_name, test_class=self.__class__.__name__, test_no=4, stack="")
-            raise Exception(f"Uninstall upgrade package {package} failed")
-        self._reporter.test_ended(test_name=_name, test_class=self.__class__.__name__, test_no=4,
-                                  duration=time.perf_counter() - start)
+            raise UpgradeTestException(f"Uninstall upgrade package {package} failed")
+
+    def _create_screenshots_dir(self) -> None:
+        if not os.path.exists(self.TEST_SCREENSHOTS_FOLDER):
+            os.makedirs(self.TEST_SCREENSHOTS_FOLDER)
 
     def _ensure_activity_in_foreground(self, package_name: str, timeout: int = 5) -> bool:
         count = 0
@@ -169,8 +172,9 @@ class UpgradeTest(object):
         return self._device.foreground_activity() == package_name
 
     def _take_screenshot(self, test_case: str, retries: int = 3) -> bool:
+        self._create_screenshots_dir()
         screenshot = test_case + ".png"
-        path = os.path.join(UpgradeTestRunner.TEST_SCREENSHOTS_FOLDER, quote(screenshot))
+        path = os.path.join(self.TEST_SCREENSHOTS_FOLDER, quote(screenshot))
         count = 0
         self._device.take_screenshot(path)
         while not os.path.isfile(path) and count <= retries:
