@@ -44,4 +44,4 @@ class TestTestApplication(object):
     def test_invalid_apk_has_no_test_app(self, support_app, device):
         with pytest.raises(Exception) as exc_info:
             TestApplication.from_apk(support_app, device)
-        assert "Test application's manifest does not specify proper instrumentation element" in str(exc_info)
+        assert "Test application's manifest does not specify proper instrumentation element" in str(exc_info.value)

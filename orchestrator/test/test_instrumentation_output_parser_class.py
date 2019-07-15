@@ -182,6 +182,9 @@ at android.app.Instrumentation$InstrumentationThread.run(Instrumentation.java:17
                 def test_suite_ended(self, test_suite_name: str, test_count: int, execution_time: float):
                     pass
 
+                def test_started(self, test_name: str, test_class: str, test_no: int, msg: str = ""):
+                    pass
+
                 def test_ended(self, test_name: str, test_class: str, test_no: int, duration: float, msg: str = ""):
                     nonlocal got_test_passed
                     got_test_passed = True
@@ -239,6 +242,9 @@ at android.app.Instrumentation$InstrumentationThread.run(Instrumentation.java:17
                 got_test_ignored = True
 
             def test_assumption_violated(self, test_name: str, test_class: str, test_no: int, reason: str) -> None:
+                pass
+
+            def test_started(self, test_name: str, test_class: str, test_no: int, msg: str = "") -> None:
                 pass
 
             def test_ended(self, test_name: str, test_class: str, test_no: int, duration: float, msg: str = "") -> None:
