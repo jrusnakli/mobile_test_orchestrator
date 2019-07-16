@@ -81,16 +81,14 @@ class UpgradeTestRunner(object):
                         test()
                 except UpgradeTestException as e:
                     self._upgrade_reporter.test_failed(test_name=test.__name__, test_class=test.__class__.__name__,
-                                                       test_no=i,
-                                                       stack=str(e))
+                                                       test_no=i, stack=str(e))
                     self._upgrade_reporter.test_suite_errored(test_suite_name="UpgradeTest", status_code=999,
                                                               exc_message=str(e))
                 finally:
                     # TODO: Look into removing requirement for duration, or add default value to interface
                     # since TestRunResult class explicitly keeps track of this elsewhere
                     self._upgrade_reporter.test_ended(test_name=test.__name__, test_class=test.__class__.__name__,
-                                                      test_no=i,
-                                                      duration=-1.0)
+                                                      test_no=i, duration=-1.0)
         # TODO: What is the test_count useful for here? Need to look into this more
         self._upgrade_reporter.test_suite_ended(test_suite_name="UpgradeTest", test_count=0)
 
