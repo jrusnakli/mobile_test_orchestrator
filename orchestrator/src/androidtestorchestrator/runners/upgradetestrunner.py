@@ -89,6 +89,7 @@ class UpgradeTestRunner(object):
                 except UpgradeTestException as e:
                     self._upgrade_reporter.test_failed(test_name=test.__name__, test_class=test.__class__.__name__,
                                                        test_no=i, stack=str(e))
+                    # TODO: Need to add in a constants file or something similar to map status_code to specific error
                     self._upgrade_reporter.test_suite_errored(test_suite_name="UpgradeTest", status_code=999,
                                                               exc_message=str(e))
                 finally:
