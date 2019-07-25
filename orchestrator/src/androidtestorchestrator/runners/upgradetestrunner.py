@@ -32,17 +32,16 @@ class UpgradeTestRunner(object):
     Class initialization -> setup() -> execute() -> teardown()
     """
 
-    def __init__(self, device: Device, base_apk: str, upgrade_apks: List[str], test_listener: TestRunResult):
+    def __init__(self, device: Device, apk_under_test: str, upgrade_apks: List[str], test_listener: TestRunResult):
         self._device = device
         self._upgrade_reporter = test_listener
         self._upgrade_apks = upgrade_apks
-        self._upgrade_test = UpgradeTest(device, base_apk)
+        self._upgrade_test = UpgradeTest(device, apk_under_test)
 
     def setup(self) -> None:
         """
         Setup device and do pre-checks for upgrade test.
         Ensure upgrade APKs list contains unique entries.
-        :return: bool (True == setup success, False == setup failure)
         """
         def apk_info(apk_file_name: str) -> Tuple[Optional[Any], Optional[Any]]:
             attrs = {attr.name: attr.value for attr in AXMLParser.parse(apk_file_name).xml_head.attributes}
@@ -51,6 +50,14 @@ class UpgradeTestRunner(object):
         seen_apks: DefaultDict[Any, List[Any]] = defaultdict(list)
         for apk in self._upgrade_apks:
             package, version = apk_info(apk)
+            if not package:
+                self._upgrade_reporter.test_assumption_violated("Upgrade setup", "UpgradeTestRunner", 1,
+                                                                f"APK package name or version was unable to be parsed")
+                raise UpgradeTestException(f"APK package was unable to be parsed")
+            if not version:
+                self._upgrade_reporter.test_assumption_violated("Upgrade setup", "UpgradeTestRunner", 1,
+                                                                f"APK version was unable to be parsed")
+                raise UpgradeTestException(f"APK version was unable to be parsed")
             if package in seen_apks and version in seen_apks[package]:
                 self._upgrade_reporter.test_assumption_violated("Upgrade setup", "UpgradeTestRunner", 1,
                                                                 f"APK with package: {package} with version: {version} "
@@ -108,12 +115,12 @@ class UpgradeTest(object):
 
     TEST_SCREENSHOTS_FOLDER = "screenshots"
 
-    def __init__(self, device: Device, base_apk: str):
+    def __init__(self, device: Device, apk_under_test: str):
         self._device = device
-        self._base_apk = base_apk
+        self._apk_under_test = apk_under_test
 
     def test_uninstall_base(self) -> None:
-        package = AXMLParser.parse(self._base_apk).package_name
+        package = AXMLParser.parse(self._apk_under_test).package_name
         if package not in self._device.list_installed_packages():
             return
         app = Application(package, self._device)
@@ -124,7 +131,7 @@ class UpgradeTest(object):
     def test_install_base(self) -> None:
         _name = _get_func_name()
         try:
-            app = Application.from_apk(apk_path=self._base_apk, device=self._device, as_upgrade=False)
+            app = Application.from_apk(apk_path=self._apk_under_test, device=self._device, as_upgrade=False)
             app.start(activity=".MainActivity")
             if not self._ensure_activity_in_foreground(app.package_name):
                 raise UpgradeTestException("Unable to start up package within timeout threshold")
@@ -134,17 +141,17 @@ class UpgradeTest(object):
         except Exception as e:
             raise UpgradeTestException(str(e))
 
-    def test_upgrade_to_target(self, upgrade_apk: str) -> None:
+    def test_upgrade_to_target(self, upgrade_apk: str, startup_sec_timeout: int = 5) -> None:
         _name = _get_func_name()
         try:
-            base_package_name = AXMLParser.parse(self._base_apk).package_name
+            base_package_name = AXMLParser.parse(self._apk_under_test).package_name
             app = Application.from_apk(apk_path=upgrade_apk, device=self._device, as_upgrade=True)
             if app.package_name != base_package_name:
                 raise UpgradeTestException(f"Target APK package does not match base APK package: "
                                            f"{app.package_name}/{base_package_name}")
             app.start(activity=".MainActivity")
-            if not self._ensure_activity_in_foreground(app.package_name):
-                raise UpgradeTestException("Unable to start up package within timeout threshold")
+            if not self._ensure_activity_in_foreground(package_name=app.package_name, timeout=startup_sec_timeout):
+                raise UpgradeTestException(f"Unable to start up package within {startup_sec_timeout}s timeout threshold")
             time.sleep(1)  # Give the application activity an extra second to actually get to foreground completely
             if not self._take_screenshot(test_case=_name):
                 log.warning(f"Unable to take screenshot for test: {_name}")
