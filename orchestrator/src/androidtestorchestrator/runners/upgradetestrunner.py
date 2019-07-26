@@ -119,15 +119,15 @@ class UpgradeTest(object):
     def __init__(self, device: Device, apk_under_test: str):
         self._device = device
         self._apk_under_test = apk_under_test
+        self._package_name = AXMLParser.parse(self._apk_under_test).package_name
 
     def test_uninstall_base(self) -> None:
-        package = AXMLParser.parse(self._apk_under_test).package_name
-        if package not in self._device.list_installed_packages():
+        if self._package_name not in self._device.list_installed_packages():
             return
-        app = Application(package, self._device)
+        app = Application(self._package_name, self._device)
         app.uninstall()
-        if package in self._device.list_installed_packages():
-            raise UpgradeTestException(f"Uninstall base package {package} failed")
+        if self._package_name in self._device.list_installed_packages():
+            raise UpgradeTestException(f"Uninstall base package {self._package_name} failed")
 
     def test_install_base(self) -> None:
         _name = _get_func_name()
@@ -145,11 +145,10 @@ class UpgradeTest(object):
     def test_upgrade_to_target(self, upgrade_apk: str, startup_sec_timeout: int = 5) -> None:
         _name = _get_func_name()
         try:
-            base_package_name = AXMLParser.parse(self._apk_under_test).package_name
             app = Application.from_apk(apk_path=upgrade_apk, device=self._device, as_upgrade=True)
-            if app.package_name != base_package_name:
+            if app.package_name != self._package_name:
                 raise UpgradeTestException(f"Target APK package does not match base APK package: "
-                                           f"{app.package_name}/{base_package_name}")
+                                           f"{app.package_name}/{self._package_name}")
             app.start(activity=".MainActivity")
             if not self._ensure_activity_in_foreground(package_name=app.package_name, timeout=startup_sec_timeout):
                 raise UpgradeTestException(f"Unable to start up package within {startup_sec_timeout}s timeout threshold")
@@ -180,17 +179,12 @@ class UpgradeTest(object):
             count += 1
         return self._device.foreground_activity() == package_name
 
-    def _take_screenshot(self, test_case: str, retries: int = 3) -> bool:
+    def _take_screenshot(self, test_case: str) -> bool:
         self._create_screenshots_dir()
         screenshot = test_case + ".png"
         path = os.path.join(self.TEST_SCREENSHOTS_FOLDER, quote(screenshot))
-        count = 0
         self._device.take_screenshot(path)
-        while not os.path.isfile(path) and count <= retries:
-            time.sleep(1)
-            self._device.take_screenshot(path)
-            count += 1
-        return os.path.isfile(path)
+        return os.path.isfile(path) and os.stat(path).st_size > 0
 
 
 def _get_func_name() -> str:
