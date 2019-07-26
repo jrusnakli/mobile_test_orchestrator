@@ -22,9 +22,11 @@ class TestTestApplication(object):
         install_app(Application, support_app)
         install_app(ServiceApplication, test_butler_service)
         test_app = install_app(TestApplication, support_test_app)
+
         # More robust testing of this is done in test of AndroidTestOrchestrator
         async def parse_output():
-            async with await test_app.run("-e", "class", "com.linkedin.mdctest.TestButlerTest#testTestButlerRotation")  as lines:
+            async with await test_app.run("-e", "class", "com.linkedin.mdctest.TestButlerTest#testTestButlerRotation") \
+                    as lines:
                 async for line in lines:
                     log.debug(line)
 

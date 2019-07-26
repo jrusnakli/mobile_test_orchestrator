@@ -180,8 +180,8 @@ class TestRunResult(TestListener):
 
     @property
     def is_failed(self) -> bool:
-        """:return: True iff test_suite_failed has been called"""
-        return self.error_message is not None
+        """:return: True iff test_suite_errored has been called"""
+        return self.error_message != ""
 
     def test_count(self, status: Optional[TestStatus] = None) -> int:
         """
