@@ -49,6 +49,12 @@ class TestAndroidDevice:
         assert os.path.isfile(path)
         assert os.stat(path).st_size != 0
 
+    def test_take_screenshot_file_already_exists(self, device: Device, tmpdir):
+        path = os.path.join(str(tmpdir), "created_test_screenshot.png")
+        open(path, 'w+b')  # create the file
+        with pytest.raises(FileExistsError):
+            device.take_screenshot(os.path.join(str(tmpdir), path))
+
     def test_device_name(self, device: Device):  # noqa
         name = device.device_name
         assert name and name.lower() != "unknown"
