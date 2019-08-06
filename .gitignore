@@ -15,4 +15,3 @@ orchestrator/venv/
 .mypy_cache/
 testbutlerservice/local.properties
 testsupportapps/local.properties
-testsupportapps/gradle/
