@@ -18,20 +18,7 @@ jobs:
             python3.7 -m venv venv
             . venv/bin/activate
             pip install --upgrade -r requirements.txt
-            echo 'export ANDROID_SDK_ROOT="$ANDROID_HOME"' >> $BASH_ENV 
-      - run:
-          name: Build support apps (debug)
-          command: |
-            ./testbutlerservice/gradlew androidDependencies
-            ./testbutlerservice/gradlew testsupportapps:TestButlerTestApp:app:assembleDebug
-            ./testbutlerservice/gradlew testsupportapps:TestButlerTestApp:app:assembleAndroidTest
-      - run:
-          name: Build test butler (debug)
-          command: |
-            cd testbutlerservice
-            ./gradlew assembleDebug
-            mkdir -p ../orchestrator/src/androidtestorchestrator/resources/apks
-            cp app/build/outputs/apk/debug/app-debug.apk ../orchestrator/src/androidtestorchestrator/resources/apks/TestButlerLive.apk
+            echo 'export ANDROID_SDK_ROOT="$ANDROID_HOME"' >> $BASH_ENV
       - run:
           name: build androidtestorchestrator
           command: |
@@ -41,8 +28,7 @@ jobs:
           key: image2-{{ .Branch }}-{{ checksum "requirements.txt" }}
           paths:
             - "venv"
-            - "testsupportapps/TestButlerTestApp/.gradle"
-            - "testbutlerservice/.gradle"
+            - "testsupportapps/.gradle"
       - run:
           name: Run static analysis
           command: |
@@ -60,8 +46,8 @@ jobs:
       - run:
           name: directory
           command: |
-            ls /home/circleci/code/orchestrator/test/../../testsupportapps/TestButlerTestApp/app/build/outputs/apk
-            ls /home/circleci/code/orchestrator/test/../../testsupportapps/TestButlerTestApp/app/build/outputs/apk/debug
+            ls /home/circleci/code/testsupportapps/app/build/outputs/apk/androidTest/debug
+            ls /home/circleci/code/testsupportapps/app/build/outputs/apk/debug
             find /home/circleci/code/orchestrator/ -name \*.apk
       - store_artifacts:
           path: orchestrator/test/test-reports/
