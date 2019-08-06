@@ -13,18 +13,15 @@ from apk_bitminer.parsing import AXMLParser
 from androidtestorchestrator.application import Application
 
 _BASE_DIR = os.path.join(os.path.dirname(__file__), "..", "..")
-
-TEST_SUPPORT_APP_DIR = os.path.join(_BASE_DIR, "testsupportapps", "TestButlerTestApp")
-BUTLER_SERVICE_SRC_DIR = os.path.join(_BASE_DIR, "testbutlerservice")
-
 _SRC_BASE_DIR = os.path.join(os.path.dirname(__file__), "..", )
+
+TEST_SUPPORT_APP_DIR = os.path.join(_BASE_DIR, "testsupportapps")
 
 RESOURCES_DIR = os.path.join(_SRC_BASE_DIR, "src", "androidtestorchestrator", "resources")
 SETUP_PATH = os.path.join(_SRC_BASE_DIR, "setup.py")
 
 support_app_q = Queue()
 support_test_app_q = Queue()
-test_butler_app_q = Queue()
 
 
 class Config:
@@ -182,17 +179,16 @@ def gradle_build(*target_and_q: Tuple[str, Queue]):
     targets = [t for t, _ in target_and_q]
     try:
         apk_path = None
-        gradle_path = os.path.join("testbutlerservice", "gradlew")
+        gradle_path = os.path.join("gradlew")
         if sys.platform == 'win32':
             cmd = [gradle_path+".bat"] + targets
             shell = True
         else:
             cmd = [os.path.join(".", gradle_path)] + targets
             shell = False
-        print(f"Launching: {cmd} from ../../{os.getcwd()}")
-        root = os.path.join("..", "..")
+        print(f"Launching: {cmd} from {TEST_SUPPORT_APP_DIR}")
         process = subprocess.run(cmd,
-                                 cwd=root,
+                                 cwd=TEST_SUPPORT_APP_DIR,
                                  env=os.environ.copy(),
                                  stdout=sys.stdout,
                                  stderr=sys.stderr,
@@ -201,14 +197,9 @@ def gradle_build(*target_and_q: Tuple[str, Queue]):
             raise Exception(f"Failed to build apk: {cmd}")
         for target, q in target_and_q:
             if target.endswith("assembleAndroidTest"):
-                suffix = "androidTest"
-                suffix2 = f"-{suffix}"
-            else:
-                suffix = "."
-                suffix2 = ""
-            path_components = target.split(':')
-            apk_path = os.path.join("..", "..", *path_components[:-1], "build", "outputs", "apk", suffix,
-                                    "debug", f"app-debug{suffix2}.apk")
+                apk_path = os.path.join(TEST_SUPPORT_APP_DIR, "app", "build", "outputs", "apk", "androidTest", "debug", "app-debug-androidTest.apk")
+            else: # assembleDebug
+                apk_path = os.path.join(TEST_SUPPORT_APP_DIR, "app", "build", "outputs", "apk", "debug", "app-debug.apk")
             if not os.path.exists(apk_path):
                 raise Exception("Failed to find built apk %s" % apk_path)
             q.put(apk_path)
@@ -222,9 +213,8 @@ def gradle_build(*target_and_q: Tuple[str, Queue]):
 
 
 def compile_all():
-    gradle_build(("testsupportapps:TestButlerTestApp:app:assembleAndroidTest", support_test_app_q),
-                 ("testsupportapps:TestButlerTestApp:app:assembleDebug", support_app_q),
-                 ("testbutlerservice:app:assembleDebug", test_butler_app_q),
+    gradle_build(("assembleAndroidTest", support_test_app_q),
+                 ("assembleDebug", support_app_q)
                 )
 
 
