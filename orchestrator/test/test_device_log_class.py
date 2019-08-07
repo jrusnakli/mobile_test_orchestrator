@@ -29,6 +29,8 @@ class TestDeviceLog:
             async with await device_log.logcat("-v", "brief", "-s", "MTO-TEST") as lines:
                 async for line in lines:
                     nonlocal output
+                    # makes easy to debug on circleci when emulator accel is not available
+                    print(f"test_logcat_and_clear:DEBUG: {line}")
                     if line.startswith("----"):
                         continue
                     output.append(line)
@@ -36,7 +38,7 @@ class TestDeviceLog:
                         break
 
         async def timer():
-            await asyncio.wait_for(parse_logcat(), timeout=60)
+            await asyncio.wait_for(parse_logcat(), timeout=120)
 
         for _ in range(counter):
             android_service_app.broadcast(".MTOBroadcastReceiver", "--es", "command", "old_line",
