@@ -23,7 +23,7 @@ class TestDeviceLog:
         # call here waits for emulator startup, allowing other fixtures to complete in parallel
         device_log = DeviceLog(device)
         device_log.clear()  # ensure logcat is clean before the test
-        counter = 5
+        counter = 2
 
         async def parse_logcat():
             async with await device_log.logcat("-v", "brief", "-s", "MTO-TEST") as lines:
@@ -43,7 +43,7 @@ class TestDeviceLog:
         for _ in range(counter):
             android_service_app.broadcast(".MTOBroadcastReceiver", "--es", "command", "old_line",
                                        action="com.linkedin.mto.FOR_TEST_ONLY_SEND_CMD")
-            time.sleep(1)
+            time.sleep(2)
         asyncio.get_event_loop().run_until_complete(timer())
         for line in output:
             assert "old_line" in line
