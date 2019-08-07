@@ -28,6 +28,8 @@ class TestDeviceLog:
             async with await device_log.logcat() as lines:
                 async for line in lines:
                     nonlocal output
+                    # makes it easier to debug on circle ci when emulator accel is not available
+                    print(f"test_logcat_and_clear:Debug: {line}")
                     if line.startswith("----"):
                         continue
                     output.append(line)
@@ -35,7 +37,7 @@ class TestDeviceLog:
                         break
 
         async def timer():
-            await asyncio.wait_for(parse_logcat(), timeout=60)
+            await asyncio.wait_for(parse_logcat(), timeout=120)
 
         # todo make the new sample app listens to this broadcast event
         for _ in range(length+5):
