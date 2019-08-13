@@ -148,61 +148,6 @@ class AndroidTestOrchestrator:
 
     """
 
-    class _DeviceRestoration(DeviceChangeListener):
-        """
-        Internal class to capture settings/properties changed during each test suite execution and restore original
-        values
-        """
-        def __init__(self, device: Device) -> None:
-            """
-            :param device:  Android deice bridge used to communicate with device under test
-            """
-            self._device = device
-            self._restoration_properties: Dict[str, str] = {}
-            self._restoration_settings: Dict[Tuple[str, str], str] = {}
-
-        def device_setting_changed(self, namespace: str, key: str, previous: str, new_value: str) -> None:
-            """
-            capture device setting change (first change only) during testing,
-            to restore to original value on __exit__
-            :param namespace: setting's namespace
-
-            :param key: key for setting
-            :param previous: previous value before change
-            :param new_value: new value setting was changed to
-            """
-            if (namespace, key) not in self._restoration_settings:
-                self._restoration_settings[(namespace, key)] = previous
-            elif self._restoration_settings[(namespace, key)] == new_value:
-                # no longer need to restore
-                del self._restoration_settings[(namespace, key)]
-
-        def device_property_changed(self, key: str, previous: Optional[str], new_value: str) -> None:
-            """
-            capture device property change (first change only) during testing,
-            to restore original value on __exit__
-
-            :param key: name of property that changed
-            :param previous: previous value
-            :param new_value: new value property was set to
-            """
-            if key not in self._restoration_properties:
-                assert previous, f"Expected a previous value for property: {key}"
-                self._restoration_properties[key] = previous
-            elif self._restoration_properties[key] == new_value:
-                # no longer need to restore
-                del self._restoration_properties[key]
-
-        def restore(self) -> None:
-            """
-            Restore original values for any changed settings and properties
-            """
-            for (namespace, key), original_value in self._restoration_settings.items():
-                self._device.set_device_setting(namespace, key, original_value)
-            for key, original_value in self._restoration_properties.items():
-                self._device.set_system_property(key, original_value)
-            self._restoration_properties = {}
-            self._restoration_settings = {}
 
     def __init__(self,
                  artifact_dir: str,
@@ -275,8 +220,7 @@ class AndroidTestOrchestrator:
     async def _execute_plan(self,
                             test_plan: AsyncIterator[TestSuite],
                             test_application: TestApplication,
-                            test_listener: TestListener,
-                            device_restoration: "AndroidTestOrchestrator._DeviceRestoration") -> None:
+                            test_listener: TestListener) -> None:
         """
         Loop over items in test plan and execute one by one, restoring device settings and properties on each
         iteration.
@@ -321,7 +265,6 @@ class AndroidTestOrchestrator:
                     test_listener.test_suite_ended(test_suite.name,
                                                    instrumentation_parser.total_test_count,
                                                    instrumentation_parser.execution_time)
-                    device_restoration.restore()
                     for _, remote_path in test_suite.uploadables:
                         try:
                             device_storage.remove(remote_path, recursive=True)
@@ -371,7 +314,6 @@ class AndroidTestOrchestrator:
         :raises: asyncio.TimeoutError if test or test suite times out based on this orchestrator's configuration
         """
         loop = asyncio.get_event_loop()
-        device_restoration = self._DeviceRestoration(test_application.device)
         device_storage = DeviceStorage(test_application.device)
 
         if not isinstance(test_plan, AsyncIterator):
@@ -393,8 +335,7 @@ class AndroidTestOrchestrator:
                 device_storage.push(local_path=local_path, remote_path=remote_path)
             await asyncio.wait_for(self._execute_plan(test_plan=test_plan,
                                                       test_application=test_application,
-                                                      test_listener=test_listener,
-                                                      device_restoration=device_restoration),
+                                                      test_listener=test_listener),
                                    self._instrumentation_timeout)
         try:
             loop.run_until_complete(timer(test_plan))  # execute plan until completed or until timeout is reached

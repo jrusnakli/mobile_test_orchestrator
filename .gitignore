@@ -13,5 +13,4 @@ test-reports/
 orchestrator/venv/
 *.iml
 .mypy_cache/
-testbutlerservice/local.properties
 testsupportapps/local.properties
