@@ -14,7 +14,7 @@ from .application import TestApplication, ServiceApplication
 from .device import Device
 from .devicelog import DeviceLog, LogcatTagDemuxer
 from .devicestorage import DeviceStorage
-from .parsing import InstrumentationOutputParser, LineParser, DeviceChangeListener
+from .parsing import InstrumentationOutputParser, LineParser
 from .reporting import TestListener
 from .timing import Timer
 
@@ -147,7 +147,6 @@ class AndroidTestOrchestrator:
     ...     orchestrator.execute_test_suite(test_suite, Listener())
 
     """
-
 
     def __init__(self,
                  artifact_dir: str,
