@@ -10,7 +10,7 @@ from types import TracebackType
 from typing import Dict, Iterator, List, Tuple, Coroutine, Optional, Any, Type, AsyncIterator, \
     TypeVar, Union
 
-from .application import TestApplication, ServiceApplication
+from .application import TestApplication
 from .device import Device
 from .devicelog import DeviceLog, LogcatTagDemuxer
 from .devicestorage import DeviceStorage
@@ -79,15 +79,12 @@ class AndroidTestOrchestrator:
     and "dangerous" permissions re-granted to prevent pop-ups.
 
     :param artifact_dir: directory where logs and screenshots are saved
-    :param test_butler_apk_path: path to external test butler apk to use (e.g. for emulators);
-       or None to use built-in TestButler
     :param max_test_time: maximum allowed time for a single test to execute before timing out (or None)
     :param max_test_suite_time: maximum allowed time for test plan to complete to or None
 
     :raises ValueError: if max_test_suite_time is smaller than max_test_time
     :raises FileExistsError: if artifact_dir point to a file and not a directory
     :raises FileNotFoundError: if any of artifact_dir does not exist
-    :raises FileNotFoundError: if  adb_path (if not None) or test_butler_apk_path (id not None) does not exist
     :raises FileNotFoundError: if adb_path is None and no adb executable can be found in PATH or under ANDROID_HOME
 
     There are several background processes that are orchestrated during test suite execution:
@@ -108,11 +105,6 @@ class AndroidTestOrchestrator:
         permissions -- over a physical, secure USB connection. A background process
         watches for and processes any commands issued during test execution, transparent to the client.
 
-    The client can specify which TestButler
-    service (see TestButler_) to use, and if not specified will use a default
-    internally-defined service.  Note that for emulators, the built-in TestButler is probably less efficient. If
-    the client specifies an external test butler to use, the client must also add its own background task to process
-    any commands (if needed)
 
     >>> device = Device("device_serial_id")
     ... test_application = TestApplication("/some/test.apk", device)
@@ -150,13 +142,10 @@ class AndroidTestOrchestrator:
 
     def __init__(self,
                  artifact_dir: str,
-                 test_butler_apk_path: Optional[str] = None,
                  max_test_time: Optional[float] = None,
                  max_test_suite_time: Optional[float] = None) -> None:
         """
         :param artifact_dir: directory where logs and screenshots are saved
-        :param test_butler_apk_path: path to external test butler apk to use (e.g. for emulators);
-           or None to use built-in TestButler apk
         :param max_test_time: maximum allowed time for a single test to execute before timing out (or None)
         :param max_test_suite_time:maximum allowed time for a suite of tets (a package under and Android instrument
            command, for example) to execute; or None
@@ -164,7 +153,6 @@ class AndroidTestOrchestrator:
         :raises ValueError: if max_test_suite_time is smaller than max_test_time
         :raises FileExistsError: if artifact_dir point to a file and not a directory
         :raises FileNotFoundError: if any of artifact_dir does not exist
-        :raises FileNotFoundError: if  adb_path (if not None) or test_butler_apk_path (id not None) does not exist
         :raises FileNotFoundError: if adb_path is None and no adb executable can be found in PATH or under ANDROID_HOME
         """
         if max_test_suite_time is not None and max_test_time is not None and max_test_suite_time < max_test_time:
@@ -173,15 +161,12 @@ class AndroidTestOrchestrator:
             raise FileNotFoundError("log dir '%s' not found" % artifact_dir)
         if not os.path.isdir(artifact_dir):
             raise FileExistsError("'%s' exists and is not a directory" % artifact_dir)
-        if test_butler_apk_path is not None and not os.path.exists(test_butler_apk_path):
-            raise FileNotFoundError("test butler apk specified, '%s', does not exists" % test_butler_apk_path)
 
         self._artifact_dir = artifact_dir
         self._background_tasks: List[Task[Any]] = []
         self._instrumentation_timeout = max_test_suite_time
         self._test_timeout = max_test_time
         self._timer = None
-        self._test_butler_service: Optional[ServiceApplication] = None
         self._tag_monitors: Dict[str, Tuple[str, LineParser]] = {}
 
     def __enter__(self) -> "AndroidTestOrchestrator":
@@ -226,7 +211,7 @@ class AndroidTestOrchestrator:
 
         :param test_plan: generator of tuples of (test_suite_name, list_of_instrument_arguments)
         :param test_application: test application containing (remote) runner to execute tests
-        :param device_restoration: to restore device on each iteration
+        :param test_listener: reporting test status
         """
         # clear logcat for fresh start
         try:
@@ -278,10 +263,10 @@ class AndroidTestOrchestrator:
                 for marker, pos in log_capture.markers.items():
                     f.write("%s=%s\n" % (marker, str(pos)))
 
-    # TASK-3: monitor logcat for TestButler commands
+    # TASK-3: monitor logcat for given tags in _tag_monitors
     async def _process_logcat_tags(self, device: Device) -> None:
         """
-        Process requested tags from logcat (including tag for test butler to process commands, if applicable)
+        Process requested tags from logcat
 
         :param device: remote device to process tags from
         """
