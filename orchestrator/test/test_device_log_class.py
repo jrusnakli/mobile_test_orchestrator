@@ -18,6 +18,7 @@ class TestDeviceLog:
         log.set_logcat_buffer_size(DeviceLog.DEFAULT_LOGCAT_BUFFER_SIZE)
         assert log.logcat_buffer_size == '5Mb'
 
+    @pytest.mark.localonly
     def test_logcat_and_clear(self, device: Device, android_service_app: ServiceApplication):
         output = []
         # call here waits for emulator startup, allowing other fixtures to complete in parallel
