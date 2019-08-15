@@ -13,9 +13,4 @@ test-reports/
 orchestrator/venv/
 *.iml
 .mypy_cache/
-testbutlerservice/local.properties
-testsupportapps/build.gradle
-testsupportapps/gradlew
-testsupportapps/gradlew.bat
 testsupportapps/local.properties
-testsupportapps/gradle/

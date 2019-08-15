@@ -486,26 +486,6 @@ class Device(object):
 
         return device_locale
 
-    # NOTE: This function currently does not work. We need to store the AdbChangeLanguage app and install it on
-    # the device before using. Otherwise, this function will fail.
-    # def set_locale(self, locale: str) -> None:
-    #     """
-    #     Set device's locale to new locale
-    #
-    #     :param locale: locale to set on device
-    #     """
-    #     locale_pkg_name = "net.sanapeli.adbchangelanguage"
-    #     with suppress(self.CommandExecutionFailureException):
-    #         self.execute_remote_cmd("shell", "am", "stop", locale_pkg_name)
-    #     # invoke intent on test butler service to change system locale:
-    #     self.execute_remote_cmd("shell", "am", "start", "-n", "%s/.AdbChangeLanguage" % locale_pkg_name,
-    #                             "-e", "language", locale.replace("_", "-r"))
-    #     if self.get_locale() != locale:
-    #         # allow time for device and app to catch up
-    #         time.sleep(self.SLEEP_SET_PROPERTY)
-    #     if self.get_locale() != locale:
-    #         raise Exception("System error: failed to set locale to %s" % locale)
-
     def list(self, kind: str) -> List[str]:
         """
         List available items of a given kind on the device

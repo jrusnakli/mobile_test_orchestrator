@@ -24,7 +24,7 @@ class TestTestApplication(object):
 
         # More robust testing of this is done in test of AndroidTestOrchestrator
         async def parse_output():
-            async with await test_app.run("-e", "class", "com.linkedin.mdctest.TestButlerTest#testTestButlerRotation") \
+            async with await test_app.run("-e", "class", "com.linkedin.mtotestapp.InstrumentedTestAllSuccess#useAppContext") \
                     as lines:
                 async for line in lines:
                     log.debug(line)

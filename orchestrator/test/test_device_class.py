@@ -141,20 +141,6 @@ class TestAndroidDevice:
         assert timediff.total_seconds() >= 0.99
         assert host_datetime_delta - host_delta < 0.01
 
-    @pytest.mark.skipif(True, reason="Test butler does not currently support system setting of locale")
-    def test_get_set_locale(self, device: Device, local_changer_apk):  # noqa
-        # TODO: Make locale_changer_apk into fixture so we don't need to try/finally the uninstall
-        uninstall_apk(local_changer_apk, device)
-        app = Application.from_apk(local_changer_apk, device)
-        try:
-            app.grant_permissions([" android.permission.CHANGE_CONFIGURATION"])
-            device.set_locale("en_US")
-            assert device.get_locale() == "en_US"
-            device.set_locale("fr_FR")
-            assert device.get_locale() == "fr_FR"
-        finally:
-            app.uninstall()
-
     def test_grant_permissions(self, install_app, support_test_app: str):
         test_app = install_app(TestApplication, support_test_app)
         test_app.grant_permissions(["android.permission.WRITE_EXTERNAL_STORAGE"])

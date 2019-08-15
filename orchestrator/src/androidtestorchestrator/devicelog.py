@@ -188,7 +188,7 @@ class DeviceLog(RemoteDeviceBased):
         """
         clear device log on the device and start fresh
         """
-        self.device.execute_remote_cmd("logcat", "-c", capture_stdout=False)
+        self.device.execute_remote_cmd("logcat", "-b", "all", "-c", capture_stdout=False)
 
     async def logcat(self, *options: str, loop: Optional[AbstractEventLoop] = None
                      ) -> AsyncContextManager[AsyncIterator[str]]:

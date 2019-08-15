@@ -216,27 +216,3 @@ class InstrumentationOutputParser(LineParser):
         (for example to capture start and end positions of a test within logcat output)
         """
         self._execution_listeners.append(listener)
-
-
-class DeviceChangeListener(ABC):
-    """
-    Listener class to listen for device changes evoked by test butler
-    """
-
-    @abstractmethod
-    def device_setting_changed(self, namespace: str, key: str, previous: str, new: str) -> None:
-        """
-
-        :param namespace: namespace of changed setting
-        :param key: key of changed setting
-        :param previous: previous value of setting (for restoration at end of testing if desired)
-        :param new: new value for setting
-        """
-
-    @abstractmethod
-    def device_property_changed(self, key: str, previous: Optional[str], new: str) -> None:
-        """
-        :param key: key of changed property
-        :param previous: previous value of property (for restoration purposes if desired)
-        :param new: new value of property
-        """

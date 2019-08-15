@@ -4,7 +4,7 @@ import time
 
 import pytest
 
-from androidtestorchestrator import ServiceApplication
+from androidtestorchestrator.application import ServiceApplication
 from androidtestorchestrator.device import Device
 from androidtestorchestrator.devicelog import DeviceLog
 
@@ -18,41 +18,41 @@ class TestDeviceLog:
         log.set_logcat_buffer_size(DeviceLog.DEFAULT_LOGCAT_BUFFER_SIZE)
         assert log.logcat_buffer_size == '5Mb'
 
+    @pytest.mark.localonly
     def test_logcat_and_clear(self, device: Device, android_service_app: ServiceApplication):
         output = []
         # call here waits for emulator startup, allowing other fixtures to complete in parallel
         device_log = DeviceLog(device)
-        length = 25
+        device_log.clear()  # ensure logcat is clean before the test
+        counter = 2
 
         async def parse_logcat():
-            async with await device_log.logcat() as lines:
+            async with await device_log.logcat("-v", "brief", "-s", "MTO-TEST") as lines:
                 async for line in lines:
                     nonlocal output
+                    # makes easy to debug on circleci when emulator accel is not available
+                    print(f"test_logcat_and_clear:DEBUG: {line}")
                     if line.startswith("----"):
                         continue
                     output.append(line)
-                    if len(output) >= length:
+                    if len(output) >= counter:
                         break
 
         async def timer():
-            await asyncio.wait_for(parse_logcat(), timeout=60)
+            await asyncio.wait_for(parse_logcat(), timeout=120)
 
-        # todo make the new sample app listens to this broadcast event
-        for _ in range(length+5):
-            # use test butler to introduce log cat messages:
-            android_service_app.broadcast(".MTOBroadcastReceiver", "--es", "command", "just for logcat",
+        for _ in range(counter):
+            android_service_app.broadcast(".MTOBroadcastReceiver", "--es", "command", "old_line",
                                        action="com.linkedin.mto.FOR_TEST_ONLY_SEND_CMD")
+            time.sleep(2)
         asyncio.get_event_loop().run_until_complete(timer())
-        assert len(output) >= length
-
-        for _ in range(length+5):
-            # use test butler to introduce log cat messages:
-            android_service_app.broadcast(".MTOBroadcastReceiver", "--es", "command", "just for logcat",
-                                       action="com.linkedin.mto.FOR_TEST_ONLY_SEND_CMD")
+        for line in output:
+            assert "old_line" in line
 
         output_before = output[:]
         retries = 3
         try:
+            time.sleep(5) # give enough time for testapp to receive the intent and emmit log to logcat
             device_log.clear()
         except Device.CommandExecutionFailureException as e:
             if retries > 0 and "Failed to clear" in str(e):
@@ -62,10 +62,15 @@ class TestDeviceLog:
 
         # capture more lines of output and make sure they don't match any in previous capture
         output = []
+        # now emitting some new logs
+        for _ in range(counter):
+            android_service_app.broadcast(".MTOBroadcastReceiver", "--es", "command", "new_line",
+                                       action="com.linkedin.mto.FOR_TEST_ONLY_SEND_CMD")
+            time.sleep(1)
 
         asyncio.get_event_loop().run_until_complete(timer())
-        assert len(output) >= length
-        for line in output[10:]:
+        for line in output:
+            assert "new_line" in line
             assert line not in output_before
 
     def test_capture_mark_start_stop(self, device: Device, tmpdir):
