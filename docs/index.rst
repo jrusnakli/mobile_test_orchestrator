@@ -24,10 +24,7 @@ Introduction
 
 AndroidTestOrchestrator provides an API for executing a test plan (a collection of test suites) against a set of
 Android devices.  Although these devices can be emulators, the main use for AndroidTestOrchestrator is for real
-devices. A main feature is the implementation of a TestButler service (see TestButler_)
-for real devices.  TestButler allows the app's test code to manipulate settings of the device that would otherwise
-be off-limits due to permission restrictions.  Whereas TestButler works only for emulators or (gasp!) rooted devices,
-the implementation here offers the same interface, only without the need to have root permissions.
+devices.
 
 Other features include:
 #. Capture of full logcat during execution of the test plan
@@ -93,6 +90,3 @@ Indices and tables
 * :ref:`genindex`
 * :ref:`modindex`
 * :ref:`search`
-
-
-.. _TestButler: https://github.com/linkedin/test-butler
