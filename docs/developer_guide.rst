@@ -12,7 +12,6 @@ This is the developer guide for AndroidTestOrchestrator.  There are three main t
 
 #. Capturing logcat to a file as well as capturin key starting/end point within the file
 #. Parsing specific tags from logcat for processing
-#. Parsing test execution status from the instrument command running on the remote Android device
 
 Test Execution
 ==============
@@ -27,18 +26,6 @@ Test Status Collection
 Test status collection is performed via the following classes:
 
 .. image:: resources/TestStatusCollectionCD.png
-
-Test Butler Command Processing
-------------------------------
-
-.. image:: resources/TestButlerCommandProcessingCD.png
-
-
-The diagram below shows the sequence of steps in this task to proces TestButler commands, but the process is
-similar if the client adds its own tag/handler pair for processing (via the `androidtestorchestrator.AndroidTestOrchestrator.add_logcat_tag`
-method
-
-.. image:: ./resources/TestButlerCommandProcessingSD.png
 
 Capturing logcat
 ================
