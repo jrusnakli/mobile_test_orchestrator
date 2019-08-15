@@ -1,36 +1,10 @@
 import pytest
 
-from androidtestorchestrator import AndroidTestOrchestrator, TestApplication, ServiceApplication, TestSuite
-from androidtestorchestrator.application import Application
+from androidtestorchestrator import AndroidTestOrchestrator, TestApplication, TestSuite
 from androidtestorchestrator.device import Device
 from androidtestorchestrator.parsing import LineParser
 from androidtestorchestrator.reporting import TestListener
 from ..support import uninstall_apk
-
-
-# noinspection PyShadowingNames
-@pytest.fixture()
-def android_test_app(device,
-                     request,
-                     support_app: str,
-                     support_test_app: str,
-                     test_butler_service: str):
-    uninstall_apk(support_app, device)
-    uninstall_apk(support_test_app, device)
-    uninstall_apk(test_butler_service, device)
-    app_for_test = TestApplication.from_apk(support_test_app, device)
-    support_app = Application.from_apk(support_app, device)
-    butler_service = ServiceApplication.from_apk(test_butler_service, device)
-
-    def fin():
-        """
-        Leave the campground as clean as you found it:
-        """
-        butler_service.uninstall()
-        app_for_test.uninstall()
-        support_app.uninstall()
-    request.addfinalizer(fin)
-    return app_for_test
 
 
 # noinspection PyShadowingNames
@@ -55,9 +29,8 @@ class TestAndroidTestOrchestrator(object):
             """
             self.lines.append(line)
 
-    def test_add_logcat_tag_monitor(self, device: Device, test_butler_service: str, tmpdir: str):
-        with AndroidTestOrchestrator(test_butler_apk_path=test_butler_service,
-                                     artifact_dir=str(tmpdir),) as orchestrator:
+    def test_add_logcat_tag_monitor(self, device: Device, tmpdir: str):
+        with AndroidTestOrchestrator(artifact_dir=str(tmpdir),) as orchestrator:
             handler = TestAndroidTestOrchestrator.TagListener()
             orchestrator.add_logcat_monitor("TestTag", handler)
             assert orchestrator._tag_monitors.get('TestTag') == ('*', handler)
@@ -73,20 +46,19 @@ class TestAndroidTestOrchestrator(object):
         with pytest.raises(ValueError):
             orchestrator.add_logcat_monitor("TestTag", handler)  # duplicate tag/priority
 
-    def test_execute_test_suite(self, device: Device, android_test_app: TestApplication, test_butler_service: str, tmpdir):
+    def test_execute_test_suite(self, device: Device, android_test_app: TestApplication, tmpdir):
         test_count = 0
         test_suite_count = 0
         expected_test_suite = None
         current_test_suite = None
         uninstall_apk(android_test_app, device)
-        uninstall_apk(test_butler_service, device)
         class TestExpectations(TestListener):
 
             def __init__(self):
                 self.expected_test_class = {
-                    'test_suite1': "com.linkedin.mdctest.TestButlerTest",
-                    'test_suite2': "com.linkedin.mdctest.TestButlerTest",
-                    'test_suite3': "com.linkedin.mdctest.TestButlerStressTest"
+                    'test_suite1': "com.linkedin.mtotestapp.InstrumentedTestAllSuccess",
+                    'test_suite2': "com.linkedin.mtotestapp.InstrumentedTestAllSuccess",
+                    'test_suite3': "com.linkedin.mtotestapp.InstrumentedTestSomeFailures"
                 }
 
             def test_suite_errored(self, test_suite_name: str, status_code: int, exc_msg: str=""):
@@ -102,17 +74,14 @@ class TestAndroidTestOrchestrator(object):
                 nonlocal expected_test_suite
                 assert test_suite_name == expected_test_suite
 
+            def test_started(self, test_name: str, test_class: str, test_no: int, msg: str = ""):
+                pass
+
             def test_ended(self, test_name: str, test_class: str, test_no: int, duration: float, msg: str = ""):
                 nonlocal test_count, current_test_suite
                 test_count += 1
-                assert test_name in ["testTestButlerSetImmersiveModeConfirmation",
-                                     "testTestButlerRotation",
-                                     "testTestButlerSetWifiState",
-                                     "testTestButlerSetLocationModeBatterySaver",
-                                     "testTestButlerSetLocationModeSensorsOnly",
-                                     "testTestButlerSetLocationModeHigh",
-                                     "testTestButlerStress",
-                                     "testTestButlerGrantPermission"
+                assert test_name in ["useAppContext",
+                                     "testSuccess",
                                      ]
                 assert test_class == self.expected_test_class[current_test_suite]
 
@@ -121,7 +90,7 @@ class TestAndroidTestOrchestrator(object):
                 nonlocal test_count, current_test_suite
                 test_count += 1
                 assert test_class == self.expected_test_class[current_test_suite]
-                assert test_name == "testFailure"  # this test case is designed to be failed
+                assert test_name == "testFail"  # this test case is designed to be failed
 
             def test_ignored(self, test_name: str, test_class: str, test_no: int, msg: str = ""):
                 nonlocal test_count
@@ -142,31 +111,28 @@ class TestAndroidTestOrchestrator(object):
 
         def test_generator():
             yield (TestSuite(name='test_suite1',
-                             arguments=["-e", "class", "com.linkedin.mdctest.TestButlerTest#testTestButlerRotation"]))
+                             arguments=["-e", "class", "com.linkedin.mtotestapp.InstrumentedTestAllSuccess#useAppContext"]))
             yield (TestSuite(name='test_suite2',
-                             arguments=["-e", "class", "com.linkedin.mdctest.TestButlerTest"]))
+                             arguments=["-e", "class", "com.linkedin.mtotestapp.InstrumentedTestAllSuccess"]))
             yield (TestSuite(name='test_suite3',
-                             arguments=["-e", "class", "com.linkedin.mdctest.TestButlerStressTest"]))
+                             arguments=["-e", "class", "com.linkedin.mtotestapp.InstrumentedTestSomeFailures"]))
 
-        with AndroidTestOrchestrator(test_butler_apk_path=test_butler_service,
-                                     artifact_dir=str(tmpdir)) as orchestrator:
+        with AndroidTestOrchestrator(artifact_dir=str(tmpdir)) as orchestrator:
 
             orchestrator.execute_test_plan(test_plan=test_generator(),
                                            test_application=android_test_app,
                                            test_listener=TestExpectations())
-        assert test_count == 1  # last test suite had one test
+        assert test_count == 2  # last test suite had one test
 
     def test_add_background_task(self,
                                  device: Device,
                                  android_test_app : TestApplication,
-                                 test_butler_service: str,
                                  tmpdir: str):
         uninstall_apk(android_test_app, device)
-        uninstall_apk(test_butler_service, device)
 
         def test_generator():
             yield (TestSuite(name='test_suite1',
-                             arguments=["-e", "class", "com.linkedin.mdctest.TestButlerTest#testTestButlerRotation"]))
+                             arguments=["-e", "class", "com.linkedin.mtotestapp.InstrumentedTestAllSuccess#useAppContext"]))
 
         # noinspection PyMissingOrEmptyDocstring
         class EmptyListner(TestListener):
@@ -189,6 +155,9 @@ class TestAndroidTestOrchestrator(object):
             def test_assumption_violated(self, test_name: str, test_class: str, test_no: int, reason: str):
                 pass
 
+            def test_started(self, test_name: str, test_class: str, test_no: int, msg: str = ""):
+                pass
+
             def test_ended(self, test_name: str, test_class: str, test_no: int, duration: float, msg: str = ""):
                 pass
 
@@ -204,8 +173,7 @@ class TestAndroidTestOrchestrator(object):
             with pytest.raises(Exception):
                 orchestrator.add_logcat_monitor("BogusTag", None)
 
-        with AndroidTestOrchestrator(test_butler_apk_path=test_butler_service,
-                                     artifact_dir=str(tmpdir)) as orchestrator:
+        with AndroidTestOrchestrator(artifact_dir=str(tmpdir)) as orchestrator:
             orchestrator.add_background_task(some_task(orchestrator))
             orchestrator.execute_test_plan(test_plan=test_generator(),
                                            test_application=android_test_app,
@@ -229,11 +197,4 @@ class TestAndroidTestOrchestrator(object):
         with pytest.raises(FileExistsError):
             # individual test time greater than overall timeout for suite
             with AndroidTestOrchestrator(artifact_dir=__file__):
-                pass
-
-    def test_invalid_butler_apk(self, device: Device, tmpdir):
-        with pytest.raises(FileNotFoundError):
-            # individual test time greater than overall timeout for suite
-            with AndroidTestOrchestrator(artifact_dir=str(tmpdir),
-                                         test_butler_apk_path="/no/such/apk"):
                 pass

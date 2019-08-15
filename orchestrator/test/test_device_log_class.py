@@ -7,7 +7,6 @@ import pytest
 from androidtestorchestrator import ServiceApplication
 from androidtestorchestrator.device import Device
 from androidtestorchestrator.devicelog import DeviceLog
-from .support import uninstall_apk
 
 
 class TestDeviceLog:
@@ -19,59 +18,55 @@ class TestDeviceLog:
         log.set_logcat_buffer_size(DeviceLog.DEFAULT_LOGCAT_BUFFER_SIZE)
         assert log.logcat_buffer_size == '5Mb'
 
-    def test_logcat_and_clear(self, device: Device, test_butler_service):
-        uninstall_apk(test_butler_service, device)
-        service = ServiceApplication.from_apk(test_butler_service, device)
+    def test_logcat_and_clear(self, device: Device, android_service_app: ServiceApplication):
+        output = []
+        # call here waits for emulator startup, allowing other fixtures to complete in parallel
+        device_log = DeviceLog(device)
+        length = 25
+
+        async def parse_logcat():
+            async with await device_log.logcat() as lines:
+                async for line in lines:
+                    nonlocal output
+                    if line.startswith("----"):
+                        continue
+                    output.append(line)
+                    if len(output) >= length:
+                        break
+
+        async def timer():
+            await asyncio.wait_for(parse_logcat(), timeout=60)
+
+        # todo make the new sample app listens to this broadcast event
+        for _ in range(length+5):
+            # use test butler to introduce log cat messages:
+            android_service_app.broadcast(".MTOBroadcastReceiver", "--es", "command", "just for logcat",
+                                       action="com.linkedin.mto.FOR_TEST_ONLY_SEND_CMD")
+        asyncio.get_event_loop().run_until_complete(timer())
+        assert len(output) >= length
+
+        for _ in range(length+5):
+            # use test butler to introduce log cat messages:
+            android_service_app.broadcast(".MTOBroadcastReceiver", "--es", "command", "just for logcat",
+                                       action="com.linkedin.mto.FOR_TEST_ONLY_SEND_CMD")
+
+        output_before = output[:]
+        retries = 3
         try:
-            output = []
-            # call here waits for emulator startup, allowing other fixtures to complete in parallel
-            device_log = DeviceLog(device)
-            length = 25
+            device_log.clear()
+        except Device.CommandExecutionFailureException as e:
+            if retries > 0 and "Failed to clear" in str(e):
+                retries -= 1
+            else:
+                raise
 
-            async def parse_logcat():
-                async with await device_log.logcat() as lines:
-                    async for line in lines:
-                        nonlocal output
-                        if line.startswith("----"):
-                            continue
-                        output.append(line)
-                        if len(output) >= length:
-                            break
+        # capture more lines of output and make sure they don't match any in previous capture
+        output = []
 
-            async def timer():
-                await asyncio.wait_for(parse_logcat(), timeout=60)
-
-            for _ in range(length+5):
-                # use test butler to introduce log cat messages:
-                service.broadcast(".ButlerServiceBroadcastReceiver", "--es", "command", "just for logcat",
-                              intent="com.linkedin.android.testbutler.FOR_TEST_ONLY_SEND_CMD")
-            asyncio.get_event_loop().run_until_complete(timer())
-            assert len(output) >= length
-
-            for _ in range(length+5):
-                # use test butler to introduce log cat messages:
-                service.broadcast(".ButlerServiceBroadcastReceiver", "--es", "command", "just for logcat",
-                              intent="com.linkedin.android.testbutler.FOR_TEST_ONLY_SEND_CMD")
-
-            output_before = output[:]
-            retries = 3
-            try:
-                device_log.clear()
-            except Device.CommandExecutionFailureException as e:
-                if retries > 0 and "Failed to clear" in str(e):
-                    retries -= 1
-                else:
-                    raise
-
-            # capture more lines of output and make sure they don't match any in previous capture
-            output = []
-
-            asyncio.get_event_loop().run_until_complete(timer())
-            assert len(output) >= length
-            for line in output[10:]:
-                assert line not in output_before
-        finally:
-            service.uninstall()
+        asyncio.get_event_loop().run_until_complete(timer())
+        assert len(output) >= length
+        for line in output[10:]:
+            assert line not in output_before
 
     def test_capture_mark_start_stop(self, device: Device, tmpdir):
         device_log = DeviceLog(device)
@@ -93,7 +88,7 @@ class TestDeviceLog:
             pass
         with pytest.raises(Exception) as exc_info:
             DeviceLog.LogCapture(device, tmpfile)
-        assert "Path %s already exists; will not overwrite" % tmpfile in str(exc_info)
+        assert "Path %s already exists; will not overwrite" % tmpfile in str(exc_info.value)
 
         with pytest.raises(Exception):
             logcap = DeviceLog.LogCapture(device, os.path.join(tmpdir, "newfile"))

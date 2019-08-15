@@ -1,5 +1,4 @@
 import os
-import shutil
 import sys
 import threading
 from pathlib import Path
@@ -11,8 +10,7 @@ from androidtestorchestrator.device import Device
 from . import support
 from .support import Config, uninstall_apk
 
-TB_RESOURCES_DIR =os.path.abspath(os.path.join("..", "src", "androidtestorchestrator", "resources"))
-TAG_MDC_DEVICE_ID = "MDC_DEVICE_ID"
+TAG_MTO_DEVICE_ID = "MTO_DEVICE_ID"
 
 # Run a bunch of stuff in the background, such as compiling depenent apks for test and launching emulators
 # This allows tests to potentially run in parallel (if not dependent on output of these tasks), parallelizes
@@ -46,6 +44,44 @@ def add_ext(app):
     return app
 
 
+# noinspection PyShadowingNames
+@pytest.fixture()
+def android_test_app(device,
+                     request,
+                     support_app: str,
+                     support_test_app: str):
+    uninstall_apk(support_app, device)
+    uninstall_apk(support_test_app, device)
+    app_for_test = TestApplication.from_apk(support_test_app, device)
+    support_app = Application.from_apk(support_app, device)
+
+    def fin():
+        """
+        Leave the campground as clean as you found it:
+        """
+        app_for_test.uninstall()
+        support_app.uninstall()
+    request.addfinalizer(fin)
+    return app_for_test
+
+@pytest.fixture()
+def android_service_app(device,
+                     request,
+                     support_app: str):
+    # the support app is created to act as a service app as well
+    uninstall_apk(support_app, device)
+    service_app = ServiceApplication.from_apk(support_app, device)
+
+    def fin():
+        """
+        Leave the campground as clean as you found it:
+        """
+        service_app.uninstall()
+
+    request.addfinalizer(fin)
+    return service_app
+
+
 @pytest.fixture(scope='session')
 def support_test_app():
     app = support.support_test_app_q.get()
@@ -61,23 +97,10 @@ def support_app():
         raise Exception("Failed to build support app")
     return support_app
 
-
-@pytest.fixture(scope='session')
-def test_butler_service():
-    app = support.test_butler_app_q.get()
-    if app is None:
-        raise Exception("Failed to build test butler service")
-    else:
-        path = os.path.join(TB_RESOURCES_DIR, "apks", "TestButlerLive.apk")
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        shutil.copy(app, path)
-    return app
-
-
 @pytest.fixture(scope='session')
 def emulator():
-    if TAG_MDC_DEVICE_ID in os.environ:
-        deviceid = os.environ[TAG_MDC_DEVICE_ID]
+    if TAG_MTO_DEVICE_ID in os.environ:
+        deviceid = os.environ[TAG_MTO_DEVICE_ID]
         print(f"Using user-specified device id: {deviceid}")
         return deviceid
     port = 5554

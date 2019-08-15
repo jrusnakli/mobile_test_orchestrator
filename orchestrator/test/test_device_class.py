@@ -15,12 +15,12 @@ from androidtestorchestrator.application import Application, TestApplication, Se
 from androidtestorchestrator.device import Device
 from androidtestorchestrator.devicestorage import DeviceStorage
 from . import support
-from .conftest import TAG_MDC_DEVICE_ID
+from .conftest import TAG_MTO_DEVICE_ID
 from .support import uninstall_apk
 
 RESOURCE_DIR = os.path.join(os.path.dirname(__file__), "resources")
 
-if TAG_MDC_DEVICE_ID not in os.environ:
+if TAG_MTO_DEVICE_ID not in os.environ:
     expected_device_info = {
         "model": "Android SDK built for x86_64",
         "manufacturer": "unknown",
@@ -33,7 +33,7 @@ else:
     # a true test flow, but this is only run under specific user-based conditions
     android_sdk = support.find_sdk()
     adb_path = os.path.join(android_sdk, "platform-tools", support.add_ext("adb"))
-    device = Device(os.environ[TAG_MDC_DEVICE_ID], adb_path=adb_path)
+    device = Device(os.environ[TAG_MTO_DEVICE_ID], adb_path=adb_path)
     expected_device_info = {
         "model": device.get_system_property("ro.product.model"),
         "manufacturer": device.get_system_property("ro.product.manufacturer"),
@@ -48,6 +48,12 @@ class TestAndroidDevice:
         device.take_screenshot(os.path.join(str(tmpdir), path))
         assert os.path.isfile(path)
         assert os.stat(path).st_size != 0
+
+    def test_take_screenshot_file_already_exists(self, device: Device, tmpdir):
+        path = os.path.join(str(tmpdir), "created_test_screenshot.png")
+        open(path, 'w+b')  # create the file
+        with pytest.raises(FileExistsError):
+            device.take_screenshot(os.path.join(str(tmpdir), path))
 
     def test_device_name(self, device: Device):  # noqa
         name = device.device_name
@@ -153,15 +159,12 @@ class TestAndroidDevice:
         test_app = install_app(TestApplication, support_test_app)
         test_app.grant_permissions(["android.permission.WRITE_EXTERNAL_STORAGE"])
 
-    def test_start_stop_app(self, install_app, support_app, test_butler_service):  # noqa
+    def test_start_stop_app(self, install_app, support_app):  # noqa
         app = install_app(Application, support_app)
-        butler_app = install_app(ServiceApplication, test_butler_service)
 
         app.start(activity=".MainActivity")
-        butler_app.start(activity=".ButlerService", foreground=True)
         app.clear_data()
         app.stop()
-        butler_app.stop()
 
     def test_invalid_cmd_execution(self, device: Device):
         async def execute():
@@ -170,7 +173,7 @@ class TestAndroidDevice:
                     pass
         with pytest.raises(Exception) as exc_info:
             asyncio.get_event_loop().run_until_complete(execute())
-        assert "some bad command" in str(exc_info)
+        assert "some bad command" in str(exc_info.value)
 
     def test_get_locale(self, device: Device):
         locale = device.get_locale()

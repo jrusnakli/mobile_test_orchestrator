@@ -1,24 +1,21 @@
 import asyncio
+import sys
+from asyncio import Task
+
 import logging
 import os
-import sys
 import traceback
-from asyncio import Task
-from contextlib import nullcontext
 from dataclasses import dataclass, field
-from importlib.resources import is_resource, path
-from pathlib import Path
 from types import TracebackType
-from typing import Dict, Iterator, List, Tuple, Coroutine, ContextManager, Optional, Any, Type, AsyncIterator, \
+from typing import Dict, Iterator, List, Tuple, Coroutine, Optional, Any, Type, AsyncIterator, \
     TypeVar, Union
 
 from .application import TestApplication, ServiceApplication
 from .device import Device
 from .devicelog import DeviceLog, LogcatTagDemuxer
 from .devicestorage import DeviceStorage
-from .parsing import InstrumentationOutputParser, LineParser, TestButlerCommandParser
+from .parsing import InstrumentationOutputParser, LineParser, DeviceChangeListener
 from .reporting import TestListener
-from .resources import apks
 from .timing import Timer
 
 log = logging.getLogger(__name__)
@@ -27,11 +24,6 @@ log = logging.getLogger(__name__)
 if sys.platform == 'win32':
     loop = asyncio.ProactorEventLoop()
     asyncio.set_event_loop(loop)
-
-
-def test_butler_apk() -> ContextManager[Path]:
-    assert is_resource(apks, "TestButlerLive.apk"), "Invalid distribution! TestButlerLive.apk does not exist!!"
-    return path(apks, "TestButlerLive.apk")
 
 
 def trace(e: Exception) -> str:
@@ -156,7 +148,7 @@ class AndroidTestOrchestrator:
 
     """
 
-    class _DeviceRestoration(TestButlerCommandParser.DeviceChangeListener):
+    class _DeviceRestoration(DeviceChangeListener):
         """
         Internal class to capture settings/properties changed during each test suite execution and restore original
         values
@@ -244,10 +236,6 @@ class AndroidTestOrchestrator:
         self._background_tasks: List[Task[Any]] = []
         self._instrumentation_timeout = max_test_suite_time
         self._test_timeout = max_test_time
-        if test_butler_apk_path:
-            self._test_butler_apk_context = nullcontext(Path(test_butler_apk_path))
-        else:
-            self._test_butler_apk_context = test_butler_apk()
         self._timer = None
         self._test_butler_service: Optional[ServiceApplication] = None
         self._tag_monitors: Dict[str, Tuple[str, LineParser]] = {}
@@ -261,10 +249,6 @@ class AndroidTestOrchestrator:
         cleanup
         """
         # leave the campground as clean as you left it:
-        if self._test_butler_service is not None:
-            self._test_butler_service.start(".ButlerService",
-                                            intent="com.linkedin.android.testbutler.STOP")
-            self._test_butler_service.uninstall()
 
     def add_logcat_monitor(self, tag: str, handler: LineParser, priority: str = "*") -> None:
         """
@@ -287,7 +271,7 @@ class AndroidTestOrchestrator:
             raise ValueError("A handler for tag '%s' and priority '%s' already added" % (tag, priority))
         self._tag_monitors[tag] = (priority, handler)
 
-    # TASK-2: parsing of instrument output for test execuition status
+    # TASK-2: parsing of instrument output for test execution status
     async def _execute_plan(self,
                             test_plan: AsyncIterator[TestSuite],
                             test_application: TestApplication,
@@ -395,15 +379,6 @@ class AndroidTestOrchestrator:
                 for i in test_plan:
                     yield i
             test_plan = _async_iter(test_plan)
-
-        with self._test_butler_apk_context as test_butler_apk_path:
-            self._test_butler_service = ServiceApplication.from_apk(str(test_butler_apk_path), test_application.device)
-
-        # add testbutler tag for processing
-        line_parser: LineParser = TestButlerCommandParser(self._test_butler_service,
-                                                          app_under_test=test_application,
-                                                          listener=device_restoration)
-        self.add_logcat_monitor("TestButler", line_parser, priority='I')
 
         if self._tag_monitors:
             log.debug("Creating logcat monitoring task")

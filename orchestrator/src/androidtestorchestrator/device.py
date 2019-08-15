@@ -544,16 +544,20 @@ class Device(object):
                     self._ext_storage = msg.strip()
         return self._ext_storage or "/sdcard"
 
-    def take_screenshot(self, local_screenshot_path: str) -> None:
+    def take_screenshot(self, local_screenshot_path: str, timeout: Optional[int] = None) -> None:
         """
         :param local_screenshot_path: path to store screenshot
+        :param timeout: timeout after this many seconds of trying to take screenshot, or None to use default timeout
 
-        :return: full path to file name pulled to server, or None if failed
+        :raises: TimeoutException if screenshot not captured within timeout (or default timeout) seconds
+        :raises: FileExistsError if path to capture screenshot already exists (will not overwrite)
         """
+        if os.path.exists(local_screenshot_path):
+            raise FileExistsError(f"cannot overwrite screenshot path {local_screenshot_path}")
         with open(local_screenshot_path, 'w+b') as f:
             self.execute_remote_cmd("shell", "screencap", "-p", capture_stdout=False,
                                     stdout_redirect=f.fileno(),
-                                    timeout=Device.TIMEOUT_SCREEN_CAPTURE)
+                                    timeout=timeout or Device.TIMEOUT_SCREEN_CAPTURE)
 
     # PyCharm detects erroneously that parens below are not required when they are
     # noinspection PyRedundantParentheses
