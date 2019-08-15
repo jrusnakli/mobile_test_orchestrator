@@ -1,24 +1,21 @@
 import asyncio
+import sys
+from asyncio import Task
+
 import logging
 import os
-import sys
 import traceback
-from asyncio import Task
-from contextlib import nullcontext
 from dataclasses import dataclass, field
-from importlib.resources import is_resource, path
-from pathlib import Path
 from types import TracebackType
-from typing import Dict, Iterator, List, Tuple, Coroutine, ContextManager, Optional, Any, Type, AsyncIterator, \
+from typing import Dict, Iterator, List, Tuple, Coroutine, Optional, Any, Type, AsyncIterator, \
     TypeVar, Union
 
-from .application import TestApplication, ServiceApplication
+from .application import TestApplication
 from .device import Device
 from .devicelog import DeviceLog, LogcatTagDemuxer
 from .devicestorage import DeviceStorage
-from .parsing import InstrumentationOutputParser, LineParser, TestButlerCommandParser
+from .parsing import InstrumentationOutputParser, LineParser
 from .reporting import TestListener
-from .resources import apks
 from .timing import Timer
 
 log = logging.getLogger(__name__)
@@ -27,11 +24,6 @@ log = logging.getLogger(__name__)
 if sys.platform == 'win32':
     loop = asyncio.ProactorEventLoop()
     asyncio.set_event_loop(loop)
-
-
-def test_butler_apk() -> ContextManager[Path]:
-    assert is_resource(apks, "TestButlerLive.apk"), "Invalid distribution! TestButlerLive.apk does not exist!!"
-    return path(apks, "TestButlerLive.apk")
 
 
 def trace(e: Exception) -> str:
@@ -87,15 +79,12 @@ class AndroidTestOrchestrator:
     and "dangerous" permissions re-granted to prevent pop-ups.
 
     :param artifact_dir: directory where logs and screenshots are saved
-    :param test_butler_apk_path: path to external test butler apk to use (e.g. for emulators);
-       or None to use built-in TestButler
     :param max_test_time: maximum allowed time for a single test to execute before timing out (or None)
     :param max_test_suite_time: maximum allowed time for test plan to complete to or None
 
     :raises ValueError: if max_test_suite_time is smaller than max_test_time
     :raises FileExistsError: if artifact_dir point to a file and not a directory
     :raises FileNotFoundError: if any of artifact_dir does not exist
-    :raises FileNotFoundError: if  adb_path (if not None) or test_butler_apk_path (id not None) does not exist
     :raises FileNotFoundError: if adb_path is None and no adb executable can be found in PATH or under ANDROID_HOME
 
     There are several background processes that are orchestrated during test suite execution:
@@ -116,11 +105,6 @@ class AndroidTestOrchestrator:
         permissions -- over a physical, secure USB connection. A background process
         watches for and processes any commands issued during test execution, transparent to the client.
 
-    The client can specify which TestButler
-    service (see TestButler_) to use, and if not specified will use a default
-    internally-defined service.  Note that for emulators, the built-in TestButler is probably less efficient. If
-    the client specifies an external test butler to use, the client must also add its own background task to process
-    any commands (if needed)
 
     >>> device = Device("device_serial_id")
     ... test_application = TestApplication("/some/test.apk", device)
@@ -156,71 +140,12 @@ class AndroidTestOrchestrator:
 
     """
 
-    class _DeviceRestoration(TestButlerCommandParser.DeviceChangeListener):
-        """
-        Internal class to capture settings/properties changed during each test suite execution and restore original
-        values
-        """
-        def __init__(self, device: Device) -> None:
-            """
-            :param device:  Android deice bridge used to communicate with device under test
-            """
-            self._device = device
-            self._restoration_properties: Dict[str, str] = {}
-            self._restoration_settings: Dict[Tuple[str, str], str] = {}
-
-        def device_setting_changed(self, namespace: str, key: str, previous: str, new_value: str) -> None:
-            """
-            capture device setting change (first change only) during testing,
-            to restore to original value on __exit__
-            :param namespace: setting's namespace
-
-            :param key: key for setting
-            :param previous: previous value before change
-            :param new_value: new value setting was changed to
-            """
-            if (namespace, key) not in self._restoration_settings:
-                self._restoration_settings[(namespace, key)] = previous
-            elif self._restoration_settings[(namespace, key)] == new_value:
-                # no longer need to restore
-                del self._restoration_settings[(namespace, key)]
-
-        def device_property_changed(self, key: str, previous: Optional[str], new_value: str) -> None:
-            """
-            capture device property change (first change only) during testing,
-            to restore original value on __exit__
-
-            :param key: name of property that changed
-            :param previous: previous value
-            :param new_value: new value property was set to
-            """
-            if key not in self._restoration_properties:
-                assert previous, f"Expected a previous value for property: {key}"
-                self._restoration_properties[key] = previous
-            elif self._restoration_properties[key] == new_value:
-                # no longer need to restore
-                del self._restoration_properties[key]
-
-        def restore(self) -> None:
-            """
-            Restore original values for any changed settings and properties
-            """
-            for (namespace, key), original_value in self._restoration_settings.items():
-                self._device.set_device_setting(namespace, key, original_value)
-            for key, original_value in self._restoration_properties.items():
-                self._device.set_system_property(key, original_value)
-            self._restoration_properties = {}
-            self._restoration_settings = {}
-
     def __init__(self,
                  artifact_dir: str,
-                 test_butler_apk_path: Optional[str] = None,
                  max_test_time: Optional[float] = None,
                  max_test_suite_time: Optional[float] = None) -> None:
         """
         :param artifact_dir: directory where logs and screenshots are saved
-        :param test_butler_apk_path: path to external test butler apk to use (e.g. for emulators);
-           or None to use built-in TestButler apk
         :param max_test_time: maximum allowed time for a single test to execute before timing out (or None)
         :param max_test_suite_time:maximum allowed time for a suite of tets (a package under and Android instrument
            command, for example) to execute; or None
@@ -228,7 +153,6 @@ class AndroidTestOrchestrator:
         :raises ValueError: if max_test_suite_time is smaller than max_test_time
         :raises FileExistsError: if artifact_dir point to a file and not a directory
         :raises FileNotFoundError: if any of artifact_dir does not exist
-        :raises FileNotFoundError: if  adb_path (if not None) or test_butler_apk_path (id not None) does not exist
         :raises FileNotFoundError: if adb_path is None and no adb executable can be found in PATH or under ANDROID_HOME
         """
         if max_test_suite_time is not None and max_test_time is not None and max_test_suite_time < max_test_time:
@@ -237,19 +161,12 @@ class AndroidTestOrchestrator:
             raise FileNotFoundError("log dir '%s' not found" % artifact_dir)
         if not os.path.isdir(artifact_dir):
             raise FileExistsError("'%s' exists and is not a directory" % artifact_dir)
-        if test_butler_apk_path is not None and not os.path.exists(test_butler_apk_path):
-            raise FileNotFoundError("test butler apk specified, '%s', does not exists" % test_butler_apk_path)
 
         self._artifact_dir = artifact_dir
         self._background_tasks: List[Task[Any]] = []
         self._instrumentation_timeout = max_test_suite_time
         self._test_timeout = max_test_time
-        if test_butler_apk_path:
-            self._test_butler_apk_context = nullcontext(Path(test_butler_apk_path))
-        else:
-            self._test_butler_apk_context = test_butler_apk()
         self._timer = None
-        self._test_butler_service: Optional[ServiceApplication] = None
         self._tag_monitors: Dict[str, Tuple[str, LineParser]] = {}
 
     def __enter__(self) -> "AndroidTestOrchestrator":
@@ -261,10 +178,6 @@ class AndroidTestOrchestrator:
         cleanup
         """
         # leave the campground as clean as you left it:
-        if self._test_butler_service is not None:
-            self._test_butler_service.start(".ButlerService",
-                                            intent="com.linkedin.android.testbutler.STOP")
-            self._test_butler_service.uninstall()
 
     def add_logcat_monitor(self, tag: str, handler: LineParser, priority: str = "*") -> None:
         """
@@ -287,19 +200,18 @@ class AndroidTestOrchestrator:
             raise ValueError("A handler for tag '%s' and priority '%s' already added" % (tag, priority))
         self._tag_monitors[tag] = (priority, handler)
 
-    # TASK-2: parsing of instrument output for test execuition status
+    # TASK-2: parsing of instrument output for test execution status
     async def _execute_plan(self,
                             test_plan: AsyncIterator[TestSuite],
                             test_application: TestApplication,
-                            test_listener: TestListener,
-                            device_restoration: "AndroidTestOrchestrator._DeviceRestoration") -> None:
+                            test_listener: TestListener) -> None:
         """
         Loop over items in test plan and execute one by one, restoring device settings and properties on each
         iteration.
 
         :param test_plan: generator of tuples of (test_suite_name, list_of_instrument_arguments)
         :param test_application: test application containing (remote) runner to execute tests
-        :param device_restoration: to restore device on each iteration
+        :param test_listener: reporting test status
         """
         # clear logcat for fresh start
         try:
@@ -337,7 +249,6 @@ class AndroidTestOrchestrator:
                     test_listener.test_suite_ended(test_suite.name,
                                                    instrumentation_parser.total_test_count,
                                                    instrumentation_parser.execution_time)
-                    device_restoration.restore()
                     for _, remote_path in test_suite.uploadables:
                         try:
                             device_storage.remove(remote_path, recursive=True)
@@ -352,10 +263,10 @@ class AndroidTestOrchestrator:
                 for marker, pos in log_capture.markers.items():
                     f.write("%s=%s\n" % (marker, str(pos)))
 
-    # TASK-3: monitor logcat for TestButler commands
+    # TASK-3: monitor logcat for given tags in _tag_monitors
     async def _process_logcat_tags(self, device: Device) -> None:
         """
-        Process requested tags from logcat (including tag for test butler to process commands, if applicable)
+        Process requested tags from logcat
 
         :param device: remote device to process tags from
         """
@@ -387,7 +298,6 @@ class AndroidTestOrchestrator:
         :raises: asyncio.TimeoutError if test or test suite times out based on this orchestrator's configuration
         """
         loop = asyncio.get_event_loop()
-        device_restoration = self._DeviceRestoration(test_application.device)
         device_storage = DeviceStorage(test_application.device)
 
         if not isinstance(test_plan, AsyncIterator):
@@ -395,15 +305,6 @@ class AndroidTestOrchestrator:
                 for i in test_plan:
                     yield i
             test_plan = _async_iter(test_plan)
-
-        with self._test_butler_apk_context as test_butler_apk_path:
-            self._test_butler_service = ServiceApplication.from_apk(str(test_butler_apk_path), test_application.device)
-
-        # add testbutler tag for processing
-        line_parser: LineParser = TestButlerCommandParser(self._test_butler_service,
-                                                          app_under_test=test_application,
-                                                          listener=device_restoration)
-        self.add_logcat_monitor("TestButler", line_parser, priority='I')
 
         if self._tag_monitors:
             log.debug("Creating logcat monitoring task")
@@ -418,8 +319,7 @@ class AndroidTestOrchestrator:
                 device_storage.push(local_path=local_path, remote_path=remote_path)
             await asyncio.wait_for(self._execute_plan(test_plan=test_plan,
                                                       test_application=test_application,
-                                                      test_listener=test_listener,
-                                                      device_restoration=device_restoration),
+                                                      test_listener=test_listener),
                                    self._instrumentation_timeout)
         try:
             loop.run_until_complete(timer(test_plan))  # execute plan until completed or until timeout is reached

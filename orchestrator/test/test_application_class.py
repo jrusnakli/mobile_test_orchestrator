@@ -23,7 +23,7 @@ class TestApplicationClass:
         uninstall_apk(support_app, device)
         app = Application.from_apk(support_app, device)
         try:
-            assert app.package_name == "com.linkedin.mdctest"
+            assert app.package_name == "com.linkedin.mtotestapp"
             output = device.execute_remote_cmd("shell", "dumpsys", "package", app.package_name, capture_stdout=True,
                                                timeout=10)
             for line in output.splitlines():

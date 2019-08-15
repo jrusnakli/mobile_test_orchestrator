@@ -15,12 +15,12 @@ from androidtestorchestrator.application import Application, TestApplication, Se
 from androidtestorchestrator.device import Device
 from androidtestorchestrator.devicestorage import DeviceStorage
 from . import support
-from .conftest import TAG_MDC_DEVICE_ID
+from .conftest import TAG_MTO_DEVICE_ID
 from .support import uninstall_apk
 
 RESOURCE_DIR = os.path.join(os.path.dirname(__file__), "resources")
 
-if TAG_MDC_DEVICE_ID not in os.environ:
+if TAG_MTO_DEVICE_ID not in os.environ:
     expected_device_info = {
         "model": "Android SDK built for x86_64",
         "manufacturer": "unknown",
@@ -33,7 +33,7 @@ else:
     # a true test flow, but this is only run under specific user-based conditions
     android_sdk = support.find_sdk()
     adb_path = os.path.join(android_sdk, "platform-tools", support.add_ext("adb"))
-    device = Device(os.environ[TAG_MDC_DEVICE_ID], adb_path=adb_path)
+    device = Device(os.environ[TAG_MTO_DEVICE_ID], adb_path=adb_path)
     expected_device_info = {
         "model": device.get_system_property("ro.product.model"),
         "manufacturer": device.get_system_property("ro.product.manufacturer"),
@@ -141,33 +141,16 @@ class TestAndroidDevice:
         assert timediff.total_seconds() >= 0.99
         assert host_datetime_delta - host_delta < 0.01
 
-    @pytest.mark.skipif(True, reason="Test butler does not currently support system setting of locale")
-    def test_get_set_locale(self, device: Device, local_changer_apk):  # noqa
-        # TODO: Make locale_changer_apk into fixture so we don't need to try/finally the uninstall
-        uninstall_apk(local_changer_apk, device)
-        app = Application.from_apk(local_changer_apk, device)
-        try:
-            app.grant_permissions([" android.permission.CHANGE_CONFIGURATION"])
-            device.set_locale("en_US")
-            assert device.get_locale() == "en_US"
-            device.set_locale("fr_FR")
-            assert device.get_locale() == "fr_FR"
-        finally:
-            app.uninstall()
-
     def test_grant_permissions(self, install_app, support_test_app: str):
         test_app = install_app(TestApplication, support_test_app)
         test_app.grant_permissions(["android.permission.WRITE_EXTERNAL_STORAGE"])
 
-    def test_start_stop_app(self, install_app, support_app, test_butler_service):  # noqa
+    def test_start_stop_app(self, install_app, support_app):  # noqa
         app = install_app(Application, support_app)
-        butler_app = install_app(ServiceApplication, test_butler_service)
 
         app.start(activity=".MainActivity")
-        butler_app.start(activity=".ButlerService", foreground=True)
         app.clear_data()
         app.stop()
-        butler_app.stop()
 
     def test_invalid_cmd_execution(self, device: Device):
         async def execute():

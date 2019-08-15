@@ -261,12 +261,12 @@ class ServiceApplication(Application):
                                            capture_stdout=False)
 
     def broadcast(self, activity: str,  # TODO: activity should be Optional, as it is in Application.
-                  *options: str, intent: Optional[str] = None) -> None:
+                  *options: str, action: Optional[str]) -> None:
         """
         Invoke an intent associated with this service by broadcasting an event
         :param activity: activity that handles the intent
         :param options: string list of options to supply to "am broadcast" command
-        :param intent: if not None, invoke specific intent otherwise invoke default intent
+        :param action: if not None, invoke specific action
         :return:
         """
         if not activity:
@@ -274,8 +274,8 @@ class ServiceApplication(Application):
 
         activity = f"{self.package_name}/{activity}"
         options = tuple(f'"{item}"' for item in options)
-        if intent:
-            options = ("-a", intent) + options
+        if action:
+            options = ("-a", action) + options
         self.device.execute_remote_cmd("shell", "am", "broadcast", "-n", activity, *options, capture_stdout=False)
 
 

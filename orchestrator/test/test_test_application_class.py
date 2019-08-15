@@ -18,14 +18,13 @@ log = logging.getLogger(__name__)
 # noinspection PyShadowingNames
 class TestTestApplication(object):
 
-    def test_run(self, install_app, support_app: str, support_test_app: str, test_butler_service: str):
+    def test_run(self, install_app, support_app: str, support_test_app: str):
         install_app(Application, support_app)
-        install_app(ServiceApplication, test_butler_service)
         test_app = install_app(TestApplication, support_test_app)
 
         # More robust testing of this is done in test of AndroidTestOrchestrator
         async def parse_output():
-            async with await test_app.run("-e", "class", "com.linkedin.mdctest.TestButlerTest#testTestButlerRotation") \
+            async with await test_app.run("-e", "class", "com.linkedin.mtotestapp.InstrumentedTestAllSuccess#useAppContext") \
                     as lines:
                 async for line in lines:
                     log.debug(line)
