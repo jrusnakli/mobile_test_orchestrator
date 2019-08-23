@@ -129,14 +129,10 @@ To run tests, ensure environment as above and in the orchestrator/test directory
 
 `$ pytest -s .`
 
-This will build debug versions of the test butler app, and test support apps used during testing.
+This will build debug versions of the test support apps used during testing.
 
 Test py files directly  in the `orchestrator/test` are unit-test-like.
    
-Those in `orhcestrator/tst/test_system_integration` test a fully integrated system and execution across host,
-test butler service on the emulator, and a test app on the device. These are progressively more complex and longer time-running tests and pytest should execute them from faster-running to
-the more slower-running integration tests
-
 Debugging Tests
 ---------------
 
