@@ -14,12 +14,11 @@
 #
 import os
 import sys
-sys.path.insert(0, os.path.abspath('../testbutler/src'))
 print (">>>>>>>>>>>>>>>>>> %s" % sys.path)
 
 # -- Project information -----------------------------------------------------
 
-project = 'AndroidTestOrchestrator'
+project = 'Mobile Test Orchestrator'
 copyright = '2018, John Rusnak'
 author = 'John Rusnak'
 
