@@ -31,8 +31,6 @@ Other features include:
 #. File positions within the logcat file to mark the beginning and end of a test suite and each test
 #. Ability to monitor specific tags fom logcat during execution
 
-Developers:  see the :ref:`developer_guide`;
-
 .. _main_use_case:
 
 Executing a Test Plan
