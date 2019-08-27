@@ -118,7 +118,7 @@ From the orchestrator directory, run:
 
 This will (in addition to normal Python setup.py "stuff"):
 
-#. package it as a resource with the distro
+1. package it as a resource with the distro
 
 
 Running Tests
