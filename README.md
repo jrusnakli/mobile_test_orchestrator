@@ -25,7 +25,7 @@ A test plan is an iterator over a collection of test suites, which can be create
 from androidtestorchestrator import TestSuite
 # arguments to be passed to the am instrument command, run as "am instrument -w -r [arguments] <package>/<runner> "
 test_suite = TestSuite(name='test_suite1', arguments=["--package", "com.some.test.package"])
-test_plan = iter([test_suite])
+test_plan = [test_suite]
 ```
 
 An orchestrator can execute the test plan. A `androidtestorchestrator.TestListener` will report the test result as execution proceeds.
@@ -63,7 +63,7 @@ class Listener(TestListener):
  with AndroidTestOrchestrator(artifact_dir=".") as orchestrator:
 
      test_suite = TestSuite('test_suite1', ["--package", "com.some.test.package"])
-     test_plan = iter([test_suite])
+     test_plan = [test_suite]
      orchestrator.execute_test_plan(test_application, test_plan, Listener())
      # or
      orchestrator.execute_test_suite(test_suite, Listener())      
@@ -114,7 +114,7 @@ Building the distribution:
 
 From the orchestrator directory, run:
 
-`$ python setup.py`
+`$ python3 setup.py`
 
 This will (in addition to normal Python setup.py "stuff"):
 
