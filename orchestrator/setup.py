@@ -6,9 +6,5 @@ setuptools.setup(
     version='1.0.0',
     package_dir={'': 'src'},
     packages=setuptools.find_packages('src'),
-    include_package_data=True,
-    entry_points={
-    'console_scripts': [
-    ]
-  }
+    include_package_data=True
 )

@@ -11,11 +11,11 @@ license.
 Responsible Disclosure of Security Vulnerabilities
 ==================================================
 
-Please do not file reports on Github for security issues.  Please
-review the guidelines on at (link to more info).  Reports should be
-encrypted using PGP (link to PGP key) and sent to
-security@linkedin.com preferably with the title "Github
-linkedin/<project> - <short summary>".
+**Do not file an issue on Github for security issues.**  Please review
+the [guidelines for disclosure][disclosure_guidelines].  Reports should
+be encrypted using PGP ([public key][pubkey]) and sent to
+[security@linkedin.com][disclosure_email] preferably with the title
+"Vulnerability in Github LinkedIn/css-blocks - &lt;short summary&gt;".
 
 Tips for Getting Your Pull Request Accepted
 ===========================================
@@ -26,3 +26,8 @@ Tips for Getting Your Pull Request Accepted
 3. Open an issue first and seek advice for your change before
    submitting a pull request. Large features which have never been
    discussed are unlikely to be accepted. **You have been warned.**
+
+
+[disclosure_guidelines]: https://www.linkedin.com/help/linkedin/answer/62924
+[pubkey]: https://www.linkedin.com/help/linkedin/answer/79676
+[disclosure_email]: mailto:security@linkedin.com?subject=Vulnerability%20in%20Github%20LinkedIn/css-blocks%20-%20%3Csummary%3E
