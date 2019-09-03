@@ -1,4 +1,0 @@
-include 'testbutlerservice'
-include 'testbutlerservice:app'
-include 'testsupportapps:TestButlerTestApp'
-include 'testsupportapps:TestButlerTestApp:app'

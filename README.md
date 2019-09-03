@@ -25,7 +25,7 @@ A test plan is an iterator over a collection of test suites, which can be create
 from androidtestorchestrator import TestSuite
 # arguments to be passed to the am instrument command, run as "am instrument -w -r [arguments] <package>/<runner> "
 test_suite = TestSuite(name='test_suite1', arguments=["--package", "com.some.test.package"])
-test_plan = iter([test_suite])
+test_plan = [test_suite]
 ```
 
 An orchestrator can execute the test plan. A `androidtestorchestrator.TestListener` will report the test result as execution proceeds.
@@ -63,7 +63,7 @@ class Listener(TestListener):
  with AndroidTestOrchestrator(artifact_dir=".") as orchestrator:
 
      test_suite = TestSuite('test_suite1', ["--package", "com.some.test.package"])
-     test_plan = iter([test_suite])
+     test_plan = [test_suite]
      orchestrator.execute_test_plan(test_application, test_plan, Listener())
      # or
      orchestrator.execute_test_suite(test_suite, Listener())      
@@ -114,11 +114,11 @@ Building the distribution:
 
 From the orchestrator directory, run:
 
-`$ python setup.py`
+`$ python3 setup.py`
 
 This will (in addition to normal Python setup.py "stuff"):
 
-#. package it as a resource with the distro
+1. package it as a resource with the distro
 
 
 Running Tests
@@ -129,14 +129,10 @@ To run tests, ensure environment as above and in the orchestrator/test directory
 
 `$ pytest -s .`
 
-This will build debug versions of the test butler app, and test support apps used during testing.
+This will build debug versions of the test support apps used during testing.
 
 Test py files directly  in the `orchestrator/test` are unit-test-like.
    
-Those in `orhcestrator/tst/test_system_integration` test a fully integrated system and execution across host,
-test butler service on the emulator, and a test app on the device. These are progressively more complex and longer time-running tests and pytest should execute them from faster-running to
-the more slower-running integration tests
-
 Debugging Tests
 ---------------
 
