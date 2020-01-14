@@ -7,7 +7,7 @@ from types import TracebackType
 
 import psutil  # type: ignore
 from contextlib import suppress
-from typing import AsyncContextManager, Dict, Tuple, Optional, TextIO, Type, AsyncIterator
+from typing import Any, AsyncContextManager, Dict, Tuple, Optional, TextIO, Type, AsyncIterator, no_type_check
 
 from .timing import StopWatch
 from .parsing import LineParser
@@ -35,7 +35,7 @@ class DeviceLog(RemoteDeviceBased):
             """
             super(DeviceLog.LogCapture, self).__init__(device)
             self._markers: Dict[str, int] = {}
-            self._proc: Optional[Popen] = None
+            self._proc: Optional[Popen[Any]] = None
             if os.path.exists(output_path):
                 raise Exception(f"Path {output_path} already exists; will not overwrite")
             self._output_file: TextIO = open(output_path, 'w')
@@ -190,6 +190,7 @@ class DeviceLog(RemoteDeviceBased):
         """
         self.device.execute_remote_cmd("logcat", "-b", "all", "-c", capture_stdout=False)
 
+    @no_type_check
     async def logcat(self, *options: str, loop: Optional[AbstractEventLoop] = None
                      ) -> AsyncContextManager[AsyncIterator[str]]:
         """

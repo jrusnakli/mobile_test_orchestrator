@@ -5,7 +5,7 @@ from abc import abstractmethod, ABC
 from contextlib import suppress
 from typing import List, Optional
 
-from .reporting import TestStatus, TestListener
+from .reporting import TestStatus, TestRunListener
 from .timing import StopWatch
 
 with suppress(ModuleNotFoundError):
@@ -74,7 +74,7 @@ class InstrumentationOutputParser(LineParser):
             else:
                 log.warning("Unrecognized field: %s;  ignoring" % field_name)
 
-    def __init__(self, test_listener: TestListener) -> None:
+    def __init__(self, test_listener: TestRunListener) -> None:
         """
         :param test_listener: Reporter object to report test status on an on-going basis
         """
@@ -124,35 +124,30 @@ class InstrumentationOutputParser(LineParser):
             elif code in [self.CODE_ERROR, self.CODE_FAILED]:
                 self._test_result.result = TestStatus.FAILED
             elif code in [self.CODE_SKIPPED]:
-                self._test_result.result = TestStatus.SKIPPED
+                self._test_result.result = TestStatus.IGNORED
             elif code in [self.CODE_ASSUMPTION_VIOLATION]:
-                self._test_result.result = TestStatus.ASSUMPTION_VIOLATED
+                self._test_result.result = TestStatus.ASSUMPTION_FAILURE
             else:
                 raise ValueError("Unknown test dode: %d" % code)
             # capture result and start over with clean slate:
             if self._test_result.result == TestStatus.PASSED:
                 duration = (datetime.datetime.utcnow() - self._test_result.start_time).total_seconds()
-                self._reporter.test_ended(test_name=self._test_result.test_id,
-                                          test_class=self._test_result.clazz,
+                self._reporter.test_ended(class_name=self._test_result.clazz,
+                                          test_name=self._test_result.test_id,
                                           test_no=self._test_result.test_no,
                                           duration=duration,
                                           msg=self._test_result.stream)
             elif self._test_result.result == TestStatus.FAILED:
-                self._reporter.test_failed(test_name=self._test_result.test_id,
-                                           test_class=self._test_result.clazz,
-                                           test_no=self._test_result.test_no,
-                                           msg=self._test_result.stream,
-                                           stack=self._test_result.stack)
-            elif self._test_result.result == TestStatus.SKIPPED:
-                self._reporter.test_ignored(test_name=self._test_result.test_id,
-                                            test_class=self._test_result.clazz,
-                                            test_no=self._test_result.test_no,
-                                            msg=self._test_result.stream)
-            elif self._test_result.result == TestStatus.ASSUMPTION_VIOLATED:
-                self._reporter.test_assumption_violated(test_name=self._test_result.test_id,
-                                                        test_class=self._test_result.clazz,
-                                                        test_no=self._test_result.test_no,
-                                                        reason=self._test_result.stream)
+                self._reporter.test_failed(class_name=self._test_result.clazz,
+                                           test_name=self._test_result.test_id,
+                                           stack_trace=self._test_result.stack)
+            elif self._test_result.result == TestStatus.IGNORED:
+                self._reporter.test_ignored(class_name=self._test_result.clazz,
+                                            test_name=self._test_result.test_id)
+            elif self._test_result.result == TestStatus.ASSUMPTION_FAILURE:
+                self._reporter.test_assumption_failure(class_name=self._test_result.clazz,
+                                                       test_name=self._test_result.test_id,
+                                                       stack_trace=self._test_result.stack)
             else:
                 raise ValueError("Unknown status code for test: %d" % code)
         finally:

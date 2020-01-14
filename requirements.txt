@@ -5,4 +5,5 @@ pytest-html
 pytest-cov
 pytest-asyncio
 mypy
+typed-ast
 flake8

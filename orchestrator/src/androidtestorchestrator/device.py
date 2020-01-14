@@ -9,7 +9,7 @@ from asyncio import AbstractEventLoop
 from contextlib import suppress, asynccontextmanager
 from types import TracebackType
 from typing import List, Tuple, Dict, Optional, AsyncContextManager, Union, Callable, IO, Any, AsyncIterator, Type, \
-    AnyStr
+    AnyStr, no_type_check
 
 from apk_bitminer.parsing import AXMLParser  # type: ignore
 
@@ -271,10 +271,10 @@ class Device(object):
             raise self.CommandExecutionFailureException(completed.returncode,
                                                         f"Failed to execute '{' '.join(args)}' on device {self.device_id} [{completed.stderr}]")
 
-        return completed.stdout  # type: ignore
+        return completed.stdout
 
     def execute_remote_cmd_background(self, *args: str, stdout: Union[None, int, IO[AnyStr]] = subprocess.PIPE,
-                                      **kwargs: Any) -> subprocess.Popen:
+                                      **kwargs: Any) -> subprocess.Popen:  # type: ignore
         """
         Run the given command args in the background.
 
@@ -295,6 +295,7 @@ class Device(object):
                                 stderr=subprocess.PIPE,
                                 **kwargs)
 
+    @no_type_check
     async def execute_remote_cmd_async(self, *args: str, unresponsive_timeout: Optional[float] = None,
                                        proc_completion_timeout: Optional[float] = 0.0,
                                        loop: Optional[AbstractEventLoop] = None
@@ -326,10 +327,10 @@ class Device(object):
         # to do the heavy lifting, but they provide a clean external-facing interface to perform those functions).
         cmd = self.formulate_adb_cmd(*args)
         print(f"Executing: {' '.join(cmd)}")
-        proc = await asyncio.subprocess.create_subprocess_exec(*cmd,  # type: ignore
+        proc = await asyncio.subprocess.create_subprocess_exec(*cmd,
                                                                stdout=asyncio.subprocess.PIPE,
                                                                stderr=asyncio.subprocess.PIPE,
-                                                               loop=loop,  # noqa
+                                                               loop=loop,
                                                                bufsize=0)  # noqa
 
         class LineGenerator:

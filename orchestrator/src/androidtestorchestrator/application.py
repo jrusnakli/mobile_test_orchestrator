@@ -4,7 +4,7 @@ import time
 from asyncio import AbstractEventLoop
 
 from apk_bitminer.parsing import AXMLParser  # type: ignore
-from typing import List, TypeVar, Type, Optional, AsyncContextManager, AsyncIterator
+from typing import List, TypeVar, Type, Optional, AsyncContextManager, AsyncIterator, no_type_check
 
 from .device import Device, RemoteDeviceBased
 
@@ -327,6 +327,7 @@ class TestApplication(Application):
                 items.append(runner)
         return items
 
+    @no_type_check
     async def run(self, *options: str, loop: Optional[AbstractEventLoop] = None,
                   unresponsive_timeout: Optional[float] = None, max_test_time: Optional[float] = None
                   ) -> AsyncContextManager[AsyncIterator[str]]:

@@ -114,7 +114,7 @@ Building the distribution:
 
 From the orchestrator directory, run:
 
-`$ python setup.py`
+`$ python setup.py install`
 
 This will (in addition to normal Python setup.py "stuff"):
 
@@ -144,5 +144,5 @@ Recommend setting `PYTHONASYNCIODEBUG` to `1` to use asyncio's debug output
 
 Currently, if any breakpoints are set it causes problems in IntelliJ as under the hoods in places asyncio/subprocess
 uses multiprocessing module and fake KeyboardInterrupts get generate/picked up :-(.  pytest staright-up works though.
-If you turn off all breakpoints, then you can at least get orferly output in PyChram/IntelliJ
+If you turn off all breakpoints, then you can at least get orderly output in PyChram/IntelliJ
 
