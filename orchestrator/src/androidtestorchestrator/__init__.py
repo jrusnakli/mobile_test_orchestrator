@@ -15,7 +15,7 @@ from .device import Device
 from .devicelog import DeviceLog, LogcatTagDemuxer
 from .devicestorage import DeviceStorage
 from .parsing import InstrumentationOutputParser, LineParser
-from .reporting import TestListener
+from .reporting import TestRunListener
 from .timing import Timer
 
 log = logging.getLogger(__name__)
@@ -96,7 +96,7 @@ class AndroidTestOrchestrator:
 
     TASK-2.
         Test status capture and reporting: The output of test execution on the device is monitored in real-time and
-        status provided via an instance of `androidtestorchestrator.reporting.TestListener`
+        status provided via an instance of `androidtestorchestrator.reporting.TestRunListener`
 
     TASK-3.
         Processing commands from the test app to effect device changes: Apps running on a device do not have the
@@ -108,7 +108,7 @@ class AndroidTestOrchestrator:
 
     >>> device = Device("device_serial_id")
     ... test_application = TestApplication("/some/test.apk", device)
-    ... class Listener(TestListener):
+    ... class Listener(TestRunListener):
     ...     def test_ended(self, test_name: str, test_class: str, test_no: int, duartion: float, msg: str = ""):
     ...         print("Test %s passed" % test_name)
     ...
@@ -204,7 +204,7 @@ class AndroidTestOrchestrator:
     async def _execute_plan(self,
                             test_plan: AsyncIterator[TestSuite],
                             test_application: TestApplication,
-                            test_listener: TestListener) -> None:
+                            test_listener: TestRunListener) -> None:
         """
         Loop over items in test plan and execute one by one, restoring device settings and properties on each
         iteration.
@@ -234,22 +234,20 @@ class AndroidTestOrchestrator:
             # log_capture is to listen to test status to mark beginning/end of each test run:
             instrumentation_parser.add_test_execution_listener(log_capture)
 
-            async for test_suite in _preloading(test_plan):
-                test_listener.test_suite_started(test_suite.name)
+            async for test_run in _preloading(test_plan):
+                test_listener.test_run_started(test_run.name)
                 try:
-                    for local_path, remote_path in test_suite.uploadables:
+                    for local_path, remote_path in test_run.uploadables:
                         device_storage.push(local_path=local_path, remote_path=remote_path)
-                    async with await test_application.run(*test_suite.arguments) as lines:
+                    async with await test_application.run(*test_run.arguments) as lines:
                         async for line in lines:
                             instrumentation_parser.parse_line(line)
                 except Exception as e:
                     print(trace(e))
-                    test_listener.test_suite_errored(test_suite.name, 1, str(e))
+                    test_listener.test_run_failed(str(e))
                 finally:
-                    test_listener.test_suite_ended(test_suite.name,
-                                                   instrumentation_parser.total_test_count,
-                                                   instrumentation_parser.execution_time)
-                    for _, remote_path in test_suite.uploadables:
+                    test_listener.test_run_ended(instrumentation_parser.execution_time)
+                    for _, remote_path in test_run.uploadables:
                         try:
                             device_storage.remove(remote_path, recursive=True)
                         except Exception:
@@ -284,7 +282,7 @@ class AndroidTestOrchestrator:
     def execute_test_plan(self,
                           test_application: TestApplication,
                           test_plan: Union[AsyncIterator[TestSuite], Iterator[TestSuite]],
-                          test_listener: TestListener,
+                          test_listener: TestRunListener,
                           global_uploadables: Optional[List[Tuple[str, str]]] = None) -> None:
         """
         Execute a test plan (a collection of test suites)
@@ -330,7 +328,7 @@ class AndroidTestOrchestrator:
     def execute_test_suite(self,
                            test_application: TestApplication,
                            test_suite: TestSuite,
-                           test_listener: TestListener,
+                           test_listener: TestRunListener,
                            global_uploadables: Optional[List[Tuple[str, str]]] = None) -> None:
         """
         Execute a suite of tests as given by the argument list, and report test results
