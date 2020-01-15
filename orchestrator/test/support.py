@@ -71,11 +71,15 @@ def find_sdk():
     return android_sdk
 
 
-def wait_for_emulator_boot(port: int, avd: str, adb_path: str, emulator_path: str, is_retry: bool):
+def wait_for_emulator_boot(port: int, avd: str, adb_path: str, emulator_path: str, is_retry: bool,
+                           is_no_window: bool = False):
     device_id = "emulator-%d" % port
 
     # read more about cmd option https://developer.android.com/studio/run/emulator-commandline
-    cmd = [emulator_path, "-port", str(port), "@%s" % avd, "-wipe-data"]
+    if is_no_window:
+        cmd = [emulator_path, "-no-window", "-port", str(port), "@%s" % avd, "-wipe-data"]
+    else:
+        cmd = [emulator_path, "-port", str(port), "@%s" % avd, "-wipe-data"]
     if is_retry and "-no-snapshot-load" not in cmd:
         cmd.append("-no-snapshot-load")
     if os.environ.get("EMULATOR_OPTS"):
@@ -104,10 +108,10 @@ def wait_for_emulator_boot(port: int, avd: str, adb_path: str, emulator_path: st
     Config.proc_q.put(proc)
 
 
-def launch(port: int, avd: str, adb_path: str, emulator_path: str):
+def launch(port: int, avd: str, adb_path: str, emulator_path: str, is_no_window: bool = False):
     for retry in (False, True):
         try:
-            wait_for_emulator_boot(port, avd, adb_path, emulator_path, retry)
+            wait_for_emulator_boot(port, avd, adb_path, emulator_path, retry, is_no_window)
             break
         except Exception as e:
             if retry:
@@ -132,6 +136,8 @@ def launch_emulator(port: int):
         print(f"WARNING: using existing emulator at port {port}")
         return
 
+    is_no_window = False
+
     if sys.platform == 'win32':
         emulator_path = os.path.join(android_sdk, "emulator", "emulator-headless.exe")
     else:
@@ -146,8 +152,18 @@ def launch_emulator(port: int):
     else:
         shell = False
     if not os.path.isfile(emulator_path):
-        raise Exception("Unable to find path to 'emulator' command")
+        # As of v29.2.11, emulator-headless is no longer present, but has been merged to emulator -no-window,
+        # so check for newer command
+        if sys.platform == 'win32':
+            emulator_path = os.path.join(android_sdk, "emulator", "emulator.exe")
+        else:
+            emulator_path = os.path.join(android_sdk, "emulator", "emulator")
+        if not os.path.isfile(emulator_path):
+            raise Exception("Unable to find path to 'emulator' command")
+        is_no_window = True
     list_emulators_cmd = [emulator_path, "-list-avds"]
+    if is_no_window:
+        list_emulators_cmd.append("-no-window")
     completed = subprocess.run(list_emulators_cmd, timeout=10, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                encoding='utf-8', shell=shell)
     if completed.returncode != 0:
@@ -171,7 +187,7 @@ def launch_emulator(port: int):
         if EMULATOR_NAME not in completed.stdout:
             raise Exception("Unable to create AVD for testing")
     avd = EMULATOR_NAME
-    launch(port, avd, adb_path, emulator_path)
+    launch(port, avd, adb_path, emulator_path, is_no_window)
 
 
 def gradle_build(*target_and_q: Tuple[str, Queue]):

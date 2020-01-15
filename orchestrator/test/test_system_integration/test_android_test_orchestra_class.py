@@ -3,7 +3,7 @@ import pytest
 from androidtestorchestrator import AndroidTestOrchestrator, TestApplication, TestSuite
 from androidtestorchestrator.device import Device
 from androidtestorchestrator.parsing import LineParser
-from androidtestorchestrator.reporting import TestListener
+from androidtestorchestrator.reporting import TestRunListener
 from ..support import uninstall_apk
 
 
@@ -52,7 +52,7 @@ class TestAndroidTestOrchestrator(object):
         expected_test_suite = None
         current_test_suite = None
         uninstall_apk(android_test_app, device)
-        class TestExpectations(TestListener):
+        class TestExpectations(TestRunListener):
 
             def __init__(self):
                 self.expected_test_class = {
@@ -61,53 +61,48 @@ class TestAndroidTestOrchestrator(object):
                     'test_suite3': "com.linkedin.mtotestapp.InstrumentedTestSomeFailures"
                 }
 
-            def test_suite_errored(self, test_suite_name: str, status_code: int, exc_msg: str=""):
-                assert False, "did not expect test process to error with error code %d; \n%s" % \
-                              (status_code, exc_msg)
+            def test_run_failed(self, error_message: str):
+                assert False, "did not expect test process to error; \n%s" % error_message
 
-            def test_assumption_violated(self, test_name: str, test_class: str, test_no: int, reason: str):
+            def test_assumption_failure(self, class_name: str, test_name: str, stack_trace: str):
                 nonlocal test_count
                 test_count += 1
 
-            def test_suite_ended(self, test_suite_name: str, total_test_count: int, execution_time: float):
-                nonlocal test_count
-                nonlocal expected_test_suite
-                assert test_suite_name == expected_test_suite
-
-            def test_started(self, test_name: str, test_class: str, test_no: int, msg: str = ""):
+            def test_run_ended(self, duration: float, **kwargs):
                 pass
 
-            def test_ended(self, test_name: str, test_class: str, test_no: int, duration: float, msg: str = ""):
+            def test_started(self, class_name: str, test_name: str):
+                pass
+
+            def test_ended(self, class_name: str, test_name: str, **kwargs):
                 nonlocal test_count, current_test_suite
                 test_count += 1
                 assert test_name in ["useAppContext",
                                      "testSuccess",
                                      ]
-                assert test_class == self.expected_test_class[current_test_suite]
+                assert class_name == self.expected_test_class[current_test_suite]
 
-            def test_failed(self, test_name: str, test_class: str, test_no: int, stack: str,
-                            msg: str = ""):
+            def test_failed(self, class_name: str, test_name: str, stack_trace: str):
                 nonlocal test_count, current_test_suite
                 test_count += 1
-                assert test_class == self.expected_test_class[current_test_suite]
+                assert class_name == self.expected_test_class[current_test_suite]
                 assert test_name == "testFail"  # this test case is designed to be failed
 
-            def test_ignored(self, test_name: str, test_class: str, test_no: int, msg: str = ""):
+            def test_ignored(self, class_name: str, test_name: str):
                 nonlocal test_count
                 test_count += 1
                 assert False, "no skipped tests should be present"
 
-            def test_suite_started(self, test_suite_name: str):
+            def test_run_started(self, test_run_name: str, count: int = 0):
                 nonlocal test_count, test_suite_count
                 nonlocal expected_test_suite
                 nonlocal current_test_suite
-                current_test_suite = test_suite_name
-                print("Started test suite %s" % test_suite_name)
+                current_test_suite = test_run_name
+                print("Started test suite %s" % test_run_name)
                 test_count = 0  # reset
                 test_suite_count += 1
                 expected_test_suite = "test_suite%d" % test_suite_count
-                assert test_suite_name == expected_test_suite
-
+                assert test_run_name == expected_test_suite
 
         def test_generator():
             yield (TestSuite(name='test_suite1',
@@ -135,30 +130,30 @@ class TestAndroidTestOrchestrator(object):
                              arguments=["-e", "class", "com.linkedin.mtotestapp.InstrumentedTestAllSuccess#useAppContext"]))
 
         # noinspection PyMissingOrEmptyDocstring
-        class EmptyListner(TestListener):
+        class EmptyListner(TestRunListener):
 
-            def test_suite_started(self, test_suite_name: str):
+            def test_run_started(self, test_run_name: str, count: int = 0):
                 pass
 
-            def test_suite_ended(self, test_suite_name: str, test_count: int, execution_time: float):
+            def test_run_ended(self, duration: float, **kwargs):
                 pass
 
-            def test_suite_errored(self, test_suite_name: str, status_code: int, exc_message: str = ""):
+            def test_run_failed(self, error_message: str):
                 pass
 
-            def test_failed(self, test_name: str, test_class: str, test_no: int, stack: str, msg: str = ""):
+            def test_failed(self, class_name: str, test_name: str, stack_trace: str):
                 pass
 
-            def test_ignored(self, test_name: str, test_class: str, test_no: int, msg: str = ""):
+            def test_ignored(self, class_name: str, test_name: str):
                 pass
 
-            def test_assumption_violated(self, test_name: str, test_class: str, test_no: int, reason: str):
+            def test_assumption_failure(self, class_name: str, test_name: str, stack_trace: str):
                 pass
 
-            def test_started(self, test_name: str, test_class: str, test_no: int, msg: str = ""):
+            def test_started(self, class_name: str, test_name: str):
                 pass
 
-            def test_ended(self, test_name: str, test_class: str, test_no: int, duration: float, msg: str = ""):
+            def test_ended(self, class_name: str, test_name: str, **kwargs):
                 pass
 
         was_called = False

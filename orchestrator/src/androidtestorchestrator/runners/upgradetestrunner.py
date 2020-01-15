@@ -51,19 +51,18 @@ class UpgradeTestRunner(object):
         for apk in self._upgrade_apks:
             package, version = apk_info(apk)
             if not package:
-                self._upgrade_reporter.test_assumption_violated("Upgrade setup", "UpgradeTestRunner", 1,
-                                                                f"APK package name or version was unable to be parsed")
-                raise UpgradeTestException(f"APK package was unable to be parsed")
+                e = UpgradeTestException("APK package was unable to be parsed")
+                self._upgrade_reporter.test_assumption_failure("UpgradeTestRunner", "Upgrade setup", str(e))
+                raise e
             if not version:
-                self._upgrade_reporter.test_assumption_violated("Upgrade setup", "UpgradeTestRunner", 1,
-                                                                f"APK version was unable to be parsed")
-                raise UpgradeTestException(f"APK version was unable to be parsed")
+                e = UpgradeTestException("APK version was unable to be parsed")
+                self._upgrade_reporter.test_assumption_failure("UpgradeTestRunner", "Upgrade setup", str(e))
+                raise e
             if package in seen_apks and version in seen_apks[package]:
-                self._upgrade_reporter.test_assumption_violated("Upgrade setup", "UpgradeTestRunner", 1,
-                                                                f"APK with package: {package} with version: {version} "
-                                                                f"already found in upgrade apk list.")
-                raise UpgradeTestException(f"APK with package: {package} with version: {version} already found in "
-                                           f"upgrade apk list.")
+                e = UpgradeTestException(f"APK with package: {package} with version: {version} already found in "
+                                         f"upgrade apk list.")
+                self._upgrade_reporter.test_assumption_failure("UpgradeTestRunner", "Upgrade setup", str(e))
+                raise e
             seen_apks[package].append(version)
 
     def execute(self) -> None:
@@ -76,29 +75,24 @@ class UpgradeTestRunner(object):
                                                 self._upgrade_test.test_upgrade_to_target,
                                                 self._upgrade_test.test_uninstall_upgrade,
                                                 self._upgrade_test.test_uninstall_base]
-        self._upgrade_reporter.test_suite_started(test_suite_name="UpgradeTest")
+        self._upgrade_reporter.test_run_started(test_run_name="UpgradeTest")
         for upgrade_apk in self._upgrade_apks:
             for i, test in enumerate(test_suite):
-                self._upgrade_reporter.test_started(test_name=test.__name__, test_class=test.__class__.__name__,
-                                                    test_no=i)
+                self._upgrade_reporter.test_started(class_name=test.__class__.__name__, test_name=test.__name__)
                 try:
                     if "upgrade_apk" in inspect.signature(test).parameters.keys():
                         test(upgrade_apk)
                     else:
                         test()
                 except UpgradeTestException as e:
-                    self._upgrade_reporter.test_failed(test_name=test.__name__, test_class=test.__class__.__name__,
-                                                       test_no=i, stack=str(e))
-                    # TODO: Need to add in a constants file or something similar to map status_code to specific error
-                    self._upgrade_reporter.test_suite_errored(test_suite_name="UpgradeTest", status_code=999,
-                                                              exc_message=str(e))
+                    self._upgrade_reporter.test_run_failed(str(e))
                 finally:
                     # TODO: Look into removing requirement for duration, or add default value to interface
                     # since TestRunResult class explicitly keeps track of this elsewhere
-                    self._upgrade_reporter.test_ended(test_name=test.__name__, test_class=test.__class__.__name__,
-                                                      test_no=i, duration=-1.0)
+                    self._upgrade_reporter.test_ended(class_name=test.__class__.__name__,
+                                                      test_name=test.__name__)
         # TODO: What is the test_count useful for here? Need to look into this more
-        self._upgrade_reporter.test_suite_ended(test_suite_name="UpgradeTest", test_count=0)
+        self._upgrade_reporter.test_run_ended()
 
     def teardown(self) -> None:
         """
