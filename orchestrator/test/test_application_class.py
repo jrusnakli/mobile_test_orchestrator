@@ -10,11 +10,24 @@ import time
 from unittest.mock import patch, PropertyMock
 
 import pytest
+from apk_bitminer.parsing import AXMLParser
 
 from androidtestorchestrator import Device
 from androidtestorchestrator.application import Application, TestApplication
 from .support import uninstall_apk
 
+class MockAXMLParser(AXMLParser):
+
+    def __init__(self):
+        pass
+
+    @property
+    def permissions(self):
+        return []
+
+    @property
+    def package_name(self):
+        return
 
 # noinspection PyShadowingNames
 class TestApplicationClass:
@@ -113,7 +126,8 @@ class TestApplicationClass:
 
     def test_app_uninstall_logs_error(self, device: Device):
         with patch("androidtestorchestrator.application.log") as mock_logger:
-            app = Application(package_name="com.android.providers.calendar", device=device)
+            app = Application(manifest={'package_name': "com.android.providers.calendar",
+                                        'permissions': [ "android.permission.WRITE_EXTERNAL_STORAGE"]}, device=device)
             app.uninstall()
             assert mock_logger.error.called
 

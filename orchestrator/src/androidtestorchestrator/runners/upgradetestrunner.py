@@ -118,7 +118,7 @@ class UpgradeTest(object):
     def test_uninstall_base(self) -> None:
         if self._package_name not in self._device.list_installed_packages():
             return
-        app = Application(self._package_name, self._device)
+        app = Application(self._device, {'package_name': self._package_name})
         app.uninstall()
         if self._package_name in self._device.list_installed_packages():
             raise UpgradeTestException(f"Uninstall base package {self._package_name} failed")
@@ -156,7 +156,7 @@ class UpgradeTest(object):
         package = AXMLParser.parse(upgrade_apk).package_name
         if package not in self._device.list_installed_packages():
             return
-        app = Application(package, self._device)
+        app = Application(self._device, {'package_name': package})
         app.stop()
         app.uninstall()
         if package in self._device.list_installed_packages():
