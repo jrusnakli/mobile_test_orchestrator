@@ -1,9 +1,15 @@
+import os
+from contextlib import suppress
+
 import pytest
+from apk_bitminer.parsing import AXMLParser
 
 from androidtestorchestrator import AndroidTestOrchestrator, TestApplication, TestSuite
+from androidtestorchestrator.application import Application
 from androidtestorchestrator.device import Device
 from androidtestorchestrator.parsing import LineParser
 from androidtestorchestrator.reporting import TestListener
+from androidtestorchestrator.testing import EspressoTestPreparation
 from ..support import uninstall_apk
 
 
@@ -126,9 +132,15 @@ class TestAndroidTestOrchestrator(object):
 
     def test_add_background_task(self,
                                  device: Device,
-                                 android_test_app : TestApplication,
+                                 support_app : str,
+                                 support_test_app: str,
                                  tmpdir: str):
-        uninstall_apk(android_test_app, device)
+        # ensure applications are not already installed as precursor to running tests
+        parser = AXMLParser.parse(support_app)
+        with suppress(Exception):
+            Application(device, {'package_name': support_app}).uninstall()
+        with suppress(Exception):
+            Application(device, {'package_name': support_test_app}).uninstall()
 
         def test_generator():
             yield (TestSuite(name='test_suite1',
@@ -173,10 +185,21 @@ class TestAndroidTestOrchestrator(object):
             with pytest.raises(Exception):
                 orchestrator.add_logcat_monitor("BogusTag", None)
 
-        with AndroidTestOrchestrator(artifact_dir=str(tmpdir)) as orchestrator:
+        test_vectors = os.path.join(str(tmpdir), "test_vectors")
+        os.makedirs(test_vectors)
+        with open(os.path.join(test_vectors, "file"), 'w') as f:
+            f.write("TEST VECTOR DATA")
+
+        with AndroidTestOrchestrator(artifact_dir=str(tmpdir)) as orchestrator, \
+                EspressoTestPreparation(device=device,
+                                        path_to_apk=support_app,
+                                        path_to_test_apk=support_test_app,
+                                        grant_all_user_permissions=True) as test_prep:
+            test_prep.verify_network_connection("localhost", 4)
+            test_prep.upload_test_vectors(test_vectors)
             orchestrator.add_background_task(some_task(orchestrator))
             orchestrator.execute_test_plan(test_plan=test_generator(),
-                                           test_application=android_test_app,
+                                           test_application=test_prep.test_app,
                                            test_listener=EmptyListner())
         assert was_called, "Failed to call user-define background task"
 
@@ -198,3 +221,18 @@ class TestAndroidTestOrchestrator(object):
             # individual test time greater than overall timeout for suite
             with AndroidTestOrchestrator(artifact_dir=__file__):
                 pass
+
+    def test_foreign_apk_install(self, device: Device, support_app: str, support_test_app: str):
+        with EspressoTestPreparation(device=device, path_to_test_apk=support_test_app, path_to_apk=support_app ) as prep:
+            now = device.get_device_setting("system", "dim_screen")
+            new = {"1": "0", "0": "1"}[now]
+            prep.test_app.uninstall()
+            assert prep.test_app.package_name not in device.list_installed_packages()
+            prep.setup_device(paths_to_foreign_apks=[support_test_app])
+            assert prep.test_app.package_name in device.list_installed_packages()
+            device.set_system_property("debug.mock2", "\"\"\"\"")
+            prep.configure_device(settings={'system:dim_screen': new},
+                                  properties={"debug.mock2": "5555"})
+
+            assert device.get_system_property("debug.mock2") == "5555"
+            assert device.get_device_setting("system", "dim_screen") == new
