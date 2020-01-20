@@ -271,7 +271,7 @@ class Device(object):
             raise self.CommandExecutionFailureException(completed.returncode,
                                                         f"Failed to execute '{' '.join(args)}' on device {self.device_id} [{completed.stderr}]")
 
-        return completed.stdout  # type: ignore
+        return completed.stdout
 
     def execute_remote_cmd_background(self, *args: str, stdout: Union[None, int, IO[AnyStr]] = subprocess.PIPE,
                                       **kwargs: Any) -> subprocess.Popen:

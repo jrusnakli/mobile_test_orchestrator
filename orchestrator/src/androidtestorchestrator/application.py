@@ -43,8 +43,8 @@ class Application(RemoteDeviceBased):
         """
         super().__init__(device)
         self._version: Optional[str] = None  # loaded on-demand first time self.version called
-        self._package_name = manifest.package_name if isinstance(manifest, AXMLParser) else manifest["package_name"]
-        self._permissions = manifest.permissions if isinstance(manifest, AXMLParser) else manifest.get("permissions", [])
+        self._package_name: str = manifest.package_name if isinstance(manifest, AXMLParser) else manifest["package_name"]
+        self._permissions: List[str] = manifest.permissions if isinstance(manifest, AXMLParser) else manifest.get("permissions", [])
 
     @property
     def package_name(self) -> str:
@@ -54,7 +54,7 @@ class Application(RemoteDeviceBased):
         return self._package_name
 
     @property
-    def permissions(self):
+    def permissions(self) -> List[str]:
         return self._permissions
 
     @property
@@ -136,7 +136,7 @@ class Application(RemoteDeviceBased):
             if self.package_name in self.device.list_installed_packages():
                 log.error(f"Failed to uninstall app {self.package_name} [{str(e)}]")
 
-    def grant_permissions(self, permissions: List[str] = None) -> List[str]:
+    def grant_permissions(self, permissions: Optional[List[str]] = None) -> List[str]:
         """
         Grant permissions for a package on a device
 
@@ -303,13 +303,13 @@ class TestApplication(Application):
         :param device: which device app resides on
         :param runner: runner to use when running tests
         """
-        super(TestApplication, self).__init__( device=device, manifest=manifest)
+        super(TestApplication, self).__init__(device=device, manifest=manifest)
         valid = (hasattr(manifest, "instrumentation") and (manifest.instrumentation is not None) and
                  bool(manifest.instrumentation.target_package) and bool(manifest.instrumentation.runner))
         if not valid:
             raise Exception("Test application's manifest does not specify proper instrumentation element."
                             "Are you sure this is a test app")
-        self._runner = manifest.instrumentation.runner
+        self._runner: str = manifest.instrumentation.runner
         self._target_application = Application(device, manifest={'package_name': manifest.instrumentation.target_package})
         self._permissions = manifest.permissions
 

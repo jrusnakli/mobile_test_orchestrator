@@ -1,14 +1,12 @@
-from typing import Dict, List
-
 import os
 import logging
-
 import time
 
-log = logging.getLogger()
-
+from typing import Dict, List
 from androidtestorchestrator import Device, DeviceStorage
 from androidtestorchestrator.application import Application, TestApplication
+
+log = logging.getLogger()
 
 
 class EspressoTestPreparation:
@@ -49,7 +47,7 @@ class EspressoTestPreparation:
                 self._device.set_system_property(property, value)
 
     def setup_device(self, paths_to_foreign_apks: List[str]) -> None:
-         for path in paths_to_foreign_apks:
+        for path in paths_to_foreign_apks:
             self._installed.append(Application.from_apk(path, device=self._device))
 
     def upload_test_vectors(self, root_path: str) -> int:
@@ -62,7 +60,7 @@ class EspressoTestPreparation:
         start = time.time()
         for root, dir_, files in os.walk(root_path, topdown=True):
             if not os.path.isdir(root_path):
-                raise IOError(f"Given path {path} to upload to device does exist or is not a directory")
+                raise IOError(f"Given path {root_path} to upload to device does exist or is not a directory")
             ext_storage = self._device.external_storage_location
             basedir = os.path.relpath(root, root_path)
             for filename in files:
