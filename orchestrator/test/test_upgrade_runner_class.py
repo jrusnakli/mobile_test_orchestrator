@@ -1,3 +1,6 @@
+import shutil
+from contextlib import suppress
+
 import pytest
 
 from androidtestorchestrator import Device
@@ -20,6 +23,8 @@ class TestUpgradeRunner:
         utr.setup()
 
     def test_execution(self, device: Device, support_app: str):
+        with suppress(Exception):
+            shutil.rmtree("screenshots")
         utr = UpgradeTestRunner(device, support_app, [support_app], reporter)
         utr.execute()
         assert reporter.is_complete
