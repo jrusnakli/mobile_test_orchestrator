@@ -7,7 +7,7 @@ from types import TracebackType
 
 import psutil  # type: ignore
 from contextlib import suppress
-from typing import AsyncContextManager, Dict, Tuple, Optional, TextIO, Type, AsyncIterator, AnyStr, Generic
+from typing import AsyncContextManager, Dict, Tuple, Optional, TextIO, Type, AsyncIterator
 
 from .timing import StopWatch
 from .parsing import LineParser
