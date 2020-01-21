@@ -274,7 +274,7 @@ class Device(object):
         return completed.stdout
 
     def execute_remote_cmd_background(self, *args: str, stdout: Union[None, int, IO[AnyStr]] = subprocess.PIPE,
-                                      **kwargs: Any) -> subprocess.Popen:
+                                      **kwargs: Any) -> subprocess.Popen[AnyStr]:
         """
         Run the given command args in the background.
 
