@@ -270,8 +270,8 @@ class Device(object):
         if fail_on_error_code(completed.returncode) or (fail_on_presence_of_stderr and completed.stderr):
             raise self.CommandExecutionFailureException(completed.returncode,
                                                         f"Failed to execute '{' '.join(args)}' on device {self.device_id} [{completed.stderr}]")
-
-        return completed.stdout
+        ret: str = completed.stdout
+        return ret
 
     def execute_remote_cmd_background(self, *args: str, stdout: Union[None, int, IO[AnyStr]] = subprocess.PIPE,
                                       **kwargs: Any) -> subprocess.Popen:  # noqa
