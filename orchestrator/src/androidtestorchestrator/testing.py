@@ -2,7 +2,8 @@ import os
 import logging
 import time
 
-from typing import Dict, List
+from typing import Dict, List, Optional, Type
+from types import TracebackType
 from androidtestorchestrator import Device, DeviceStorage
 from androidtestorchestrator.application import Application, TestApplication
 
@@ -29,15 +30,16 @@ class EspressoTestPreparation:
         app = Application.from_apk(path_to_apk, device=self._device)
         self._test_app: TestApplication = TestApplication.from_apk(path_to_test_apk, device=self._device)
         self._installed = [app, self._test_app]
-        self._data_files = []
+        self._data_files: List[str] = []
         if grant_all_user_permissions:
             self._test_app.grant_permissions()
 
     @property
-    def test_app(self):
+    def test_app(self) -> TestApplication:
         return self._test_app
 
-    def configure_device(self, settings: Dict[str, str] = None, properties: Dict[str, str] = None) -> None:
+    def configure_device(self, settings: Optional[Dict[str, str]] = None,
+                         properties: Optional[Dict[str, str]] = None) -> None:
         if settings:
             for setting, value in settings.items():
                 ns, key = setting.split(':')
@@ -50,7 +52,7 @@ class EspressoTestPreparation:
         for path in paths_to_foreign_apks:
             self._installed.append(Application.from_apk(path, device=self._device))
 
-    def upload_test_vectors(self, root_path: str) -> int:
+    def upload_test_vectors(self, root_path: str) -> float:
         """
         upload test vectors to external storage on device for use by tests
         :param root_path: local path that is the root where data files reside;  directory structure will be mimiced below
@@ -98,5 +100,7 @@ class EspressoTestPreparation:
     def __enter__(self) -> "EspressoTestPreparation":
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+    def __exit__(self, exc_type: Optional[Type[BaseException]],
+                 exc_value: Optional[BaseException],
+                 traceback: Optional[TracebackType]) -> None:
         self.cleanup()

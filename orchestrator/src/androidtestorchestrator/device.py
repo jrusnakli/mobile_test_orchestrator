@@ -326,10 +326,10 @@ class Device(object):
         # to do the heavy lifting, but they provide a clean external-facing interface to perform those functions).
         cmd = self.formulate_adb_cmd(*args)
         print(f"Executing: {' '.join(cmd)}")
-        proc = await asyncio.subprocess.create_subprocess_exec(*cmd,  # type: ignore
+        proc = await asyncio.subprocess.create_subprocess_exec(*cmd,
                                                                stdout=asyncio.subprocess.PIPE,
                                                                stderr=asyncio.subprocess.PIPE,
-                                                               loop=loop,  # noqa
+                                                               loop=loop or asyncio.events.get_event_loop(),
                                                                bufsize=0)  # noqa
 
         class LineGenerator:
