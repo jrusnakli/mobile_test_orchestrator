@@ -35,7 +35,7 @@ class DeviceLog(RemoteDeviceBased):
             """
             super(DeviceLog.LogCapture, self).__init__(device)
             self._markers: Dict[str, int] = {}
-            self._proc: Optional[Popen[str]] = None
+            self._proc: Optional[Popen] = None
             if os.path.exists(output_path):
                 raise Exception(f"Path {output_path} already exists; will not overwrite")
             self._output_file: TextIO = open(output_path, 'w')
