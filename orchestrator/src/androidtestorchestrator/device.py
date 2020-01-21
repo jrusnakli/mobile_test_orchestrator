@@ -9,7 +9,7 @@ from asyncio import AbstractEventLoop
 from contextlib import suppress, asynccontextmanager
 from types import TracebackType
 from typing import List, Tuple, Dict, Optional, AsyncContextManager, Union, Callable, IO, Any, AsyncIterator, Type, \
-    AnyStr, no_type_check
+    AnyStr
 
 from apk_bitminer.parsing import AXMLParser  # type: ignore
 
@@ -274,7 +274,7 @@ class Device(object):
         return completed.stdout
 
     def execute_remote_cmd_background(self, *args: str, stdout: Union[None, int, IO[AnyStr]] = subprocess.PIPE,
-                                      **kwargs: Any) -> subprocess.Popen:  # type: ignore
+                                      **kwargs: Any) -> subprocess.Popen:
         """
         Run the given command args in the background.
 
@@ -295,7 +295,6 @@ class Device(object):
                                 stderr=subprocess.PIPE,
                                 **kwargs)
 
-    @no_type_check
     async def execute_remote_cmd_async(self, *args: str, unresponsive_timeout: Optional[float] = None,
                                        proc_completion_timeout: Optional[float] = 0.0,
                                        loop: Optional[AbstractEventLoop] = None
@@ -330,7 +329,7 @@ class Device(object):
         proc = await asyncio.subprocess.create_subprocess_exec(*cmd,
                                                                stdout=asyncio.subprocess.PIPE,
                                                                stderr=asyncio.subprocess.PIPE,
-                                                               loop=loop,
+                                                               loop=loop or asyncio.events.get_event_loop(),
                                                                bufsize=0)  # noqa
 
         class LineGenerator:
