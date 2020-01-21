@@ -4,5 +4,5 @@ pytest
 pytest-html
 pytest-cov
 pytest-asyncio
-mypy
+mypy==0.720
 flake8
