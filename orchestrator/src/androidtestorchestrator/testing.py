@@ -3,7 +3,7 @@ import logging
 import time
 from contextlib import suppress
 
-from typing import Dict, List, Optional, Type
+from typing import Dict, List, Optional, Type, Tuple
 from types import TracebackType
 from androidtestorchestrator import Device, DeviceStorage
 from androidtestorchestrator.application import Application, TestApplication
@@ -43,8 +43,8 @@ class EspressoTestPreparation:
         self._data_files: List[str] = []
         if grant_all_user_permissions:
             self._test_app.grant_permissions()
-        self._restoration_settings = {}
-        self._restoration_properties = {}
+        self._restoration_settings: Dict[Tuple[str, str], Optional[str]] = {}
+        self._restoration_properties: Dict[str, Optional[str]] = {}
 
     @property
     def test_app(self) -> TestApplication:
