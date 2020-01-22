@@ -33,8 +33,9 @@ class Application(RemoteDeviceBased):
         Create an instance of a remote app and the interface to manipulate it.
         It is recommended to create instances via the class-method `install`:
 
-        :param mainfest: AXMLParser instance representing manifest from an apk, or Dict of key/value string pairs of
-           package name and permissions for app
+        :param manifest: AXMLParser instance representing manifest from an apk, or Dict of key/value string pairs of
+           package name and permissions for app;  if Dict, the dictionary MUST contain "package_name" as a key, and
+           optionally contain "permissions" as a key (otherwise assumed to be empty)
         :param device: which device app resides on
 
         >>> device = Device("some_serial_id", "/path/to/adb")
@@ -43,7 +44,9 @@ class Application(RemoteDeviceBased):
         """
         super().__init__(device)
         self._version: Optional[str] = None  # loaded on-demand first time self.version called
-        self._package_name: str = manifest.package_name if isinstance(manifest, AXMLParser) else manifest["package_name"]
+        self._package_name: str = manifest.package_name if isinstance(manifest, AXMLParser) else manifest.get("package_name", None)
+        if self._package_name is None:
+            raise ValueError("manifest argument as dictionary must contain \"package_name\" as key")
         self._permissions: List[str] = manifest.permissions if isinstance(manifest, AXMLParser) else manifest.get("permissions", [])
 
     @property
