@@ -109,9 +109,9 @@ class EspressoTestPreparation:
                 self._storage.remove(remote_path)
             except Exception:
                 log.error(f"Failed to remove remote file {remote_path} from device {self._device.device_id}")
-        for ns,key in self._restoration_settings:
+        for ns, key in self._restoration_settings:
             with suppress(Exception):
-                self._device.set_device_setting(ns, key, self._restoration_settings[(ns,key)] or '\"\"')
+                self._device.set_device_setting(ns, key, self._restoration_settings[(ns, key)] or '\"\"')
         for prop in self._restoration_properties:
             with suppress(Exception):
                 self._device.set_system_property(prop, self._restoration_properties[prop] or '\"\"')
