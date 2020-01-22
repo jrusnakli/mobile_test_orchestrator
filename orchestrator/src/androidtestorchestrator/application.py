@@ -4,7 +4,7 @@ import time
 from asyncio import AbstractEventLoop
 
 from apk_bitminer.parsing import AXMLParser  # type: ignore
-from typing import List, TypeVar, Type, Optional, AsyncContextManager, AsyncIterator, no_type_check
+from typing import List, TypeVar, Type, Optional, AsyncContextManager, AsyncIterator, Dict, Union
 
 from .device import Device, RemoteDeviceBased
 
@@ -28,21 +28,26 @@ class Application(RemoteDeviceBased):
 
     SLEEP_GRANT_PERMISSION = 4
 
-    def __init__(self, package_name: str, device: Device):
+    def __init__(self, device: Device, manifest: Union[AXMLParser, Dict[str, str]]):
         """
         Create an instance of a remote app and the interface to manipulate it.
         It is recommended to create instances via the class-method `install`:
 
-        :param package_name: package name of app
+        :param manifest: AXMLParser instance representing manifest from an apk, or Dict of key/value string pairs of
+           package name and permissions for app;  if Dict, the dictionary MUST contain "package_name" as a key, and
+           optionally contain "permissions" as a key (otherwise assumed to be empty)
         :param device: which device app resides on
 
         >>> device = Device("some_serial_id", "/path/to/adb")
         >>> app = asyncio.wait(Application.from_apk_async("some.apk", device))
         >>> app.grant_permissions(["android.permission.WRITE_EXTERNAL_STORAGE"])
         """
-        super(Application, self).__init__(device)
-        self._package_name = package_name
+        super().__init__(device)
         self._version: Optional[str] = None  # loaded on-demand first time self.version called
+        self._package_name: str = manifest.package_name if isinstance(manifest, AXMLParser) else manifest.get("package_name", None)
+        if self._package_name is None:
+            raise ValueError("manifest argument as dictionary must contain \"package_name\" as key")
+        self._permissions: List[str] = manifest.permissions if isinstance(manifest, AXMLParser) else manifest.get("permissions", [])
 
     @property
     def package_name(self) -> str:
@@ -50,6 +55,10 @@ class Application(RemoteDeviceBased):
         :return: Android package name associated with this app
         """
         return self._package_name
+
+    @property
+    def permissions(self) -> List[str]:
+        return self._permissions
 
     @property
     def version(self) -> Optional[str]:
@@ -95,9 +104,8 @@ class Application(RemoteDeviceBased):
 
         """
         parser = AXMLParser.parse(apk_path)
-        package = parser.package_name
         await device.install(apk_path, as_upgrade)
-        return cls(package, device)
+        return cls(device, parser)
 
     @classmethod
     def from_apk(cls: Type[_TApp], apk_path: str, device: Device, as_upgrade: bool = False) -> _TApp:
@@ -115,9 +123,8 @@ class Application(RemoteDeviceBased):
         >>> app = Application.from_apk("/local/path/to/apk", device, as_upgrade=True)
         """
         parser = AXMLParser.parse(apk_path)
-        package = parser.package_name
         device.install_synchronous(apk_path, as_upgrade)
-        return cls(package, device)
+        return cls(device, parser)
 
     def uninstall(self) -> None:
         """
@@ -132,15 +139,17 @@ class Application(RemoteDeviceBased):
             if self.package_name in self.device.list_installed_packages():
                 log.error(f"Failed to uninstall app {self.package_name} [{str(e)}]")
 
-    def grant_permissions(self, permissions: List[str]) -> List[str]:
+    def grant_permissions(self, permissions: Optional[List[str]] = None) -> List[str]:
         """
         Grant permissions for a package on a device
 
-        :param permissions: string list of Android permissions to be granted
+        :param permissions: string list of Android permissions to be granted, or None to grant app's defined
+           user permissions
 
         :return: the list of permissions successfully granted
         """
         succeeded = []
+        permissions = permissions or self.permissions
         # workaround for xiaomi:
         if 'xiaomi' in self.device.model.lower():
             # gives initial time for UI to appear, otherwise can bring up wrong window and block tests
@@ -284,22 +293,28 @@ class TestApplication(Application):
     Class representing an Android test application installed on a remote device
     """
 
-    def __init__(self, package_name: str, device: Device, target_package: str, runner: str):
+    def __init__(self, device: Device, manifest: AXMLParser):
         """
         Create an instance of a remote test app and the interface to manipulate it.
         It is recommended to  create instances via the class-method `install`:
 
         >>> device = Device("some_serial_id", "/path/to/adb")
-        >>> test_app = TestApplication.install("some.apk", device)
+        >>> test_app = TestApplication.from_apk("some.apk", device)
         >>> test_app.run()
 
         :param package_name: package name of app
         :param device: which device app resides on
         :param runner: runner to use when running tests
         """
-        super(TestApplication, self).__init__(package_name, device)
-        self._runner = runner
-        self._target_application = Application(target_package, device)
+        super(TestApplication, self).__init__(device=device, manifest=manifest)
+        valid = (hasattr(manifest, "instrumentation") and (manifest.instrumentation is not None) and
+                 bool(manifest.instrumentation.target_package) and bool(manifest.instrumentation.runner))
+        if not valid:
+            raise Exception("Test application's manifest does not specify proper instrumentation element."
+                            "Are you sure this is a test app")
+        self._runner: str = manifest.instrumentation.runner
+        self._target_application = Application(device, manifest={'package_name': manifest.instrumentation.target_package})
+        self._permissions = manifest.permissions
 
     @property
     def target_application(self) -> Application:
@@ -327,7 +342,6 @@ class TestApplication(Application):
                 items.append(runner)
         return items
 
-    @no_type_check
     async def run(self, *options: str, loop: Optional[AbstractEventLoop] = None,
                   unresponsive_timeout: Optional[float] = None, max_test_time: Optional[float] = None
                   ) -> AsyncContextManager[AsyncIterator[str]]:
@@ -375,15 +389,8 @@ class TestApplication(Application):
         >>> application = await Application.from_apk_async("local/path/to/apk", device)
         """
         parser = AXMLParser.parse(apk_path)
-        # The manifest of the package should contain an instrumentation section, if not, it is not
-        # a test apk:
-        valid = (hasattr(parser, "instrumentation") and (parser.instrumentation is not None) and
-                 bool(parser.instrumentation.target_package) and bool(parser.instrumentation.runner))
-        if not valid:
-            raise Exception("Test application's manifest does not specify proper instrumentation element."
-                            "Are you sure this is a test app")
         await device.install(apk_path, as_upgrade, parser.package_name)
-        return cls(parser.package_name, device, parser.instrumentation.target_package, parser.instrumentation.runner)
+        return cls(device, parser)
 
     @classmethod
     def from_apk(cls: Type[_TTestApp], apk_path: str, device: Device, as_upgrade: bool = False) -> _TTestApp:
@@ -399,12 +406,5 @@ class TestApplication(Application):
         >>> test_application = Application.from_apk("/local/path/to/apk", device, as_upgrade=True)
         """
         parser = AXMLParser.parse(apk_path)
-        # The manifest of the package should contain an instrumentation section, if not, it is not
-        # a test apk:
-        valid = (hasattr(parser, "instrumentation") and (parser.instrumentation is not None) and
-                 bool(parser.instrumentation.target_package) and bool(parser.instrumentation.runner))
-        if not valid:
-            raise Exception("Test application's manifest does not specify proper instrumentation element."
-                            "Are you sure this is a test app?")
         device.install_synchronous(apk_path, as_upgrade)
-        return cls(parser.package_name, device, parser.instrumentation.target_package, parser.instrumentation.runner)
+        return cls(device, parser)
