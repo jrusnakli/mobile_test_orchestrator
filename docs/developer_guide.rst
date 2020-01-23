@@ -10,7 +10,7 @@ Introduction
 
 This is the developer guide for AndroidTestOrchestrator.  There are three main tasks to cover:
 
-#. Capturing logcat to a file as well as capturin key starting/end point within the file
+#. Capturing logcat to a file as well as capturing key starting/end point within the file
 #. Parsing specific tags from logcat for processing
 
 Test Execution
