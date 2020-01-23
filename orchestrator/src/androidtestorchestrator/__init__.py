@@ -109,26 +109,27 @@ class AndroidTestOrchestrator:
     >>> device = Device("device_serial_id")
     ... test_application = TestApplication("/some/test.apk", device)
     ... class Listener(TestRunListener):
-    ...     def test_ended(self, test_name: str, test_class: str, test_no: int, duartion: float, msg: str = ""):
+    ...     def test_ended(self, class_name: str, test_name: str, **kwargs) -> None:
     ...         print("Test %s passed" % test_name)
     ...
-    ...     def test_failed(self, test_name: str, test_class: str, test_no: int, stack: str, msg: str = ""):
+    ...     def test_failed(self, class_name: str, test_name: str, stack_trace: str) -> None:
     ...         print("Test %s failed" % test_name)
     ...
-    ...     def test_ignored(self, test_name: str, test_class: str, test_no: int, msg: str = ""):
-    ...         print("Test %s skipped" % test_name)
+    ...     def test_ignored(self, class_name: str, test_name: str) -> None:
+    ...         print("Test %s ignored" % test_name)
     ...
-    ...     def test_assumption_violated(self, test_name: str, test_class: str, test_no: int, reason: str):
-    ...         print("Test %s skipped" % test_name)
+    ...     def test_assumption_failure(self, class_name: str, test_name: str, stack_trace: str) -> None:
+    ...         print("Test assumption failed, %s skipped" % test_name)
     ...
-    ...     def test_suite_started(self, test_suite_name:str):
-    ...         print("Test execution started: " + test_suite_name)
+    ...     def test_run_started(self, test_run_name: str, count: int = 0) -> None:
+    ...         print("Test execution started: " + test_run_name)
     ...
-    ...     def test_suite_ended(self, test_suite_name: str, test_count: int):
-    ...         print("Test execution ended: " + test_suite_name)
+    ...     def test_run_ended(self, duration: float = -1.0, **kwargs) -> None:
+    ...         print("Test execution ended")
     ...
-    ...     def test_suite_errored(self, test_suite_name: str, status_code: int):
-    ...         print("Test execution of %s errored with status code: %d" % (test_suite_name, status_code))
+    ...     def test_run_failed(self, error_message: str) -> None:
+    ...         print("Test execution failed with error message: %s" % error_message)
+    ...
     ...
     ... with AndroidTestOrchestrator(device_id="<some device/emulator id>", artifact_dir=".") as orchestrator:
     ...
