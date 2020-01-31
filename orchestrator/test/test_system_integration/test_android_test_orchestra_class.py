@@ -223,7 +223,7 @@ class TestAndroidTestOrchestrator(object):
             new = {"1": "0", "0": "1"}[now]
             prep.test_app.uninstall()
             assert prep.test_app.package_name not in device.list_installed_packages()
-            prep.setup_device(paths_to_foreign_apks=[support_test_app])
+            prep.setup_foreign_apps(paths_to_foreign_apks=[support_test_app])
             assert prep.test_app.package_name in device.list_installed_packages()
             device.set_system_property("debug.mock2", "\"\"\"\"")
             prep.configure_device(settings={'system:dim_screen': new},
