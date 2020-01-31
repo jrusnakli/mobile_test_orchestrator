@@ -33,7 +33,6 @@ class DevicePreparation:
         self._restoration_settings: Dict[Tuple[str, str], Optional[str]] = {}
         self._restoration_properties: Dict[str, Optional[str]] = {}
 
-
     def configure_device(self, settings: Optional[Dict[str, str]] = None,
                          properties: Optional[Dict[str, str]] = None) -> None:
         if settings:
@@ -135,7 +134,6 @@ class EspressoTestPreparation(DevicePreparation):
     @property
     def test_app(self) -> TestApplication:
         return self._test_app
-
 
     def setup_foreign_apps(self, paths_to_foreign_apks: List[str]) -> None:
         """
