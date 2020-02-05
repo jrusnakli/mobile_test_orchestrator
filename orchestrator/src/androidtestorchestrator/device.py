@@ -29,6 +29,7 @@ class Device(object):
     # to the user. We keep a list of them so we know which ones to disregard when trying to retrieve the actual
     # foreground application the user is interacting with.
     SILENT_RUNNING_PACKAGES = ["com.samsung.android.mtpapplication", "com.wssyncmldm", "com.bitbar.testdroid.monitor"]
+    SCREEN_UNLOCK_BLACKLIST = {"MI 4LTE"}
 
     class InsufficientStorageError(Exception):
         """
@@ -803,6 +804,39 @@ class Device(object):
         """
         ignored = self.SILENT_RUNNING_PACKAGES if ignore_silent_apps else []
         return self._activity_stack_top(filter=lambda x: x.lower() not in ignored)
+
+    def is_screen_on(self) -> bool:
+        """
+        :return: whether device's screen is on
+        """
+        screen_on = True
+        lines = self.execute_remote_cmd("shell", "dumpsys", "activity", "activities", timeout=10).splitlines()
+        for msg in lines:
+            if 'mInteractive=false' in msg or 'mScreenOn=false' in msg or 'isSleeping=true' in msg:
+                screen_on = False
+                break
+        return screen_on
+
+    def toggle_screen_on(self) -> None:
+        """
+        Toggle device's screen on/off
+        """
+        self.execute_remote_cmd("shell", "input", "keyevent", "KEYCODE_POWER", timeout=10)
+
+    def get_activity_stack(self) -> List[str]:
+        output = self.execute_remote_cmd("shell", "dumpsys", "activity", "activities", timeout=10)
+        activity_list = []
+        # Find lines that look like this:
+        #   * TaskRecord{133fbae #1340 I=com.google.android.apps.nexuslauncher/.NexusLauncherActivity U=0 StackId=0 sz=1}
+        # or
+        #   * TaskRecord{94c8098 #1791 A=com.android.chrome U=0 StackId=454 sz=1}
+        app_record_pattern = re.compile(r'^\* TaskRecord\{[a-f0-9-]* #\d* [AI]=(com\.[a-zA-Z0-9.]*)[ /].*')
+        for line in output.splitlines():
+            matches = app_record_pattern.match(line.strip())
+            if matches:
+                app_package = matches.group(1)
+                activity_list.append(app_package)
+        return activity_list
 
 
 class RemoteDeviceBased(object):

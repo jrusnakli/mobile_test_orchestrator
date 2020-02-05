@@ -10,6 +10,7 @@ from pathlib import Path
 from unittest.mock import patch, PropertyMock
 
 import pytest
+import time
 
 from androidtestorchestrator.application import Application, TestApplication, ServiceApplication
 from androidtestorchestrator.device import Device
@@ -209,3 +210,10 @@ class TestAndroidDevice:
             device._verify_install("fake/app/path", "com.linkedin.fake.app")
         assert "Failed to verify installation of app 'com.linkedin.fake.app'" in str(excinfo.value)
         assert (in_tmp_dir / "install_failure-com.linkedin.fake.app.png").is_file()
+
+    def test_is_screen_on(self, device: Device):
+        is_screen_on = device.is_screen_on()
+        device.toggle_screen_on()
+        time.sleep(3)
+        new_is_screen_on = device.is_screen_on()
+        assert is_screen_on != new_is_screen_on

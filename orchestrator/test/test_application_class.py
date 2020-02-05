@@ -171,3 +171,11 @@ class TestApplicationClass:
                 assert device.foreground_activity() == app.package_name
                 # clean_kill doesn't return anything, so just make sure no exception is raised
                 app.clean_kill()
+
+    def test_start_stop(self, install_app, support_app: str):  # noqa
+        app: Application = install_app(Application, support_app)
+        app.start(".MainActivity")
+        time.sleep(3)  # Have to give time to "come up" :-(
+        assert app.in_foreground()
+        app.stop(force=True)
+        assert not app.in_foreground()
