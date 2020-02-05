@@ -172,7 +172,7 @@ class TestApplicationClass:
                 # clean_kill doesn't return anything, so just make sure no exception is raised
                 app.clean_kill()
 
-    def test_start_stop(self, install_app, support_app: str):  # noqa
+    def test_app_in_forgreound_check(self, install_app, support_app: str):  # noqa
         app: Application = install_app(Application, support_app)
         app.start(".MainActivity")
         time.sleep(3)  # Have to give time to "come up" :-(
