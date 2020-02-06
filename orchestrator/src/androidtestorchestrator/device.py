@@ -809,13 +809,11 @@ class Device(object):
         """
         :return: whether device's screen is on
         """
-        screen_on = True
         lines = self.execute_remote_cmd("shell", "dumpsys", "activity", "activities", timeout=10).splitlines()
         for msg in lines:
             if 'mInteractive=false' in msg or 'mScreenOn=false' in msg or 'isSleeping=true' in msg:
-                screen_on = False
-                break
-        return screen_on
+                return False
+        return True
 
     def toggle_screen_on(self) -> None:
         """

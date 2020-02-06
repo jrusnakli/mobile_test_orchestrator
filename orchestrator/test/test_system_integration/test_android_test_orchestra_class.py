@@ -1,5 +1,6 @@
 import os
 from contextlib import suppress
+from typing import Any, Optional
 
 import pytest
 from apk_bitminer.parsing import AXMLParser
@@ -9,7 +10,7 @@ from androidtestorchestrator.application import Application
 from androidtestorchestrator.device import Device
 from androidtestorchestrator.parsing import LineParser
 from androidtestorchestrator.reporting import TestRunListener
-from androidtestorchestrator.testing import EspressoTestPreparation
+from androidtestorchestrator.testprep import EspressoTestPreparation, DevicePreparation
 from ..support import uninstall_apk
 
 
@@ -74,7 +75,7 @@ class TestAndroidTestOrchestrator(object):
                 nonlocal test_count
                 test_count += 1
 
-            def test_run_ended(self, duration: float, **kwargs):
+            def test_run_ended(self, duration: float = -1.0, **kwargs: Optional[Any]) -> None:
                 pass
 
             def test_started(self, class_name: str, test_name: str):
@@ -131,7 +132,6 @@ class TestAndroidTestOrchestrator(object):
                                  support_test_app: str,
                                  tmpdir: str):
         # ensure applications are not already installed as precursor to running tests
-        parser = AXMLParser.parse(support_app)
         with suppress(Exception):
             Application(device, {'package_name': support_app}).uninstall()
         with suppress(Exception):
@@ -189,8 +189,9 @@ class TestAndroidTestOrchestrator(object):
                 EspressoTestPreparation(device=device,
                                         path_to_apk=support_app,
                                         path_to_test_apk=support_test_app,
-                                        grant_all_user_permissions=True) as test_prep:
-            test_prep.verify_network_connection("localhost", 4)
+                                        grant_all_user_permissions=True) as test_prep, \
+                DevicePreparation(device) as device_prep:
+            device_prep.verify_network_connection("localhost", 4)
             test_prep.upload_test_vectors(test_vectors)
             orchestrator.add_background_task(some_task(orchestrator))
             orchestrator.execute_test_plan(test_plan=test_generator(),
@@ -218,7 +219,8 @@ class TestAndroidTestOrchestrator(object):
                 pass
 
     def test_foreign_apk_install(self, device: Device, support_app: str, support_test_app: str):
-        with EspressoTestPreparation(device=device, path_to_test_apk=support_test_app, path_to_apk=support_app ) as prep:
+        with EspressoTestPreparation(device=device, path_to_test_apk=support_test_app, path_to_apk=support_app ) as prep, \
+            DevicePreparation(device) as device_prep:
             now = device.get_device_setting("system", "dim_screen")
             new = {"1": "0", "0": "1"}[now]
             prep.test_app.uninstall()
@@ -226,8 +228,8 @@ class TestAndroidTestOrchestrator(object):
             prep.setup_foreign_apps(paths_to_foreign_apks=[support_test_app])
             assert prep.test_app.package_name in device.list_installed_packages()
             device.set_system_property("debug.mock2", "\"\"\"\"")
-            prep.configure_device(settings={'system:dim_screen': new},
-                                  properties={"debug.mock2": "5555"})
+            device_prep.configure_device(settings={'system:dim_screen': new},
+                                         properties={"debug.mock2": "5555"})
 
             assert device.get_system_property("debug.mock2") == "5555"
             assert device.get_device_setting("system", "dim_screen") == new

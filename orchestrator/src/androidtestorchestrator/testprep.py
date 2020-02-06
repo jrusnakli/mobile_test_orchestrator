@@ -28,8 +28,6 @@ class DevicePreparation:
         :param device:  device to install and run test app on
         """
         self._device: Device = device
-        self._storage = DeviceStorage(self._device)
-        self._data_files: List[str] = []
         self._restoration_settings: Dict[Tuple[str, str], Optional[str]] = {}
         self._restoration_properties: Dict[str, Optional[str]] = {}
 
@@ -42,26 +40,6 @@ class DevicePreparation:
         if properties:
             for property, value in properties.items():
                 self._restoration_properties[property] = self._device.set_system_property(property, value)
-
-    def upload_test_vectors(self, root_path: str) -> float:
-        """
-        Upload test vectors to external storage on device for use by tests
-        :param root_path: local path that is the root where data files reside;  directory structure will be mimiced below
-            this level
-        :return: time in milliseconds it took to complete
-        """
-        start = time.time()
-        for root, dir_, files in os.walk(root_path, topdown=True):
-            if not os.path.isdir(root_path):
-                raise IOError(f"Given path {root_path} to upload to device does exist or is not a directory")
-            ext_storage = self._device.external_storage_location
-            basedir = os.path.relpath(root, root_path)
-            for filename in files:
-                remote_location = "/".join([ext_storage, basedir])
-                self._data_files.append(os.path.join(remote_location, filename))
-                self._storage.push(os.path.join(root, filename), remote_location)
-        milliseconds = (time.time() - start) * 1000
-        return milliseconds
 
     def verify_network_connection(self, domain: str, count: int = 3) -> None:
         """
@@ -79,11 +57,6 @@ class DevicePreparation:
         """
         Remove all pushed files and uninstall all apps installed by this test prep
         """
-        for remote_path in self._data_files:
-            try:
-                self._storage.remove(remote_path)
-            except Exception:
-                log.error(f"Failed to remove remote file {remote_path} from device {self._device.device_id}")
         for ns, key in self._restoration_settings:
             with suppress(Exception):
                 self._device.set_device_setting(ns, key, self._restoration_settings[(ns, key)] or '\"\"')
@@ -100,7 +73,7 @@ class DevicePreparation:
         self.cleanup()
 
 
-class EspressoTestPreparation(DevicePreparation):
+class EspressoTestPreparation:
     """
     Class used to prepare a device for test execution, including installing app, configuring settings/properties, etc.
 
@@ -124,16 +97,46 @@ class EspressoTestPreparation(DevicePreparation):
           test app (prevents pop-ups from occurring on first request for a user permission that can interfere
           with tests)
         """
-        super().__init__(device)
-        app = Application.from_apk(path_to_apk, device=self._device)
-        self._test_app: TestApplication = TestApplication.from_apk(path_to_test_apk, device=self._device)
+        app = Application.from_apk(path_to_apk, device=device)
+        self._test_app: TestApplication = TestApplication.from_apk(path_to_test_apk, device=device)
         self._installed = [app, self._test_app]
+        self._storage = DeviceStorage(device)
+        self._data_files: List[str] = []
+        self._device = device
         if grant_all_user_permissions:
             self._test_app.grant_permissions()
 
     @property
     def test_app(self) -> TestApplication:
         return self._test_app
+
+    def __enter__(self) -> "EspressoTestPreparation":
+        return self
+
+    def __exit__(self, exc_type: Optional[Type[BaseException]],
+                 exc_value: Optional[BaseException],
+                 traceback: Optional[TracebackType]) -> None:
+        self.cleanup()
+
+    def upload_test_vectors(self, root_path: str) -> float:
+        """
+        Upload test vectors to external storage on device for use by tests
+        :param root_path: local path that is the root where data files reside;  directory structure will be mimiced below
+            this level
+        :return: time in milliseconds it took to complete
+        """
+        start = time.time()
+        for root, dir_, files in os.walk(root_path, topdown=True):
+            if not os.path.isdir(root_path):
+                raise IOError(f"Given path {root_path} to upload to device does exist or is not a directory")
+            ext_storage = self._device.external_storage_location
+            basedir = os.path.relpath(root, root_path)
+            for filename in files:
+                remote_location = "/".join([ext_storage, basedir])
+                self._data_files.append(os.path.join(remote_location, filename))
+                self._storage.push(os.path.join(root, filename), remote_location)
+        milliseconds = (time.time() - start) * 1000
+        return milliseconds
 
     def setup_foreign_apps(self, paths_to_foreign_apks: List[str]) -> None:
         """
@@ -147,8 +150,11 @@ class EspressoTestPreparation(DevicePreparation):
         """
         Remove all pushed files and uninstall all apps installed by this test prep
         """
-        with suppress(Exception):
-            super().cleanup()
+        for remote_path in self._data_files:
+            try:
+                self._storage.remove(remote_path)
+            except Exception:
+                log.error("Failed to remove remote file %s from device %s", remote_path, self._device.device_id)
         for app in self._installed:
             try:
                 app.uninstall()
