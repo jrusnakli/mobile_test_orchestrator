@@ -26,6 +26,7 @@ class Application(RemoteDeviceBased):
     device on which it can be launched.
     """
 
+    SILENT_RUNNING_PACKAGES = ["com.samsung.android.mtpapplication", "com.wssyncmldm", "com.bitbar.testdroid.monitor"]
     SLEEP_GRANT_PERMISSION = 4
 
     def __init__(self, device: Device, manifest: Union[AXMLParser, Dict[str, str]]):
@@ -234,6 +235,20 @@ class Application(RemoteDeviceBased):
         clears app data for given package
         """
         self.device.execute_remote_cmd("shell", "pm", "clear", self.package_name, capture_stdout=False)
+
+    def in_foreground(self, ignore_silent_apps: bool = True) -> bool:
+        """
+        :return: whether app is currently in foreground
+        """
+        activity_stack = self.device.get_activity_stack() or []
+        index = 0
+        if ignore_silent_apps:
+            while activity_stack and (activity_stack[index].lower() in self.SILENT_RUNNING_PACKAGES):
+                index += 1
+        if index > len(activity_stack):
+            return False
+        foreground_activity = activity_stack[index]
+        return foreground_activity.lower() == self.package_name.lower()
 
 
 class ServiceApplication(Application):
