@@ -475,7 +475,7 @@ class Device(object):
         country = country.strip()
 
         if lang and country:
-            device_locale = '_'.join([lang.strip(), country.strip()])
+            device_locale: Optional[str] = '_'.join([lang.strip(), country.strip()])
         else:
             device_locale = self.get_system_property('persist.sys.locale')
             if not device_locale:
