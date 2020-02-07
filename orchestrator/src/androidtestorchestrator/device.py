@@ -464,9 +464,9 @@ class Device(object):
         current_device_time = datetime.datetime.utcnow() - self.device_server_datetime_offset
         return current_device_time
 
-    def get_locale(self) -> str:
+    def get_locale(self) -> Optional[str]:
         """
-        :return: device's current locale setting
+        :return: device's current locale setting, or None if indeterminant
         """
         # try old way:
         lang = self.get_system_property('persist.sys.language') or ""
@@ -474,15 +474,14 @@ class Device(object):
         country = self.get_system_property('persist.sys.country') or ""
         country = country.strip()
 
-        device_locale: Optional[str]
-
         if lang and country:
-            device_locale = '_'.join([lang.strip(), country.strip()])
+            device_locale: Optional[str] = '_'.join([lang.strip(), country.strip()])
         else:
             device_locale = self.get_system_property('persist.sys.locale')
             if not device_locale:
                 device_locale = self.get_system_property("ro.product.locale")
-            assert device_locale, "ro.product.locale returned None?!"
+            if not device_locale:
+                return None  # device does not report locale?
             device_locale = device_locale.replace('-', '_').strip()
 
         return device_locale
