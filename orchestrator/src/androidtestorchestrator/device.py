@@ -135,7 +135,7 @@ class Device(object):
         self._ext_storage = Device.override_ext_storage.get(self.model)
         self._device_server_datetime_offset: Optional[datetime.timedelta] = None
         self._api_level: Optional[int] = None
-        self._lock = None
+        self._lock: asyncio.Semaphore = None
 
     @property
     def api_level(self) -> int:
