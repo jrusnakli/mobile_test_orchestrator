@@ -134,8 +134,8 @@ class Device(object):
         self._name: Optional[str] = None
         self._ext_storage = Device.override_ext_storage.get(self.model)
         self._device_server_datetime_offset: Optional[datetime.timedelta] = None
-        self._lock = asyncio.Semaphore()
         self._api_level: Optional[int] = None
+        self._lock = None
 
     @property
     def api_level(self) -> int:
@@ -697,6 +697,8 @@ class Device(object):
 
     @asynccontextmanager
     async def lock(self) -> AsyncIterator["Device"]:
+        if self._lock is None:
+            self._lock = asyncio.Semaphore()
         await self._lock.acquire()
         yield self
         self._lock.release()
