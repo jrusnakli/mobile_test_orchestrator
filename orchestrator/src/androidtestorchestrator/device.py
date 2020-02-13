@@ -352,7 +352,8 @@ class Device(object):
                         stderr = stderr_bytes.decode('utf-8', errors='ignore')
                         error_msg = f"Remote command '{' '.join(args)}' exited with code {return_code} [{stderr}]"
                         raise Device.CommandExecutionFailureException(return_code, error_msg)
-                # todo: if timeout == 0.0, we should kill the proc immediately as the doc says
+                elif proc_completion_timeout <= 0.0:
+                    proc.terminate()
 
             async def lines(self) -> AsyncIterator[str]:
                 assert proc.stdout, "Expected proc to have stdout pipe"
