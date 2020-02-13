@@ -169,6 +169,7 @@ class AndroidTestOrchestrator:
         self._test_timeout = max_test_time
         self._timer = None
         self._tag_monitors: Dict[str, Tuple[str, LineParser]] = {}
+        self._logcat_proc = None
 
     def __enter__(self) -> "AndroidTestOrchestrator":
         return self
@@ -179,6 +180,8 @@ class AndroidTestOrchestrator:
         cleanup
         """
         # leave the campground as clean as you left it:
+        if self._logcat_proc is not None:
+            asyncio.wait_for(self._logcat_proc.stop(), timeout=10)
 
     def add_logcat_monitor(self, tag: str, handler: LineParser, priority: str = "*") -> None:
         """
@@ -240,9 +243,10 @@ class AndroidTestOrchestrator:
                 try:
                     for local_path, remote_path in test_run.uploadables:
                         device_storage.push(local_path=local_path, remote_path=remote_path)
-                    async with await test_application.run(*test_run.arguments) as lines:
-                        async for line in lines:
+                    async with await test_application.run(*test_run.arguments) as proc:
+                        async for line in proc.output(unresponsive_timeout=self._test_timeout):
                             instrumentation_parser.parse_line(line)
+                        proc.wait(timeout=self._test_timeout)
                 except Exception as e:
                     print(trace(e))
                     test_listener.test_run_failed(str(e))
@@ -273,9 +277,13 @@ class AndroidTestOrchestrator:
             logcat_demuxer = LogcatTagDemuxer(self._tag_monitors)
             device_log = DeviceLog(device)
             keys = ['%s:%s' % (k, v[0]) for k, v in self._tag_monitors.items()]
-            async with await device_log.logcat("-v", "brief", "-s", *keys) as lines:
-                async for line in lines:
+            async with await device_log.logcat("-v", "brief", "-s", *keys) as proc:
+                self._logcat_proc = proc
+                async for line in proc.output():
                     logcat_demuxer.parse_line(line)
+                self._logcat_proc = None
+                await proc.stop(timeout=10)
+
         except Exception as e:
             log.error("Exception on logcat processing, aborting: \n%s" % trace(e))
             asyncio.get_event_loop().stop()
