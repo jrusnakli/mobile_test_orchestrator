@@ -4,7 +4,7 @@ import time
 from asyncio import AbstractEventLoop
 
 from apk_bitminer.parsing import AXMLParser  # type: ignore
-from typing import List, TypeVar, Type, Optional, AsyncContextManager, AsyncIterator, Dict, Union, Any
+from typing import List, TypeVar, Type, Optional, AsyncContextManager, Dict, Union, Any
 
 from .device import Device, RemoteDeviceBased
 
