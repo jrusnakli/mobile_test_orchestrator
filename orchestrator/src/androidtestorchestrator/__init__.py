@@ -237,26 +237,30 @@ class AndroidTestOrchestrator:
         with device_log.capture_to_file(output_path=os.path.join(self._artifact_dir, "logcat.txt")) as log_capture:
             # log_capture is to listen to test status to mark beginning/end of each test run:
             instrumentation_parser.add_test_execution_listener(log_capture)
-
-            async for test_run in _preloading(test_plan):
-                test_listener.test_run_started(test_run.name)
-                try:
-                    for local_path, remote_path in test_run.uploadables:
-                        device_storage.push(local_path=local_path, remote_path=remote_path)
-                    async with await test_application.run(*test_run.arguments) as proc:
-                        async for line in proc.output(unresponsive_timeout=self._test_timeout):
-                            instrumentation_parser.parse_line(line)
-                        proc.wait(timeout=self._test_timeout)
-                except Exception as e:
-                    print(trace(e))
-                    test_listener.test_run_failed(str(e))
-                finally:
-                    test_listener.test_run_ended(instrumentation_parser.execution_time)
-                    for _, remote_path in test_run.uploadables:
-                        try:
-                            device_storage.remove(remote_path, recursive=True)
-                        except Exception:
-                            log.error("Failed to remove temporary test vector %s from device" % remote_path)
+            try:
+                async for test_run in _preloading(test_plan):
+                    test_listener.test_run_started(test_run.name)
+                    try:
+                        for local_path, remote_path in test_run.uploadables:
+                            device_storage.push(local_path=local_path, remote_path=remote_path)
+                        async with await test_application.run(*test_run.arguments) as proc:
+                            async for line in proc.output(unresponsive_timeout=self._test_timeout):
+                                instrumentation_parser.parse_line(line)
+                            proc.wait(timeout=self._test_timeout)
+                    except Exception as e:
+                        print(trace(e))
+                        test_listener.test_run_failed(str(e))
+                    finally:
+                        test_listener.test_run_ended(instrumentation_parser.execution_time)
+                        for _, remote_path in test_run.uploadables:
+                            try:
+                                device_storage.remove(remote_path, recursive=True)
+                            except Exception:
+                                log.error("Failed to remove temporary test vector %s from device" % remote_path)
+            finally:
+                if self._logcat_proc is not None:
+                    await self._logcat_proc.stop()
+                    self._logcat_proc = None
 
             # capture logcat markers (begin/end of each test/test suite)
             marker_output_path = os.path.join(self._artifact_dir, 'log_markers.txt')
@@ -273,6 +277,8 @@ class AndroidTestOrchestrator:
 
         :param device: remote device to process tags from
         """
+        if not self._tag_monitors:
+            return
         try:
             logcat_demuxer = LogcatTagDemuxer(self._tag_monitors)
             device_log = DeviceLog(device)
@@ -281,12 +287,10 @@ class AndroidTestOrchestrator:
                 self._logcat_proc = proc
                 async for line in proc.output():
                     logcat_demuxer.parse_line(line)
-                self._logcat_proc = None
-                await proc.stop(timeout=10)
+                # proc is stopped by test execution coroutine
 
         except Exception as e:
             log.error("Exception on logcat processing, aborting: \n%s" % trace(e))
-            asyncio.get_event_loop().stop()
 
     def execute_test_plan(self,
                           test_application: TestApplication,
@@ -313,10 +317,6 @@ class AndroidTestOrchestrator:
                     yield i
             test_plan = _async_iter(test_plan)
 
-        if self._tag_monitors:
-            log.debug("Creating logcat monitoring task")
-            loop.create_task(self._process_logcat_tags(test_application.device))
-
         # ADD  USER-DEFINED TASKS
         async def timer(test_plan: AsyncIterator[TestSuite]) -> None:
             """
@@ -324,10 +324,13 @@ class AndroidTestOrchestrator:
             """
             for local_path, remote_path in global_uploadables or []:
                 device_storage.push(local_path=local_path, remote_path=remote_path)
-            await asyncio.wait_for(self._execute_plan(test_plan=test_plan,
-                                                      test_application=test_application,
-                                                      test_listener=test_listener),
-                                   self._instrumentation_timeout)
+
+            async def run() -> None:
+                await asyncio.wait([self._execute_plan(test_plan=test_plan,
+                                                          test_application=test_application,
+                                                          test_listener=test_listener),
+                                        self._process_logcat_tags(test_application.device)])
+            await asyncio.wait_for(run(), timeout=self._instrumentation_timeout)
         try:
             loop.run_until_complete(timer(test_plan))  # execute plan until completed or until timeout is reached
         finally:
