@@ -12,7 +12,7 @@ except Exception:
     psutil = None
 
 from contextlib import suppress
-from typing import AsyncContextManager, Dict, Tuple, Optional, TextIO, Type, AsyncIterator
+from typing import AsyncContextManager, Dict, Tuple, Optional, TextIO, Type, AsyncIterator, Any
 
 from .timing import StopWatch
 from .parsing import LineParser
@@ -202,7 +202,7 @@ class DeviceLog(RemoteDeviceBased):
         self.device.execute_remote_cmd("logcat", "-b", "all", "-c", capture_stdout=False)
 
     async def logcat(self, *options: str, loop: Optional[AbstractEventLoop] = None
-                     ) -> AsyncContextManager[AsyncIterator[str]]:
+                     ) -> AsyncContextManager[Any]:
         """
         async generator to continually output lines from logcat until client
         exits processing (exist async iterator), at which point process is killed

@@ -4,7 +4,7 @@ import time
 from asyncio import AbstractEventLoop
 
 from apk_bitminer.parsing import AXMLParser  # type: ignore
-from typing import List, TypeVar, Type, Optional, AsyncContextManager, AsyncIterator, Dict, Union
+from typing import List, TypeVar, Type, Optional, AsyncContextManager, AsyncIterator, Dict, Union, Any
 
 from .device import Device, RemoteDeviceBased
 
@@ -358,7 +358,7 @@ class TestApplication(Application):
         return items
 
     async def run(self, *options: str, loop: Optional[AbstractEventLoop] = None,
-                  ) -> AsyncContextManager[AsyncIterator[str]]:
+                  ) -> AsyncContextManager[Any]:
         """
         Run an instrumentation test package, yielding lines from std output
 
