@@ -12,7 +12,7 @@ except Exception:
     psutil = None
 
 from contextlib import suppress
-from typing import AsyncContextManager, Dict, Tuple, Optional, TextIO, Type, AsyncIterator, Any
+from typing import AsyncContextManager, Dict, Tuple, Optional, TextIO, Type, Any
 
 from .timing import StopWatch
 from .parsing import LineParser
