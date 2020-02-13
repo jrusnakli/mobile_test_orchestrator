@@ -327,9 +327,9 @@ class AndroidTestOrchestrator:
 
             async def run() -> None:
                 await asyncio.wait([self._execute_plan(test_plan=test_plan,
-                                                          test_application=test_application,
-                                                          test_listener=test_listener),
-                                        self._process_logcat_tags(test_application.device)])
+                                                       test_application=test_application,
+                                                       test_listener=test_listener),
+                                    self._process_logcat_tags(test_application.device)])
             await asyncio.wait_for(run(), timeout=self._instrumentation_timeout)
         try:
             loop.run_until_complete(timer(test_plan))  # execute plan until completed or until timeout is reached
