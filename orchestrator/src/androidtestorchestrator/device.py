@@ -296,7 +296,7 @@ class Device(object):
                                 stderr=subprocess.PIPE,
                                 **kwargs)
 
-    async def execute_remote_cmd_async(self, *args: str, unresponsive_timeout: Optional[float] = None,
+    async def execute_remote_cmd_async(self, *args: str,
                                        proc_completion_timeout: Optional[float] = 0.0,
                                        loop: Optional[AbstractEventLoop] = None
                                        ) -> AsyncContextManager[AsyncIterator[str]]:
@@ -305,17 +305,9 @@ class Device(object):
         lines of output.
 
         :param args: command to execute
-        :param unresponsive_timeout: if non None and a read of next line of stdout takes longer than specified,
-            TimeoutException will be raised
-        :param proc_completion_timeout: Once client stops iteration or generator completes, wait
-            proc_completion_timeout seconds for process to complete; otherwise kill the process. A value of 0 will kill
-            the process immediately after client breaks out of iteration
-        :param loop: event loop to asynchronously run under, or None for default event loop
+       :param loop: event loop to asynchronously run under, or None for default event loop
 
         :return: AsyncGenerator iterating over lines of output from command
-
-        :raises Device.CommandExecutionFailure: if process is allowed to complete normally (e.g.
-           proc_completion_timeout is set and non-zero) and return code is non-zero
 
         >>> async with await device.execute_remote_cmd_async("some_cmd", "with", "args", unresponsive_timeout=10) as stdout:
         ...     async for line in stdout:
@@ -329,7 +321,7 @@ class Device(object):
         print(f"Executing: {' '.join(cmd)}")
         proc = await asyncio.subprocess.create_subprocess_exec(*cmd,
                                                                stdout=asyncio.subprocess.PIPE,
-                                                               stderr=asyncio.subprocess.PIPE,
+                                                               stderr=asyncio.subprocess.STDOUT,
                                                                loop=loop or asyncio.events.get_event_loop(),
                                                                bufsize=0)  # noqa
 
@@ -337,26 +329,20 @@ class Device(object):
             """
             Wraps below async generator in context manager to ensure proper closure
             """
-            async def __aenter__(self) -> AsyncIterator[str]:
-                return self.lines()
+            async def __aenter__(self) -> "LineGenerator":
+                return self
 
             async def __aexit__(self, exc_type: Optional[Type[BaseException]], exc_val: Optional[BaseException],
                                 exc_tb: Optional[TracebackType]) -> None:
-                if proc_completion_timeout is None or proc_completion_timeout > 0.0:
-                    return_code = await asyncio.wait_for(proc.wait(), proc_completion_timeout,
-                                                         loop=loop)  # loop arg type is optional. bug in typeshed.
-                    # mypy: end ignore
-                    if return_code != 0:
-                        assert proc.stderr, "Expected proc to have stderr pipe"
-                        stderr_bytes = await proc.stderr.read()
-                        stderr = stderr_bytes.decode('utf-8', errors='ignore')
-                        error_msg = f"Remote command '{' '.join(args)}' exited with code {return_code} [{stderr}]"
-                        raise Device.CommandExecutionFailureException(return_code, error_msg)
-                elif proc_completion_timeout <= 0.0:
-                    proc.terminate()
+                if proc.returncode is not None:
+                    log.info("Terminating process %d", proc.pid)
+                    self.stop()
 
-            async def lines(self) -> AsyncIterator[str]:
-                assert proc.stdout, "Expected proc to have stdout pipe"
+            async def output(self,  unresponsive_timeout: Optional[float] = None) -> AsyncIterator[str]:
+                """
+                Async iterator over lines of output from process
+                :param unresponsive_timeout: raise TimeoutException if not None and time to receive next line exceeds this
+                """
                 if unresponsive_timeout is not None:
                     line = await asyncio.wait_for(proc.stdout.readline(), timeout=unresponsive_timeout)
                 else:
@@ -368,12 +354,31 @@ class Device(object):
                     else:
                         line = await proc.stdout.readline()
 
-            async def stop(self, force: bool = False) -> None:
+            async def stop(self, force: bool = False, timeout: Optional[float] = None) -> None:
+                """
+                Signal process to terminate, and wait for process to end
+                :param force: whether to kill (harsh) or simply terminate
+                :param timeout: raise TimeoutException if process fails to truly terminate in timeout seconds
+                """
                 if force:
                     proc.kill()
                 else:
                     proc.terminate()
-                await proc.wait()
+                await self.wait(timeout)
+
+            async def wait(self, timeout: Optional[float] = None):
+                """
+                Wait for process to end
+                :param timeout: raise TimeoutException if waiting beyond this many seconds
+                """
+                if timeout is None:
+                    await proc.wait()
+                else:
+                    asyncio.wait_for(proc.wait(), timeout=timeout)
+
+            @property
+            def returncode(self):
+                return proc.returncode
 
         return LineGenerator()
 
@@ -679,8 +684,8 @@ class Device(object):
             cmd = ("install", apk_path)
         # Do not allow more than one install at a time on a specific device, as this can be problematic
         async with self.lock():
-            async with await self.execute_remote_cmd_async(*cmd, proc_completion_timeout=Device.TIMEOUT_LONG_ADB_CMD) as lines:
-                async for msg in lines:
+            async with await self.execute_remote_cmd_async(*cmd) as proc:
+                async for msg in proc.output():
                     log.debug(msg)
 
                     if self.ERROR_MSG_INSUFFICIENT_STORAGE in msg:
@@ -690,6 +695,7 @@ class Device(object):
                     # (non-standard Android):
                     if on_full_install and msg and any([condition in msg for condition in conditions]):
                         on_full_install()
+                proc.wait(Device.TIMEOUT_LONG_ADB_CMD)
 
         # On some devices, a pop-up may prevent successful install even if return code from adb install showed success,
         # so must explicitly verify the install was successful:
