@@ -299,7 +299,7 @@ class Device(object):
     async def execute_remote_cmd_async(self, *args: str,
                                        proc_completion_timeout: Optional[float] = 0.0,
                                        loop: Optional[AbstractEventLoop] = None
-                                       ) -> AsyncContextManager[AsyncIterator[str]]:
+                                       ) -> AsyncContextManager[Any]:
         """
         Coroutine for executing a command on this remote device asynchronously, allowing the client to iterate over
         lines of output.
@@ -343,6 +343,8 @@ class Device(object):
                 Async iterator over lines of output from process
                 :param unresponsive_timeout: raise TimeoutException if not None and time to receive next line exceeds this
                 """
+                if proc.stdout is None:
+                    raise Exception("Failed to capture output from subprocess")
                 if unresponsive_timeout is not None:
                     line = await asyncio.wait_for(proc.stdout.readline(), timeout=unresponsive_timeout)
                 else:
@@ -366,7 +368,7 @@ class Device(object):
                     proc.terminate()
                 await self.wait(timeout)
 
-            async def wait(self, timeout: Optional[float] = None):
+            async def wait(self, timeout: Optional[float] = None) -> None:
                 """
                 Wait for process to end
                 :param timeout: raise TimeoutException if waiting beyond this many seconds
@@ -377,7 +379,7 @@ class Device(object):
                     asyncio.wait_for(proc.wait(), timeout=timeout)
 
             @property
-            def returncode(self):
+            def returncode(self) -> Optional[int]:
                 return proc.returncode
 
         return LineGenerator()
