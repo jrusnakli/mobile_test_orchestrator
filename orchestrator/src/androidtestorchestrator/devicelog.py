@@ -1,11 +1,16 @@
 import os
+import signal
 from asyncio import AbstractEventLoop
 
 import logging
 from subprocess import Popen
 from types import TracebackType
 
-import psutil  # type: ignore
+try:
+    import psutil  # type: ignore
+except:
+    psutil = None
+
 from contextlib import suppress
 from typing import AsyncContextManager, Dict, Tuple, Optional, TextIO, Type, AsyncIterator
 
@@ -61,13 +66,19 @@ class DeviceLog(RemoteDeviceBased):
             if marker in self._markers:
                 log.error(f"Duplicate test marker!: {marker}")
             if self._proc and self._proc.poll() is None:
-                # For windows compat, we use psutil over os.kill(SIGSTOP/SIGCONT)
-                p = psutil.Process(self._proc.pid)
-                # pause logcat process, flush file, capture current file position and resume logcat
-                p.suspend()
+                if psutil:
+                    # For windows compat, we use psutil over os.kill(SIGSTOP/SIGCONT)
+                    p = psutil.Process(self._proc.pid)
+                    # pause logcat process, flush file, capture current file position and resume logcat
+                    p.suspend()
+                else:
+                    os.kill(signal.SIGSTOP)
                 self._output_file.flush()
                 self._markers[marker] = self._output_file.tell()
-                p.resume()
+                if psutil:
+                    p.resume()
+                else:
+                    os.kill(signal.SIGCONT)
             else:
                 raise Exception("process is not active")
             return self._markers[marker]
