@@ -72,13 +72,13 @@ class DeviceLog(RemoteDeviceBased):
                     # pause logcat process, flush file, capture current file position and resume logcat
                     p.suspend()
                 else:
-                    os.kill(signal.SIGSTOP)
+                    os.kill(self._proc.pid, signal.SIGSTOP)
                 self._output_file.flush()
                 self._markers[marker] = self._output_file.tell()
                 if psutil:
                     p.resume()
                 else:
-                    os.kill(signal.SIGCONT)
+                    os.kill(self._proc.pid, signal.SIGCONT)
             else:
                 raise Exception("process is not active")
             return self._markers[marker]
