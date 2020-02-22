@@ -175,53 +175,42 @@ class AndroidTestOrchestrator:
     async def _execute_plan(self,
                             test_plan: AsyncIterator[TestSuite],
                             test_application: TestApplication) -> None:
-        """
-        Loop over items in test plan and execute one by one, restoring device settings and properties on each
-        iteration.
 
-        :param test_plan: generator of tuples of (test_suite_name, list_of_instrument_arguments)
-        :param test_application: test application containing (remote) runner to execute tests
-        """
+        def apply(methodname, *args, **kargs):
+            for listener in self._result_listeners:
+                method = getattr(listener, methodname)
+                method(*args, **kargs)
+
+        # clear logcat for fresh start
+        try:
+            DeviceLog(test_application.device).clear()
+        except Device.CommandExecutionFailureException as e:
+            # sometimes logcat -c will give and error "failed to clear 'main' log';  Ugh
+            log.error("clearing logcat failed: " + str(e))
+
         # TASK-3: capture logcat to file and markers for beginning/end of each test
         device_log = DeviceLog(test_application.device)
         device_storage = DeviceStorage(test_application.device)
 
         with InstrumentationOutputParser() as instrumentation_parser, \
-                device_log.capture_to_file(output_path=os.path.join(self._artifact_dir, "logcat.txt")) as log_capture:
-            for listener in self._test_suite_listeners:
-                if isinstance(listener, TestRunListener):
-                    instrumentation_parser.add_listener(listener)
-
-            # add timer that times timeout if any INDIVIDUAL test takes too long
-            if self._test_timeout is not None:
-                instrumentation_parser.add_test_execution_listener(log_capture)
-                instrumentation_parser.add_test_execution_listener(Timer(self._test_timeout))
-
+               device_log.capture_to_file(output_path=os.path.join(self._artifact_dir, "logcat.txt")) as log_capture:
+            # log_capture is to listen to test status to mark beginning/end of each test run:
+            instrumentation_parser.add_test_execution_listener(log_capture)
             try:
-                async for test_run in test_plan:
-                    if test_run.clean_data_on_start:
-                        test_application.clear_data()
-                        test_application.grant_permissions()
-                    for listener in self._test_suite_listeners:
-                        listener.test_suite_started(test_run)
+                async for test_run in _preloading(test_plan):
+                    apply(self._result_listeners, "test_run_started", test_run.name)
                     try:
                         for local_path, remote_path in test_run.uploadables:
                             device_storage.push(local_path=local_path, remote_path=remote_path)
-                        arguments = list(test_run.arguments)
-                        for key, value in test_run.test_parameters.items():
-                            arguments += ["-e", key, value]
-                        async with await test_application.run(*arguments) as proc:
+                        async with await test_application.run(*test_run.arguments) as proc:
                             async for line in proc.output(unresponsive_timeout=self._test_timeout):
                                 instrumentation_parser.parse_line(line)
-                            await proc.wait(timeout=self._test_timeout)
-
+                            proc.wait(timeout=self._test_timeout)
                     except Exception as e:
                         print(trace(e))
-                        for listener in self._test_suite_listeners:
-                            listener.test_suite_failed(test_run, str(e))
+                        apply(self._result_listeners, "test_run_failed", str(e))
                     finally:
-                        for listener in self._test_suite_listeners:
-                            listener.test_suite_ended(test_run)
+                        apply(self._result_listeners, "test_run_ended", instrumentation_parser.execution_time)
                         for _, remote_path in test_run.uploadables:
                             try:
                                 device_storage.remove(remote_path, recursive=True)
@@ -289,6 +278,7 @@ class AndroidTestOrchestrator:
         :param test_plan: iterator or async iterator with each element being a tuple of test suite name and list of
            string arguments to provide to an execution of "adb instrument".  The test suit name is used to report start
            and end of each test suite via the test_listener
+           and end of each test suite via the test_listeners of this object
 
         :raises: asyncio.TimeoutError if test or test suite times out based on this orchestrator's configuration
         """
@@ -301,10 +291,6 @@ class AndroidTestOrchestrator:
                     yield i
             test_plan = _async_iter(test_plan)
 
-        if self._tag_monitors:
-            log.debug("Creating logcat monitoring task")
-            loop.create_task(self._process_logcat_tags(test_application.device))
-
         # ADD  USER-DEFINED TASKS
         async def timer(test_plan: AsyncIterator[TestSuite]) -> None:
             """
@@ -312,9 +298,12 @@ class AndroidTestOrchestrator:
             """
             for local_path, remote_path in global_uploadables or []:
                 device_storage.push(local_path=local_path, remote_path=remote_path)
-            await asyncio.wait_for(self._execute_plan(test_plan=test_plan,
-                                                      test_application=test_application),
-                                   self._instrumentation_timeout)
+
+            async def run() -> None:
+                await asyncio.wait([self._execute_plan(test_plan=test_plan,
+                                                       test_application=test_application),
+                                    self._process_logcat_tags(test_application.device)])
+            await asyncio.wait_for(run(), timeout=self._instrumentation_timeout)
         try:
             loop.run_until_complete(timer(test_plan))  # execute plan until completed or until timeout is reached
         finally:
@@ -330,7 +319,6 @@ class AndroidTestOrchestrator:
 
         :param test_application: test application to be executed on remote device
         :param test_suite: `TestSuite` to execute on remote device
-        :param test_listener: uesd to report test results as they happen
         :param global_uploadables: list of tuples of (local_path, remote_path) of files/dirs to upload to device or None
            The files will stay on the device until the entire test plan is completed.  Note that each test suite
            can also specify uploadables that are pushed and then removed once the suite is completed.  The choice is
