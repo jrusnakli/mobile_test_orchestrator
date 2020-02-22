@@ -170,6 +170,7 @@ class AndroidTestOrchestrator:
         self._timer = None
         self._tag_monitors: Dict[str, Tuple[str, LineParser]] = {}
         self._logcat_proc = None
+        self._result_listeners = []
 
     def __enter__(self) -> "AndroidTestOrchestrator":
         return self
@@ -182,6 +183,14 @@ class AndroidTestOrchestrator:
         # leave the campground as clean as you left it:
         if self._logcat_proc is not None:
             asyncio.wait_for(self._logcat_proc.stop(), timeout=10)
+
+    def add_test_listener(self, listener: TestRunListener) -> None:
+        """
+        Add given test run listener to listen for test run status updates
+        :param listener: listener to add
+        """
+        if listener not in self._result_listeners:
+            self._result_listeners.append(listener)
 
     def add_logcat_monitor(self, tag: str, handler: LineParser, priority: str = "*") -> None:
         """
@@ -207,16 +216,13 @@ class AndroidTestOrchestrator:
     # TASK-2: parsing of instrument output for test execution status
     async def _execute_plan(self,
                             test_plan: AsyncIterator[TestSuite],
-                            test_application: TestApplication,
-                            test_listener: TestRunListener) -> None:
-        """
-        Loop over items in test plan and execute one by one, restoring device settings and properties on each
-        iteration.
+                            test_application: TestApplication) -> None:
 
-        :param test_plan: generator of tuples of (test_suite_name, list_of_instrument_arguments)
-        :param test_application: test application containing (remote) runner to execute tests
-        :param test_listener: reporting test status
-        """
+        def apply(methodname, *args, **kargs):
+            for listener in self._result_listeners:
+                method = getattr(listener, methodname)
+                method(*args, **kargs)
+
         # clear logcat for fresh start
         try:
             DeviceLog(test_application.device).clear()
@@ -224,7 +230,7 @@ class AndroidTestOrchestrator:
             # sometimes logcat -c will give and error "failed to clear 'main' log';  Ugh
             log.error("clearing logcat failed: " + str(e))
 
-        instrumentation_parser = InstrumentationOutputParser(test_listener)
+        instrumentation_parser = InstrumentationOutputParser(self._result_listeners)
 
         # add timer that times timeout if any INDIVIDUAL test takes too long
         if self._test_timeout is not None:
@@ -239,7 +245,7 @@ class AndroidTestOrchestrator:
             instrumentation_parser.add_test_execution_listener(log_capture)
             try:
                 async for test_run in _preloading(test_plan):
-                    test_listener.test_run_started(test_run.name)
+                    apply(self._result_listeners, "test_run_started", test_run.name)
                     try:
                         for local_path, remote_path in test_run.uploadables:
                             device_storage.push(local_path=local_path, remote_path=remote_path)
@@ -249,9 +255,9 @@ class AndroidTestOrchestrator:
                             proc.wait(timeout=self._test_timeout)
                     except Exception as e:
                         print(trace(e))
-                        test_listener.test_run_failed(str(e))
+                        apply(self._result_listeners, "test_run_failed", str(e))
                     finally:
-                        test_listener.test_run_ended(instrumentation_parser.execution_time)
+                        apply(self._result_listeners, "test_run_ended", instrumentation_parser.execution_time)
                         for _, remote_path in test_run.uploadables:
                             try:
                                 device_storage.remove(remote_path, recursive=True)
@@ -295,7 +301,6 @@ class AndroidTestOrchestrator:
     def execute_test_plan(self,
                           test_application: TestApplication,
                           test_plan: Union[AsyncIterator[TestSuite], Iterator[TestSuite]],
-                          test_listener: TestRunListener,
                           global_uploadables: Optional[List[Tuple[str, str]]] = None) -> None:
         """
         Execute a test plan (a collection of test suites)
@@ -303,8 +308,7 @@ class AndroidTestOrchestrator:
         :param test_application:  test application to run
         :param test_plan: iterator or async iterator with each element being a tuple of test suite name and list of
            string arguments to provide to an execution of "adb instrument".  The test suit name is used to report start
-           and end of each test suite via the test_listener
-        :param test_listener: used to report test results as they occur
+           and end of each test suite via the test_listeners of this object
 
         :raises: asyncio.TimeoutError if test or test suite times out based on this orchestrator's configuration
         """
@@ -327,8 +331,7 @@ class AndroidTestOrchestrator:
 
             async def run() -> None:
                 await asyncio.wait([self._execute_plan(test_plan=test_plan,
-                                                       test_application=test_application,
-                                                       test_listener=test_listener),
+                                                       test_application=test_application),
                                     self._process_logcat_tags(test_application.device)])
             await asyncio.wait_for(run(), timeout=self._instrumentation_timeout)
         try:
@@ -340,14 +343,12 @@ class AndroidTestOrchestrator:
     def execute_test_suite(self,
                            test_application: TestApplication,
                            test_suite: TestSuite,
-                           test_listener: TestRunListener,
                            global_uploadables: Optional[List[Tuple[str, str]]] = None) -> None:
         """
         Execute a suite of tests as given by the argument list, and report test results
 
         :param test_application: test application to be executed on remote device
         :param test_suite: `TestSuite` to execute on remote device
-        :param test_listener: uesd to report test results as they happen
         :param global_uploadables: list of tuples of (local_path, remote_path) of files/dirs to upload to device or None
            The files will stay on the device until the entire test plan is completed.  Note that each test suite
            can also specify uploadables that are pushed and then removed once the suite is completed.  The choice is
@@ -357,7 +358,6 @@ class AndroidTestOrchestrator:
         """
         self.execute_test_plan(test_application,
                                test_plan=iter([test_suite]),
-                               test_listener=test_listener,
                                global_uploadables=global_uploadables)
 
     def add_background_task(self, coroutine: Coroutine[Any, Any, Any]) -> None:

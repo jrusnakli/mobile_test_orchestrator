@@ -206,7 +206,7 @@ at android.app.Instrumentation$InstrumentationThread.run(Instrumentation.java:17
                     assert class_name == "com.test.TestFailure"
                     assert stack_trace.strip() == TestInstrumentationOutputParser.EXPECTED_STACK_TRACE
 
-            parser = InstrumentationOutputParser(test_listener=Listener())
+            parser = InstrumentationOutputParser(test_listeners=[Listener()])
             parser.add_test_execution_listener(logcat_marker)  # TODO: not yet tested other than to exercise interface
 
             for line in self.example_output.splitlines():
@@ -247,7 +247,7 @@ at android.app.Instrumentation$InstrumentationThread.run(Instrumentation.java:17
             def test_ended(self, class_name: str, test_name: str, test_no: int, duration: float, msg: str = "") -> None:
                 pass
 
-        parser = InstrumentationOutputParser(test_listener=Listener())
+        parser = InstrumentationOutputParser(test_listeners=[Listener()])
         parser._test_result = InstrumentationOutputParser.InstrumentTestResult()
         parser._process_test_code(parser.CODE_SKIPPED)
         assert got_test_ignored, "Failed to report skipped test"

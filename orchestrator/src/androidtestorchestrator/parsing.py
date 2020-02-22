@@ -74,13 +74,13 @@ class InstrumentationOutputParser(LineParser):
             else:
                 log.warning("Unrecognized field: %s;  ignoring" % field_name)
 
-    def __init__(self, test_listener: TestRunListener) -> None:
+    def __init__(self, test_listeners: List[TestRunListener]) -> None:
         """
         :param test_listener: Reporter object to report test status on an on-going basis
         """
         super(InstrumentationOutputParser, self).__init__()
         # internal attributes:
-        self._reporter = test_listener
+        self._reporters = test_listeners
         self._execution_listeners: List[StopWatch] = []
         self._test_result: Optional[InstrumentationOutputParser.InstrumentTestResult] = None
         self._current_key: Optional[str] = None
@@ -109,6 +109,11 @@ class InstrumentationOutputParser(LineParser):
 
         :raises: ValueError if code is unrecognized
         """
+        def apply(methodname, *args, **kargs):
+            for reporter in self._reporters:
+                method = getattr(reporter, methodname)
+                method(*args, **kargs)
+
         assert self._test_result, "expected self._test_result to be set"
         if code > 0:
             self._test_result.started = True
@@ -132,22 +137,25 @@ class InstrumentationOutputParser(LineParser):
             # capture result and start over with clean slate:
             if self._test_result.result == TestStatus.PASSED:
                 duration = (datetime.datetime.utcnow() - self._test_result.start_time).total_seconds()
-                self._reporter.test_ended(class_name=self._test_result.clazz,
-                                          test_name=self._test_result.test_id,
-                                          test_no=self._test_result.test_no,
-                                          duration=duration,
-                                          msg=self._test_result.stream)
+                apply(self._reporters, "test_ended", class_name=self._test_result.clazz,
+                      test_name=self._test_result.test_id,
+                      test_no=self._test_result.test_no,
+                      duration=duration,
+                      msg=self._test_result.stream)
             elif self._test_result.result == TestStatus.FAILED:
-                self._reporter.test_failed(class_name=self._test_result.clazz,
-                                           test_name=self._test_result.test_id,
-                                           stack_trace=self._test_result.stack)
+                apply(self._reporters, "test_failed",
+                      class_name=self._test_result.clazz,
+                      test_name=self._test_result.test_id,
+                      stack_trace=self._test_result.stack)
             elif self._test_result.result == TestStatus.IGNORED:
-                self._reporter.test_ignored(class_name=self._test_result.clazz,
-                                            test_name=self._test_result.test_id)
+                apply(self._reporters, "test_ignored",
+                      class_name=self._test_result.clazz,
+                      test_name=self._test_result.test_id)
             elif self._test_result.result == TestStatus.ASSUMPTION_FAILURE:
-                self._reporter.test_assumption_failure(class_name=self._test_result.clazz,
-                                                       test_name=self._test_result.test_id,
-                                                       stack_trace=self._test_result.stack)
+                apply(self._reporters, "test_assumption_failure",
+                      class_name=self._test_result.clazz,
+                      test_name=self._test_result.test_id,
+                      stack_trace=self._test_result.stack)
             else:
                 raise ValueError("Unknown status code for test: %d" % code)
         finally:
