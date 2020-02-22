@@ -62,11 +62,31 @@ class TestApplicationClass:
             finally:
                 tries -= 1
 
-    def test_grant_permissions(self, device: Device, install_app, support_test_app):
+    @pytest.mark.asyncio
+    async def test_install_uninstall_async(self, device: Device, support_app: str):
+        uninstall_apk(support_app, device)
+        app = await Application.from_apk_async(support_app, device)
+        try:
+            assert app.package_name == "com.linkedin.mtotestapp"
+            completed = device.execute_remote_cmd("shell", "dumpsys", "package", app.package_name,
+                                                  timeout=10, stdout=subprocess.PIPE)
+            output: str = completed.stdout
+            for line in output.splitlines():
+                if "versionName" in line:
+                    assert app.version == line.strip().split('=', 1)[1]
+        finally:
+            app.uninstall()
+            assert app.package_name not in device.list_installed_packages()
+
+    @pytest.mark.asyncio
+    async def test_grant_permissions(self, device: Device, install_app, support_test_app):
         test_app = install_app(TestApplication, support_test_app)
         assert test_app.package_name.endswith(".test")
         permission = "android.permission.WRITE_EXTERNAL_STORAGE"
         test_app.grant_permissions([permission])
+        completed = device.execute_remote_cmd("shell", "dumpsys", "package", test_app.package_name,
+                                              timeout=10, stdout=subprocess.PIPE)
+        output: str = completed.stdout
         completed = device.execute_remote_cmd("shell", "dumpsys", "package", test_app.package_name,
                                               timeout=10, stdout=subprocess.PIPE)
         perms = []
@@ -81,6 +101,7 @@ class TestApplicationClass:
                 if "permission" in line:
                     perms.append(line.strip())
         assert permission in perms
+        assert permission in test_app.grant_permissions()
 
     # noinspection PyBroadException
     @staticmethod
@@ -117,9 +138,10 @@ class TestApplicationClass:
             except:
                 return False
 
-    def test_start_stop(self, install_app, support_app: str):  # noqa
+    @pytest.mark.asyncio
+    async def test_start_stop(self, install_app, support_app: str):  # noqa
         app = install_app(Application, support_app)
-        app.start(".MainActivity")
+        await app.start_async("MainActivity")
         time.sleep(3)  # Have to give time to "come up" :-(
         assert self.pidof(app), "No pid found for app; app not started as expected"
         app.stop(force=True)
@@ -145,16 +167,27 @@ class TestApplicationClass:
         pidoutput: str = completed.stdout
         assert not self.pidof(app), f"pidof indicated app is not stopped as expected; output of pidof is: {pidoutput}"
 
-    def test_monkey(self, device: Device, support_app):  # noqa
-        app = asyncio.get_event_loop().run_until_complete(Application.from_apk_async(support_app, device,
-                                                                                     as_test_app=True))
+    @pytest.mark.asyncio
+    async def test_launch(self, install_app, support_app: str):  # noqa
+        app: Application = install_app(Application, support_app)
+
+        await app.launch(".MainActivity", timeout=100)
+        assert app.in_foreground()
+        app.stop()
+        # TODO: add tests for timeout and to override logcat to product crash message (or add intent to test app
+        # that deliberately crashes)
+
+    @pytest.mark.asyncio
+    async def test_monkey(self, device: Device, support_app):  # noqa
+        app = await Application.from_apk_async(support_app, device)
         app.monkey()
         time.sleep(3)
         assert self.pidof(app), "Failed to start app"
         app.stop(force=True)
         assert not self.pidof(app), "Failed to stop app"
 
-    def test_clear_data(self, install_app, support_test_app: str):  # noqa
+    @pytest.mark.asyncio
+    async def test_clear_data(self, install_app, support_test_app: str):  # noqa
         app = install_app(Application, support_test_app)
         app.grant_permissions()
         assert app.granted_permissions == set(app.permissions)
@@ -163,22 +196,24 @@ class TestApplicationClass:
         app.clear_data(False)
         assert not app.granted_permissions
 
-    def test_version_invalid_package(self, device: Device):
+    @pytest.mark.asyncio
+    async def test_version_invalid_package(self, device: Device):
         with pytest.raises(Exception):
             Application.from_apk("no.such.package", device)
 
-    def test_app_uninstall_logs_error(self, device: Device):
+    @pytest.mark.asyncio
+    async def test_app_uninstall_logs_error(self, device: Device):
         with patch("mobiletestorchestrator.application.log") as mock_logger:
             app = Application(manifest={'package_name': "com.android.providers.calendar",
                                         'permissions': [ "android.permission.WRITE_EXTERNAL_STORAGE"]}, device=device)
             app.uninstall()
             assert mock_logger.error.called
 
-    def test_clean_kill_throws_exception_when_home_screen_not_active(self, install_app, device: Device, support_app: str):
+    @pytest.mark.asyncio
+    async def test_clean_kill_throws_exception_when_home_screen_not_active(self, install_app, device: Device,
+                                                                           support_app: str):
         app = install_app(Application, support_app)
-        with patch('mobiletestorchestrator.device.DeviceInteraction.home_screen_active', new_callable=Mock) as mock_home_screen_active, \
-            patch('mobiletestorchestrator.application.Application.pid', new_callable=PropertyMock) as mock_pid:
-            mock_pid.return_value = "21445"
+        with patch('mobiletestorchestrator.device.Device.home_screen_active', new_callable=PropertyMock) as mock_home_screen_active:
             # Force home_screen_active to be false to indicate clean_kill failed
             mock_home_screen_active.return_value = False
             app.start(".MainActivity")
@@ -188,7 +223,8 @@ class TestApplicationClass:
                 app.clean_kill()
             assert "Failed to background current foreground app" in str(exc_info.value)
 
-    def test_clean_kill_throws_exception_when_pid_still_existing(self, install_app, device: Device, support_app: str):
+    @pytest.mark.asyncio
+    async def test_clean_kill_throws_exception_when_pid_still_existing(self, install_app, device: Device, support_app: str):
         app = install_app(Application, support_app)
         with patch('mobiletestorchestrator.device.DeviceInteraction.home_screen_active', new_callable=Mock) as mock_home_screen_active:
             with patch('mobiletestorchestrator.application.Application.pid', new_callable=PropertyMock) as mock_pid:
@@ -224,3 +260,17 @@ class TestApplicationClass:
         assert app.in_foreground()
         app.stop(force=True)
         assert not app.in_foreground()
+
+    def test_verify_install_on_non_installed_app(self, in_tmp_dir: Path):
+        class MockDevice(Device):
+
+            def __init__(self):
+                self._model = "mockdevice"
+
+            def list_installed_packages(self):
+                return []
+
+        with pytest.raises(expected_exception=Exception) as excinfo:
+            Application._verify_install(MockDevice(), "com.linkedin.fake.app", "test_screenshots")
+        assert "Failed to verify installation of app 'com.linkedin.fake.app'" in str(excinfo.value)
+        assert (in_tmp_dir / "test_screenshots" / "install_failure-com.linkedin.fake.app.png").is_file()

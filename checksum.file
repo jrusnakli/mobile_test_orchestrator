@@ -1,0 +1,10 @@
+apk-bitminer>=1.1.0
+psutil
+pytest
+pytest-html
+pytest-cov
+pytest-asyncio
+pytest_mproc>=3.2.3
+mypy==0.720
+typed-ast
+flake8

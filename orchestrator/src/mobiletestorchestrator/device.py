@@ -1,3 +1,9 @@
+"""
+This package contains the core elements for device interaction: to query aspects of the device, c
+hange or get settings and properties, and core API for raw execution of commands on the device (via adb), etc.
+"""
+from __future__ import annotations  # to correct mypy stubs vs run-time discrepancies
+
 import asyncio
 import datetime
 import logging
@@ -5,6 +11,7 @@ import os
 import re
 import subprocess
 import time
+from abc import ABC
 
 from contextlib import suppress, asynccontextmanager
 from types import TracebackType
@@ -25,6 +32,11 @@ from typing import (
 
 log = logging.getLogger("MTO")
 log.setLevel(logging.ERROR)
+
+
+__all__ = ["Device", "DeviceBased"]
+
+D = TypeVar('D', bound="Device")
 
 
 class DeviceLock:
@@ -57,13 +69,27 @@ class Device:
     :raises FileNotFoundError: if adb path is invalid
     """
 
+    class State(Enum):
+        """
+        An enumeration of possible device states
+        """
+
+        """Device is detected but offline"""
+        OFFLINE: str = "offline"
+        """Device is online and active"""
+        ONLINE: str = "device"
+        """State of device is unknown"""
+        UNKNOWN: str = "unknown"
+        """Device is not detected"""
+        NON_EXISTENT: str = "non-existent"
+
     # These packages may appear as running when looking at the activities in a device's activity stack. The running
     # of these packages do not affect interaction with the app under test. With the exception of the Samsung
     # MtpApplication (pop-up we can't get rid of that asks the user to update their device), they are also not visible
     # to the user. We keep a list of them so we know which ones to disregard when trying to retrieve the actual
+    # to the user. We keep a list of them so we know which ones to disregard when trying to retrieve the actual
     # foreground application the user is interacting with.
     SILENT_RUNNING_PACKAGES = ["com.samsung.android.mtpapplication", "com.wssyncmldm", "com.bitbar.testdroid.monitor"]
-    SCREEN_UNLOCK_BLACKLIST = {"MI 4LTE"}
 
     class InsufficientStorageError(Exception):
         """
@@ -136,6 +162,10 @@ class Device:
         @property
         def returncode(self) -> Optional[int]:
             return self._proc.returncode
+
+        async def communicate(self):
+            stdout, _ = await self._proc.communicate()
+            return stdout
 
         async def output(self,  unresponsive_timeout: Optional[float] = None) -> AsyncIterator[str]:
             """
@@ -230,15 +260,8 @@ class Device:
     ]
 
     WRITE_EXTERNAL_STORAGE_PERMISSION = "android.permission.WRITE_EXTERNAL_STORAGE"
-    UNKNOWN_API_LEVEL = -1
 
-    # Find lines that look like this:
-    #  * TaskRecord{133fbae #1340 I=com.google.android.apps.nexuslauncher/.NexusLauncherActivity U=0 StackId=0 sz=1}
-    # or
-    #  * TaskRecord{94c8098 #1791 A=com.android.chrome U=0 StackId=454 sz=1}
-    APP_RECORD_PATTERN = re.compile(r'^\* TaskRecord\{[a-f0-9-]* #\d* [AI]=([a-zA-Z].[a-zA-Z0-9.]*)[ /].*')
-
-    class CommandExecutionFailure(Exception):
+    class CommandExecutionFailureException(Exception):
 
         def __init__(self, return_code: int, msg: str):
             super().__init__(msg)
@@ -263,6 +286,12 @@ class Device:
         cls.TIMEOUT_LONG_ADB_CMD = timeout
 
     def __init__(self, device_id: str, adb_path: str):
+        """
+        :param adb_path: path to the adb command on the host
+        :param device_id: serial id of the device as seen by host (e.g. via 'adb devices')
+
+        :raises FileNotFoundError: if adb path is invalid
+        """
         if not os.path.isfile(adb_path):
             raise FileNotFoundError(f"Invalid adb path given: '{adb_path}'")
         self._device_id = device_id
@@ -391,6 +420,21 @@ class Device:
         return self._device_id
 
     @property
+    def is_alive(self) -> bool:
+        return self.get_state() == Device.State.ONLINE
+
+    def _determine_system_property(self, property_: str) -> str:
+        """
+        :param property_: property to fetch
+        :return: requested property or "UNKNOWN" if not present on device
+        """
+        prop = self.get_system_property(property_)
+        if not prop:
+            log.error("Unable to get brand of device from system properties. Setting to \"UNKNOWN\".")
+            prop = "UNKNOWN"
+        return prop
+
+    @property
     def device_name(self) -> str:
         """
         :return: a name for this device based on model and manufacturer
@@ -500,7 +544,7 @@ class Device:
         :return:tuple of stdout, stderr output as requested (None for an output that is not directed as subprocess.PIPE)
         :raises CommandExecutionFailureException: if command fails to execute on remote device
         """
-        # protected methjod: OK to access by subclasses
+        # protected method: OK to access by subclasses
         timeout = timeout or Device.TIMEOUT_ADB_CMD
         log.debug(f"Executing remote command: {self._formulate_adb_cmd(*args)} with timeout {timeout}")
         completed = subprocess.run(self._formulate_adb_cmd(*args),
@@ -526,7 +570,7 @@ class Device:
         :param kwargs: dict arguments passed to subprocess.Popen
         :return: subprocess.Open
         """
-        # protected methjod: OK to access by subclasses
+        # protected method: OK to access by subclasses
         args = (self._adb_path, "-s", self.device_id, *args)
         log.debug(f"Executing: {' '.join(args)} in background")
         if 'encoding' not in kwargs:
@@ -545,11 +589,9 @@ class Device:
         :param args: command to execute
         :return: AsyncGenerator iterating over lines of output from command
 
-        >>> device = Device("someid")
-        ... async with device.monitor_remote_cmd("some_cmd", "with", "args",
-        ...                                      unresponsive_timeout=10) as proc:
-        ...     async for line in proc.output(unresponsive_timeout=10):
-        ...         print(line)
+        >>> async with await device.execute_remote_cmd_async("some_cmd", "with", "args", unresponsive_timeout=10) as stdout:
+        ...     async for line in stdout:
+        ...         process(line)
 
         """
         cmd = self._formulate_adb_cmd(*args)
@@ -627,7 +669,7 @@ class Device:
             device_locale = device_locale.replace('-', '_').strip() if device_locale else None
         return device_locale
 
-    def get_state(self) -> str:
+    def get_state(self) -> "Device.State":
         """
         :return: current state of emulaor ("device", "offline", "non-existent", ...)
         """
@@ -966,13 +1008,226 @@ class DeviceConnectivity(RemoteDeviceBased):
         if port is not None:
             self._device.execute_remote_cmd("reverse", "--remove", f"tcp:{port}")
         else:
-            self._device.execute_remote_cmd("reverse", "--remove-all")
+            self.execute_remote_cmd("forward", "--remove-all")
 
-    def reverse_port_forward(self, device_port: int, local_port: int) -> None:
+    def get_state(self) -> "Device.State":
         """
-        reverse forward traffic on remote port to local port
+        :return: current state of emulaor ("device", "offline", "non-existent", ...)
+        """
+        try:
+            state = self.execute_remote_cmd("get-state", capture_stdout=True, timeout=10).strip()
+            mapping = {"device": Device.State.ONLINE,
+                       "offline": Device.State.OFFLINE}
+            return mapping.get(state, Device.State.UNKNOWN)
+        except Exception:
+            return Device.State.NON_EXISTENT
 
-        :param device_port: remote device port to forward
-        :param local_port: port to forward to
+    def reboot(self, wait_until_online: bool = True) -> None:
+        self.execute_remote_cmd("reboot")
+        if wait_until_online:
+            while self.get_state() != Device.State.ONLINE:
+                time.sleep(1)
+
+class DeviceSet:
+
+    class DeviceError(Exception):
+
+        def __init__(self, device: Device, root: Exception):
+            self._root_exception = root
+            self._device = device
+
+    def __init__(self, devices: Iterable[Device]):
+        self._devices = list(devices)
+        self._blacklisted: List[Device] = []
+
+    @property
+    def devices(self) -> List[Device]:
+        return self._devices
+
+    def blacklist(self, device: Device) -> None:
+        if device in self._devices:
+            self._devices.remove(device)
+            self._blacklisted.append(device)
+
+    def apply(self, method: Callable[..., Any], *args: Any, **kwargs: Any) -> List[Any]:
+        results = []
+        for device in self._devices:
+            try:
+                results.append(method(device, *args, **kwargs))
+            except Exception as e:
+                results.append(DeviceSet.DeviceError(device, e))
+        return results
+
+    async def apply_concurrent(self,
+                               async_method: Callable[..., Awaitable[Any]],
+                               *args: Any,
+                               max_concurrent: Optional[int] = None,
+                               **kargs: Any
+                               ) -> List[Any]:
+        semaphore = asyncio.Semaphore(value=max_concurrent or len(self._devices))
+
+        async def limited_async_method(device: Device) -> Any:
+            await semaphore.acquire()
+            try:
+                return await async_method(device, *args, **kargs)
+            finally:
+                semaphore.release()
+
+        result: List[Any] = await asyncio.gather(*[limited_async_method(device) for device in self._devices],
+                                                 return_exceptions=True)
+        return result
+
+    ################
+    # Leased devices
+    ################
+
+    class LeaseExpired(Exception):
+
+        def __init__(self, device: "Device"):
+            super().__init__(f"Lease expired for {device.device_id}")
+            self._device = device
+
+        @property
+        def device(self) -> "Device":
+            return self._device
+
+    @classmethod
+    def _Leased(cls: Type[D]) -> D:
         """
-        self._device.execute_remote_cmd("reverse", f"tcp:{device_port}", f"tcp:{local_port}")
+        This provides a Pythonic way of doing mixins to subclass a Device or a subclass of Device to
+        be "Leased"
+
+        :return: subclass of this class that can be set to expire after a prescribed amount of time
+        """
+        class LeasedDevice(cls):  # type: ignore
+
+            def __init__(self, *args: Any, **kargs: Any):
+                # must come first to avoid issues with __getattribute__ override
+                self._timed_out = False
+                super().__init__(*args, **kargs)
+                self._task: Optional[asyncio.Task[Any]] = None
+
+            async def set_timer(self, expiry: float) -> None:
+                """
+                set lease expiration
+
+                :param expiry: number of seconds until expiration of lease (from now)
+                """
+                if self._task is not None:
+                    raise Exception("Renewal of already existing lease is not allowed")
+                self._task = asyncio.create_task(self._expire(expiry))
+
+            async def _expire(self, expiry: float) -> None:
+                """
+                set the expiration time
+
+                :param expiry: seconds into the future to expire
+                """
+                await asyncio.sleep(expiry)
+                self._timed_out = True
+
+            def reset(self) -> None:
+                """
+                Reset to no long have expiration.  Should only be called internally, and probably only by
+                the AndroidTestOrchestrator orchestrating test execution
+                """
+                if self._task and not self._task.done():
+                    self._task.cancel()
+                self._task = None
+                self._timed_out = False
+
+            def __getattribute__(self, item: str) -> Any:
+                # Playing with fire a little here -- make sure you know what you are doing if you update this method
+                if item == '_device_id' or item == 'device_id':
+                    # always allow this one to go through (one is a property reflecting the other)
+                    return object.__getattribute__(self, item)
+                if object.__getattribute__(self, "_timed_out"):
+                    raise Device.LeaseExpired(self)
+                return object.__getattribute__(self, item)
+
+        return LeasedDevice  # type: ignore
+
+
+class RemoteDeviceBased(object):
+    """
+    Classes that are based on the context of a remote device
+    """
+
+    def __init__(self, device: Device) -> None:
+        """
+        :param device: which device is associated with this instance
+        """
+        self._device = device
+
+    @property
+    def device(self) -> Device:
+        """
+        :return: the device associated with this instance
+        """
+        return self._device
+
+
+class BaseDeviceQueue(ABC):
+
+    def __init__(self, queue: Queue):
+        """
+        :param queue: queue to server Device's from.
+        """
+        self._q = queue
+
+    def empty(self) -> bool:
+        return self._q.empty()
+
+    @staticmethod
+    def _list_devices(filt: Callable[[str], bool]):
+        cmd = [Device.adb_path(), "devices"]
+        completed = subprocess.run(" ".join(cmd), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, shell=True)
+        device_ids = []
+        for line in completed.stdout.splitlines():
+            line = line.decode('utf-8').strip()
+            if line.strip().endswith("device"):
+                device_id = line.split()[0]
+                if filt(device_id):
+                    device_ids.append(device_id)
+        return device_ids
+
+    @classmethod
+    async def discover(cls, filt: Callable[[str], bool] = lambda x: True) -> "BaseDeviceQueue":
+        """
+        Discover all online devices and create a DeviceQueue with them
+
+        :param filt: only include devices filtered by device id through this given filter, if provided
+
+        :return: Created DeviceQueue instance containing all online devices
+        """
+        queue = Queue(20)
+        device_ids = cls._list_devices(filt)
+        if not device_ids:
+            raise Exception("No device were discovered based on any filter critera. " +
+                            f"output of 'adb devices' was: {completed.stdout}")
+        for device_id in device_ids:
+            await queue.put(Device(device_id))
+        return cls(queue)
+
+
+class AsyncDeviceQueue(BaseDeviceQueue):
+
+    def __init__(self, queue: Queue):
+        """
+        :param queue: queue to server Device's from.
+        """
+        super().__init__(queue)
+
+    @asynccontextmanager
+    async def reserve(self) -> AsyncGenerator[Device, None]:
+        """
+        :return: a reserved Device
+        """
+        emulator = await self._q.get()
+        try:
+            yield emulator
+        finally:
+            await self._q.put(emulator)
+
+    def empty(self):
+        return self._q.empty()

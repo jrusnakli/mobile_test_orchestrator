@@ -1,7 +1,7 @@
 * text=auto
 * text eol=crlf
 * text eol=lf
-
 *.apk binary
 *.jar binary
 *.png binary
+*.zip filter=lfs diff=lfs merge=lfs -text

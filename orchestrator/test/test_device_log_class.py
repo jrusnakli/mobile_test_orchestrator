@@ -11,7 +11,8 @@ from mobiletestorchestrator.devicelog import DeviceLog
 
 class TestDeviceLog:
 
-    def test_set_get_logcat_buffer_size(self, device: Device):
+    @pytest.mark.asyncio
+    async def test_set_get_logcat_buffer_size(self, device: Device):
         log = DeviceLog(device)
         log.set_logcat_buffer_size("20M")
         assert log.logcat_buffer_size.upper() in ['20', '20MB']
@@ -19,6 +20,9 @@ class TestDeviceLog:
         assert log.logcat_buffer_size.upper() in ['5', '5MB']
 
     @pytest.mark.asyncio
+    async def test_logcat_and_clear(self, device: Device, android_service_app: ServiceApplication):
+    @pytest.mark.asyncio
+    @pytest.mark.localonly
     async def test_logcat_and_clear(self, device: Device, android_service_app: ServiceApplication):
         output = []
         # call here waits for emulator startup, allowing other fixtures to complete in parallel
@@ -79,20 +83,7 @@ class TestDeviceLog:
             assert "old_line" not in line
             assert "new_line" in line
 
-    def test_capture_mark_start_stop(self, device: Device, mp_tmp_dir):
-        device_log = DeviceLog(device)
-        output_path = os.path.join(str(mp_tmp_dir), "logcat.txt")
-        with device_log.capture_to_file(output_path) as log_capture:
-            time.sleep(2)
-            log_capture.mark_start("test1")
-            time.sleep(5)
-            log_capture.mark_end("test1")
-            time.sleep(2)
-            assert "test1.start" in log_capture.markers
-            assert "test1.end" in log_capture.markers
-            assert log_capture.markers["test1.start"] < log_capture.markers["test1.end"]
-
-    def test_invalid_output_path(self, fake_sdk, mp_tmp_dir):
+     def test_invalid_output_path(self, fake_sdk, mp_tmp_dir):
         device = Device("fakeid", os.path.join(fake_sdk, "platform-tools", "adb"))
         tmpfile = os.path.join(str(mp_tmp_dir), "somefile")
         with open(tmpfile, 'w'):

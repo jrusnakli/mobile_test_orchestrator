@@ -6,5 +6,7 @@ pytest-cov
 pytest-asyncio
 pytest_mproc>=4.0.4
 mypy==0.720
+shiv
+pathlib
 typed-ast
 flake8==3.8.4
