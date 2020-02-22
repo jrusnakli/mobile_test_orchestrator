@@ -186,6 +186,11 @@ class AndroidTestOrchestrator:
         :param test_plan: generator of tuples of (test_suite_name, list_of_instrument_arguments)
         :param test_application: test application containing (remote) runner to execute tests
         """
+        def apply(methodname, *args, **kargs):
+            for listener in self._result_listeners:
+                method = getattr(listener, methodname)
+                method(*args, **kargs)
+
         device_log = DeviceLog(test_application.device)
         device_storage = DeviceStorage(test_application.device)
 
@@ -205,8 +210,8 @@ class AndroidTestOrchestrator:
                     if test_run.clean_data_on_start:
                         test_application.clear_data()
                         test_application.grant_permissions()
-                    for listener in self._test_suite_listeners:
-                        listener.test_suite_started(test_run)
+
+                    apply(self._result_listeners, "test_run_started", test_run.name)
                     try:
                         for local_path, remote_path in test_run.uploadables:
                             device_storage.push(local_path=local_path, remote_path=remote_path)
@@ -224,11 +229,9 @@ class AndroidTestOrchestrator:
 
                     except Exception as e:
                         print(trace(e))
-                        for listener in self._test_suite_listeners:
-                            listener.test_suite_failed(test_run, str(e))
+                        apply(self._result_listeners, "test_run_failed", str(e))
                     finally:
-                        for listener in self._test_suite_listeners:
-                            listener.test_suite_ended(test_run)
+                        apply(self._result_listeners, "test_run_ended", instrumentation_parser.execution_time)
                         for _, remote_path in test_run.uploadables:
                             try:
                                 device_storage.remove(remote_path, recursive=True)
