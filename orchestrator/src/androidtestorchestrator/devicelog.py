@@ -8,7 +8,7 @@ from types import TracebackType
 
 try:
     import psutil  # type: ignore
-except ImportError:
+except Exception:
     psutil = None
 
 from contextlib import suppress
