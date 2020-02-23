@@ -2,7 +2,7 @@ import asyncio
 
 import pytest
 
-from androidtestorchestrator import _preloading
+from androidtestorchestrator.main import _preloading
 
 
 @pytest.mark.asyncio

@@ -3,7 +3,7 @@ from contextlib import suppress
 
 import pytest
 
-from androidtestorchestrator import Device
+from androidtestorchestrator.device import Device
 from androidtestorchestrator.reporting import TestRunResult
 from androidtestorchestrator.runners.upgradetestrunner import UpgradeTestException, UpgradeTestRunner
 

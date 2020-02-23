@@ -3,7 +3,7 @@ import logging
 
 from abc import abstractmethod, ABC
 from contextlib import suppress
-from typing import List, Optional
+from typing import List, Optional, Any
 
 from .reporting import TestStatus, TestRunListener
 from .timing import StopWatch
@@ -109,7 +109,7 @@ class InstrumentationOutputParser(LineParser):
 
         :raises: ValueError if code is unrecognized
         """
-        def apply(methodname, *args, **kargs):
+        def apply(methodname: str, *args: Any, **kargs: Any) -> Any:
             for reporter in self._reporters:
                 method = getattr(reporter, methodname)
                 method(*args, **kargs)
@@ -137,22 +137,22 @@ class InstrumentationOutputParser(LineParser):
             # capture result and start over with clean slate:
             if self._test_result.result == TestStatus.PASSED:
                 duration = (datetime.datetime.utcnow() - self._test_result.start_time).total_seconds()
-                apply(self._reporters, "test_ended", class_name=self._test_result.clazz,
+                apply("test_ended", class_name=self._test_result.clazz,
                       test_name=self._test_result.test_id,
                       test_no=self._test_result.test_no,
                       duration=duration,
                       msg=self._test_result.stream)
             elif self._test_result.result == TestStatus.FAILED:
-                apply(self._reporters, "test_failed",
+                apply("test_failed",
                       class_name=self._test_result.clazz,
                       test_name=self._test_result.test_id,
                       stack_trace=self._test_result.stack)
             elif self._test_result.result == TestStatus.IGNORED:
-                apply(self._reporters, "test_ignored",
+                apply("test_ignored",
                       class_name=self._test_result.clazz,
                       test_name=self._test_result.test_id)
             elif self._test_result.result == TestStatus.ASSUMPTION_FAILURE:
-                apply(self._reporters, "test_assumption_failure",
+                apply("test_assumption_failure",
                       class_name=self._test_result.clazz,
                       test_name=self._test_result.test_id,
                       stack_trace=self._test_result.stack)
