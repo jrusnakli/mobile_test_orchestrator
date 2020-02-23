@@ -4,10 +4,10 @@ from contextlib import suppress
 import pytest
 
 from androidtestorchestrator.device import Device
-from androidtestorchestrator.reporting import TestPlanExecutionReport
+from androidtestorchestrator.reporting import TestRunResult
 from androidtestorchestrator.runners.upgradetestrunner import UpgradeTestException, UpgradeTestRunner
 
-reporter = TestPlanExecutionReport()
+reporter = TestRunResult()
 
 
 class TestUpgradeRunner:

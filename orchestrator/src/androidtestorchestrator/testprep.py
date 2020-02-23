@@ -5,7 +5,8 @@ from contextlib import suppress
 
 from typing import Dict, List, Optional, Type, Tuple
 from types import TracebackType
-from androidtestorchestrator import Device, DeviceStorage
+from androidtestorchestrator.device import Device
+from androidtestorchestrator.devicestorage import DeviceStorage
 from androidtestorchestrator.application import Application, TestApplication
 
 log = logging.getLogger()

@@ -72,7 +72,8 @@ class TestAndroidTestOrchestrator(object):
                 assert False, "did not expect test process to error; \n%s" % error_message
 
             def test_assumption_failure(self, class_name: str, test_name: str, stack_trace: str):
-                pass
+                nonlocal test_count
+                test_count += 1
 
             def test_run_ended(self, duration: float = -1.0, **kwargs: Optional[Any]) -> None:
                 pass
@@ -85,17 +86,18 @@ class TestAndroidTestOrchestrator(object):
                 test_count += 1
                 assert test_name in ["useAppContext",
                                      "testSuccess",
-                                     "testFail"
                                      ]
                 assert class_name == self.expected_test_class[current_test_suite]
 
             def test_failed(self, class_name: str, test_name: str, stack_trace: str):
                 nonlocal test_count, current_test_suite
+                test_count += 1
                 assert class_name == self.expected_test_class[current_test_suite]
                 assert test_name == "testFail"  # this test case is designed to be failed
 
             def test_ignored(self, class_name: str, test_name: str):
                 nonlocal test_count
+                test_count += 1
                 assert False, "no skipped tests should be present"
 
             def test_run_started(self, test_run_name: str, count: int = 0):
@@ -138,35 +140,6 @@ class TestAndroidTestOrchestrator(object):
             yield (TestSuite(name='test_suite1',
                              arguments=["-e", "class", "com.linkedin.mtotestapp.InstrumentedTestAllSuccess#useAppContext"]))
 
-        # noinspection PyMissingOrEmptyDocstring
-        class EmptyListener(TestRunListener):
-            _call_count = {}
-
-            def test_run_started(self, test_run_name: str, count: int = 0):
-                EmptyListener._call_count.setdefault(test_run_name, 0)
-                EmptyListener._call_count[test_run_name] += 1
-
-            def test_run_ended(self, duration: float, **kwargs):
-                pass
-
-            def test_run_failed(self, error_message: str):
-                pass
-
-            def test_failed(self, class_name: str, test_name: str, stack_trace: str):
-                pass
-
-            def test_ignored(self, class_name: str, test_name: str):
-                pass
-
-            def test_assumption_failure(self, class_name: str, test_name: str, stack_trace: str):
-                pass
-
-            def test_started(self, class_name: str, test_name: str):
-                pass
-
-            def test_ended(self, class_name: str, test_name: str, **kwargs):
-                pass
-
         was_called = False
 
         async def some_task(orchestrator: AndroidTestOrchestrator):
@@ -203,12 +176,6 @@ class TestAndroidTestOrchestrator(object):
             orchestrator.execute_test_plan(test_plan=test_generator(),
                                            test_application=test_prep.test_app)
         assert was_called, "Failed to call user-define background task"
-        # listener was added a second time, so expect call counts of 2
-        assert all([v == 2 for v in EmptyListener._call_count.values()])
-        forwarded_ports = device.execute_remote_cmd("forward", "--list")
-        assert forwarded_ports.strip() == ""
-        reverse_forwarded_ports = device.execute_remote_cmd("reverse", "--list")
-        assert reverse_forwarded_ports.strip() == ""
 
     def test_invalid_test_timesout(self, device: Device, tmpdir):
         with pytest.raises(ValueError):
