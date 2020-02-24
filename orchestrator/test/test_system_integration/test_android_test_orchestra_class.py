@@ -121,7 +121,7 @@ class TestAndroidTestOrchestrator(object):
         with AndroidTestOrchestrator(artifact_dir=str(tmpdir)) as orchestrator:
             orchestrator.add_test_listener(TestExpectations())
             orchestrator.execute_test_plan(test_plan=test_generator(),
-                                           test_application=android_test_app)
+                                           test_applications=[android_test_app])
         assert test_count == 2  # last test suite had one test
 
     def test_add_background_task(self,
@@ -157,7 +157,7 @@ class TestAndroidTestOrchestrator(object):
             f.write("TEST VECTOR DATA")
 
         with AndroidTestOrchestrator(artifact_dir=str(tmpdir)) as orchestrator, \
-                EspressoTestPreparation(device=device,
+                EspressoTestPreparation(devices=device,
                                         path_to_apk=support_app,
                                         path_to_test_apk=support_test_app,
                                         grant_all_user_permissions=True) as test_prep, \
@@ -166,7 +166,7 @@ class TestAndroidTestOrchestrator(object):
             test_prep.upload_test_vectors(test_vectors)
             orchestrator.add_background_task(some_task(orchestrator))
             orchestrator.execute_test_plan(test_plan=test_generator(),
-                                           test_application=test_prep.test_app)
+                                           test_applications=test_prep.test_apps)
         assert was_called, "Failed to call user-define background task"
 
     def test_invalid_test_timesout(self, device: Device, tmpdir):
@@ -176,30 +176,31 @@ class TestAndroidTestOrchestrator(object):
                                          max_test_suite_time=1, max_test_time=10):
                 pass
 
-    def test_nonexistent_artifact_dir(self, device: Device):
+    def test_nonexistent_artifact_dir(self):
         with pytest.raises(FileNotFoundError):
             # individual test time greater than overall timeout for suite
             with AndroidTestOrchestrator(artifact_dir="/no/such/dir"):
                 pass
 
-    def test_invalid_artifact_dir_is_file(self, device: Device):
+    def test_invalid_artifact_dir_is_file(self):
         with pytest.raises(FileExistsError):
             # individual test time greater than overall timeout for suite
             with AndroidTestOrchestrator(artifact_dir=__file__):
                 pass
 
     def test_foreign_apk_install(self, device: Device, support_app: str, support_test_app: str):
-        with EspressoTestPreparation(device=device, path_to_test_apk=support_test_app, path_to_apk=support_app ) as prep, \
-            DevicePreparation(device) as device_prep:
+        with EspressoTestPreparation(devices=device, path_to_test_apk=support_test_app, path_to_apk=support_app ) as prep, \
+             DevicePreparation(devices=device) as device_prep:
             now = device.get_device_setting("system", "dim_screen")
             new = {"1": "0", "0": "1"}[now]
-            prep.test_app.uninstall()
-            assert prep.test_app.package_name not in device.list_installed_packages()
+            for test_app in prep.test_apps:
+                test_app.uninstall()
+                assert test_app.package_name not in device.list_installed_packages()
             prep.setup_foreign_apps(paths_to_foreign_apks=[support_test_app])
-            assert prep.test_app.package_name in device.list_installed_packages()
+            assert support_test_app.package_name in device.list_installed_packages()
             device.set_system_property("debug.mock2", "\"\"\"\"")
-            device_prep.configure_device(settings={'system:dim_screen': new},
-                                         properties={"debug.mock2": "5555"})
+            device_prep.configure_devices(settings={'system:dim_screen': new},
+                                          properties={"debug.mock2": "5555"})
 
             assert device.get_system_property("debug.mock2") == "5555"
             assert device.get_device_setting("system", "dim_screen") == new

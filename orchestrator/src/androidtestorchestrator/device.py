@@ -9,7 +9,7 @@ from asyncio import AbstractEventLoop
 from contextlib import suppress, asynccontextmanager
 from types import TracebackType
 from typing import List, Tuple, Dict, Optional, AsyncContextManager, Union, Callable, IO, Any, AsyncIterator, Type, \
-    AnyStr
+    AnyStr, Iterable, Awaitable
 
 from apk_bitminer.parsing import AXMLParser  # type: ignore
 
@@ -334,9 +334,13 @@ class Device(object):
 
             async def __aexit__(self, exc_type: Optional[Type[BaseException]], exc_val: Optional[BaseException],
                                 exc_tb: Optional[TracebackType]) -> None:
-                if proc.returncode is not None:
+                if proc.returncode is None:
                     log.info("Terminating process %d", proc.pid)
-                    self.stop()
+                    try:
+                        await self.stop()
+                    except Exception:
+                        with suppress(Exception):
+                            await self.stop(force=True)
 
             async def output(self,  unresponsive_timeout: Optional[float] = None) -> AsyncIterator[str]:
                 """
@@ -697,7 +701,7 @@ class Device(object):
                     # (non-standard Android):
                     if on_full_install and msg and any([condition in msg for condition in conditions]):
                         on_full_install()
-                proc.wait(Device.TIMEOUT_LONG_ADB_CMD)
+                await proc.wait(Device.TIMEOUT_LONG_ADB_CMD)
 
         # On some devices, a pop-up may prevent successful install even if return code from adb install showed success,
         # so must explicitly verify the install was successful:
@@ -845,6 +849,51 @@ class Device(object):
                 app_package = matches.group(1)
                 activity_list.append(app_package)
         return activity_list
+
+
+class DeviceSet:
+
+    class DeviceError(Exception):
+
+        def __init__(self, device: Device, root: Exception):
+            self._root_exception = root
+            self._device = device
+
+    def __init__(self, devices: Iterable[Device]):
+        self._devices = list(devices)
+        self._blacklisted: List[Device] = []
+
+    @property
+    def devices(self):
+        return self._devices
+
+    def blacklist(self, device):
+        if device in self._devices:
+            self._devices.remove(device)
+            self._blacklisted.append(device)
+
+    def apply(self, method: Callable[[Device], Any], *args: Any, **kwargs: Any):
+        results = []
+        for device in self._devices:
+            try:
+                results.append(method(device, *args, **kwargs))
+            except Exception as e:
+                results.append(DeviceSet.DeviceError(device, e))
+
+    async def apply_concurrent(self,
+                               async_method: Callable[[Any], Awaitable[Any]],
+                               max_concurrent: Optional[int] = None,
+                               *args: Any, **kargs: Any):
+        semaphore = asyncio.Semaphore(value=max_concurrent or len(self._devices))
+
+        async def limited_async_method(device: Device):
+            await semaphore.acquire()
+            try:
+                return await async_method(device, *args, **kargs)
+            finally:
+                semaphore.release()
+
+        return await asyncio.gather(*[limited_async_method(device) for device in self._devices], return_exceptions=True)
 
 
 class RemoteDeviceBased(object):
