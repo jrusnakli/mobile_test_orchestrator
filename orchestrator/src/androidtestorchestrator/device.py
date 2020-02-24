@@ -365,14 +365,11 @@ class Device:
                                 exc_tb: Optional[TracebackType]) -> None:
                 if proc.returncode is None:
                     log.info("Terminating process %d", proc.pid)
-                    with suppress(Exception):
-                        await self.stop(timeout=3)
-                if proc.returncode is None:
-                    with suppress(Exception):
-                        try:
-                            await self.stop(timeout=3, force=True)
-                        except TimeoutError:
-                            log.error("Failed to kill subprocess while exiting its context")
+                    try:
+                        await self.stop()
+                    except Exception:
+                        with suppress(Exception):
+                            await self.stop(force=True)
 
             async def output(self,  unresponsive_timeout: Optional[float] = None) -> AsyncIterator[str]:
                 """
@@ -486,8 +483,7 @@ class Device:
             output = self.execute_remote_cmd("shell", "getprop", key)
             return output.rstrip()
         except Exception as e:
-            if verbose:
-                log.error(f"Unable to get system property {key} [{str(e)}]")
+            log.error(f"Unable to get system property {key} [{str(e)}]")
             return None
 
     def get_device_properties(self) -> Dict[str, str]:
@@ -951,6 +947,51 @@ class Device:
             return self.execute_remote_cmd("get-state", capture_stdout=True, timeout=10).strip()
         except Exception:
             return "non-existent"
+
+
+class DeviceSet:
+
+    class DeviceError(Exception):
+
+        def __init__(self, device: Device, root: Exception):
+            self._root_exception = root
+            self._device = device
+
+    def __init__(self, devices: Iterable[Device]):
+        self._devices = list(devices)
+        self._blacklisted: List[Device] = []
+
+    @property
+    def devices(self):
+        return self._devices
+
+    def blacklist(self, device):
+        if device in self._devices:
+            self._devices.remove(device)
+            self._blacklisted.append(device)
+
+    def apply(self, method: Callable[[Device], Any], *args: Any, **kwargs: Any):
+        results = []
+        for device in self._devices:
+            try:
+                results.append(method(device, *args, **kwargs))
+            except Exception as e:
+                results.append(DeviceSet.DeviceError(device, e))
+
+    async def apply_concurrent(self,
+                               async_method: Callable[[Any], Awaitable[Any]],
+                               max_concurrent: Optional[int] = None,
+                               *args: Any, **kargs: Any):
+        semaphore = asyncio.Semaphore(value=max_concurrent or len(self._devices))
+
+        async def limited_async_method(device: Device):
+            await semaphore.acquire()
+            try:
+                return await async_method(device, *args, **kargs)
+            finally:
+                semaphore.release()
+
+        return await asyncio.gather(*[limited_async_method(device) for device in self._devices], return_exceptions=True)
 
 
 class RemoteDeviceBased(object):

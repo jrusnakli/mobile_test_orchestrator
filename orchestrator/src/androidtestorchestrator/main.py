@@ -11,7 +11,7 @@ from typing import Dict, Iterator, List, Tuple, Coroutine, Optional, Any, Type, 
     TypeVar, Union
 
 from .application import TestApplication
-from .device import Device
+from .device import Device, DeviceSet
 from .devicelog import DeviceLog, LogcatTagDemuxer
 from .devicestorage import DeviceStorage
 from .parsing import InstrumentationOutputParser, LineParser
@@ -164,12 +164,12 @@ class AndroidTestOrchestrator:
             raise FileExistsError("'%s' exists and is not a directory" % artifact_dir)
 
         self._artifact_dir = artifact_dir
-        self._background_tasks: List[Task[Any]] = []
+        self._background_tasks: List[Coroutine[Any]] = []
         self._instrumentation_timeout = max_test_suite_time
         self._test_timeout = max_test_time
         self._timer = None
         self._tag_monitors: Dict[str, Tuple[str, LineParser]] = {}
-        self._logcat_proc = None
+        self._logcat_procs: Dict[Device, Any] = {}
         self._run_listeners: List[TestRunListener] = []
 
     def __enter__(self) -> "AndroidTestOrchestrator":
@@ -181,8 +181,8 @@ class AndroidTestOrchestrator:
         cleanup
         """
         # leave the campground as clean as you left it:
-        if self._logcat_proc is not None:
-            asyncio.wait_for(self._logcat_proc.stop(), timeout=10)
+        for proc in self._logcat_procs.values():
+            asyncio.wait_for(proc.stop(), timeout=10)
 
     def add_test_listener(self, listener: TestRunListener) -> None:
         """
@@ -216,22 +216,29 @@ class AndroidTestOrchestrator:
     # TASK-2: parsing of instrument output for test execution status
     async def _execute_plan(self,
                             test_plan: AsyncIterator[TestSuite],
-                            test_application: TestApplication) -> None:
+                            test_applications: List[TestApplication]) -> None:
+        queue = asyncio.Queue(maxsize=len(test_applications))
 
+        async def populate_q():
+            async for test_run in _preloading(test_plan):
+                await queue.put(test_run)
+            for _ in test_applications:
+                await queue.put(None)  # signals completion
+
+        async def timed():
+            await asyncio.gather(populate_q(),
+                                 *[self._worker(queue, test_app) for test_app in test_applications],
+                                 *[self._process_logcat_tags(test_app.device) for test_app in test_applications],
+                                 return_exceptions=True)
+        await asyncio.wait_for(timed(), timeout=self._instrumentation_timeout)
+
+    async def _worker(self, queue: asyncio.Queue, test_application: TestApplication):
         def apply(methodname: str, *args: Any, **kargs: Any) -> Any:
             for listener in self._run_listeners:
                 method = getattr(listener, methodname)
                 method(*args, **kargs)
 
-        # clear logcat for fresh start
-        try:
-            DeviceLog(test_application.device).clear()
-        except Device.CommandExecutionFailureException as e:
-            # sometimes logcat -c will give and error "failed to clear 'main' log';  Ugh
-            log.error("clearing logcat failed: " + str(e))
-
         instrumentation_parser = InstrumentationOutputParser(self._run_listeners)
-
         # add timer that times timeout if any INDIVIDUAL test takes too long
         if self._test_timeout is not None:
             instrumentation_parser.add_test_execution_listener(Timer(self._test_timeout))
@@ -239,12 +246,14 @@ class AndroidTestOrchestrator:
         # TASK-3: capture logcat to file and markers for beginning/end of each test
         device_log = DeviceLog(test_application.device)
         device_storage = DeviceStorage(test_application.device)
-
-        with device_log.capture_to_file(output_path=os.path.join(self._artifact_dir, "logcat.txt")) as log_capture:
+        logcat_output_path = os.path.join(self._artifact_dir, f"logcat-{test_application.device.device_id}.txt")
+        with device_log.capture_to_file(output_path=logcat_output_path) as log_capture:
             # log_capture is to listen to test status to mark beginning/end of each test run:
             instrumentation_parser.add_test_execution_listener(log_capture)
             try:
-                async for test_run in _preloading(test_plan):
+                test_run = True
+                while test_run is not None:
+                    test_run = await asyncio.wait_for(queue.get(), timeout=10)
                     apply("test_run_started", test_run.name)
                     try:
                         for local_path, remote_path in test_run.uploadables:
@@ -264,9 +273,9 @@ class AndroidTestOrchestrator:
                             except Exception:
                                 log.error("Failed to remove temporary test vector %s from device" % remote_path)
             finally:
-                if self._logcat_proc is not None:
-                    await self._logcat_proc.stop()
-                    self._logcat_proc = None
+                if test_application.device in self._logcat_procs:
+                    asyncio.wait_for(self._logcat_procs[test_application.device].stop(), timeout=10)
+                    self._logcat_procs.remove(test_application.device)
 
             # capture logcat markers (begin/end of each test/test suite)
             marker_output_path = os.path.join(self._artifact_dir, 'log_markers.txt')
@@ -290,7 +299,7 @@ class AndroidTestOrchestrator:
             device_log = DeviceLog(device)
             keys = ['%s:%s' % (k, v[0]) for k, v in self._tag_monitors.items()]
             async with await device_log.logcat("-v", "brief", "-s", *keys) as proc:
-                self._logcat_proc = proc
+                self._logcat_procs[device] = proc
                 async for line in proc.output():
                     logcat_demuxer.parse_line(line)
                 # proc is stopped by test execution coroutine
@@ -299,7 +308,7 @@ class AndroidTestOrchestrator:
             log.error("Exception on logcat processing, aborting: \n%s" % trace(e))
 
     def execute_test_plan(self,
-                          test_application: TestApplication,
+                          test_applications: List[TestApplication],
                           test_plan: Union[AsyncIterator[TestSuite], Iterator[TestSuite]],
                           global_uploadables: Optional[List[Tuple[str, str]]] = None) -> None:
         """
@@ -312,8 +321,6 @@ class AndroidTestOrchestrator:
 
         :raises: asyncio.TimeoutError if test or test suite times out based on this orchestrator's configuration
         """
-        loop = asyncio.get_event_loop()
-        device_storage = DeviceStorage(test_application.device)
 
         if not isinstance(test_plan, AsyncIterator):
             async def _async_iter(test_plan: Iterator[TestSuite]) -> AsyncIterator[TestSuite]:
@@ -321,24 +328,37 @@ class AndroidTestOrchestrator:
                     yield i
             test_plan = _async_iter(test_plan)
 
+        async def push(device: Device):
+            device_storage = DeviceStorage(device)
+            for local_path, remote_path in global_uploadables or []:
+                await device_storage.push_async(local_path=local_path, remote_path=remote_path,
+                                                timeout=5*60)
+
+        async def gather():
+            device_set = DeviceSet([test_app.device for test_app in test_applications])
+            await device_set.apply_concurrent(push)
+
+        if global_uploadables:
+            asyncio.run(gather())
+
         # ADD  USER-DEFINED TASKS
         async def timer(test_plan: AsyncIterator[TestSuite]) -> None:
             """
             Timer to timeout if future is not presented in given timeout for overall test suite execution
             """
-            for local_path, remote_path in global_uploadables or []:
-                device_storage.push(local_path=local_path, remote_path=remote_path)
+            for coroutine in self._background_tasks:
+                asyncio.create_task(coroutine)
 
-            async def run() -> None:
-                await asyncio.wait([self._execute_plan(test_plan=test_plan,
-                                                       test_application=test_application),
-                                    self._process_logcat_tags(test_application.device)])
-            await asyncio.wait_for(run(), timeout=self._instrumentation_timeout)
+            await asyncio.wait_for(self._execute_plan(test_plan=test_plan,
+                                                      test_applications=test_applications),
+                                   timeout=self._instrumentation_timeout)
         try:
-            loop.run_until_complete(timer(test_plan))  # execute plan until completed or until timeout is reached
+            asyncio.run(timer(test_plan))  # execute plan until completed or until timeout is reached
         finally:
-            for _, remote_path in global_uploadables or []:
-                device_storage.remove(remote_path, recursive=True)
+            for device in [test_app.device for test_app in test_applications]:
+                device_storage = DeviceStorage(device)
+                for _, remote_path in global_uploadables or []:
+                    device_storage.remove(remote_path, recursive=True)
 
     def execute_test_suite(self,
                            test_application: TestApplication,
@@ -368,4 +388,4 @@ class AndroidTestOrchestrator:
 
         :param coroutine: coroutine to be executed during asyncio even loop execution of tests
         """
-        self._background_tasks.append(asyncio.get_event_loop().create_task(coroutine))
+        self._background_tasks.append(coroutine)
