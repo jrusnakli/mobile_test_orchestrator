@@ -105,8 +105,6 @@ class TestAndroidTestOrchestrator(object):
             def test_run_started(self, test_run_name: str, count: int = 0):
                 nonlocal test_suite_count
                 nonlocal expected_test_suite
-                nonlocal current_test_suite
-                current_test_suite = test_run_name
                 print("Started test suite %s" % test_run_name)
                 test_suite_count += 1
                 expected_test_suite = "test_suite%d" % test_suite_count
@@ -134,7 +132,6 @@ class TestAndroidTestOrchestrator(object):
         test_count = 0
         test_suite_count = 0
         expected_test_suite = None
-        current_test_suite = None
         uninstall_apk(android_test_app, device)
         uninstall_apk(android_test_app2, device2)
 
@@ -161,17 +158,17 @@ class TestAndroidTestOrchestrator(object):
                 log.info("Started test %s %s", class_name, test_name)
 
             def test_ended(self, class_name: str, test_name: str, **kwargs):
-                nonlocal test_count, current_test_suite
+                nonlocal test_count
                 test_count += 1
                 assert test_name in ["useAppContext",
                                      "testSuccess",
                                      ]
-                assert class_name == self.expected_test_class[current_test_suite]
+                assert class_name in self.expected_test_class.values()
 
             def test_failed(self, class_name: str, test_name: str, stack_trace: str):
-                nonlocal test_count, current_test_suite
+                nonlocal test_count
                 test_count += 1
-                assert class_name == self.expected_test_class[current_test_suite]
+                assert class_name in self.expected_test_class.values()
                 assert test_name == "testFail"  # this test case is designed to be failed
 
             def test_ignored(self, class_name: str, test_name: str):
