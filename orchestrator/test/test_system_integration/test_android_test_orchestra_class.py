@@ -125,6 +125,7 @@ class TestAndroidTestOrchestrator(object):
                                            test_applications=[android_test_app])
         assert listener.test_count == 4
 
+    @pytest.mark.skipif(os.environ.get("CIRCLECI") is not None, reason="Circleci cannot handle more than one emulator")
     def test_execute_test_suite_multidevice(self, device: Device, device2: Device,
                                             android_test_app: TestApplication,
                                             android_test_app2: TestApplication,
