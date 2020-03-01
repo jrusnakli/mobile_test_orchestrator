@@ -1,4 +1,6 @@
+import logging
 import os
+
 from contextlib import suppress
 from typing import Any, Optional
 
@@ -11,6 +13,9 @@ from androidtestorchestrator.parsing import LineParser
 from androidtestorchestrator.reporting import TestRunListener
 from androidtestorchestrator.testprep import EspressoTestPreparation, DevicePreparation
 from ..support import uninstall_apk
+
+
+log = logging.getLogger(__name__)
 
 
 # noinspection PyShadowingNames
@@ -53,11 +58,85 @@ class TestAndroidTestOrchestrator(object):
             orchestrator.add_logcat_monitor("TestTag", handler)  # duplicate tag/priority
 
     def test_execute_test_suite(self, device: Device, android_test_app: TestApplication, tmpdir):
+        test_suite_count = 0
+        expected_test_suite = None
+        current_test_suite = None
+        uninstall_apk(android_test_app, device)
+
+        class TestExpectations(TestRunListener):
+
+            def __init__(self):
+                self.expected_test_class = {
+                    'test_suite1': "com.linkedin.mtotestapp.InstrumentedTestAllSuccess",
+                    'test_suite2': "com.linkedin.mtotestapp.InstrumentedTestAllSuccess",
+                    'test_suite3': "com.linkedin.mtotestapp.InstrumentedTestSomeFailures"
+                }
+                self.test_count = 0
+
+            def test_run_failed(self, error_message: str):
+                assert False, "did not expect test process to error; \n%s" % error_message
+
+            def test_assumption_failure(self, class_name: str, test_name: str, stack_trace: str):
+                self.test_count += 1
+
+            def test_run_ended(self, duration: float = -1.0, **kwargs: Optional[Any]) -> None:
+                pass
+
+            def test_started(self, class_name: str, test_name: str):
+                pass
+
+            def test_ended(self, class_name: str, test_name: str, **kwargs):
+                nonlocal current_test_suite
+                self.test_count += 1
+                assert test_name in ["useAppContext",
+                                     "testSuccess",
+                                     ]
+                assert class_name == self.expected_test_class[current_test_suite]
+
+            def test_failed(self, class_name: str, test_name: str, stack_trace: str):
+                self.test_count += 1
+                assert class_name == self.expected_test_class[current_test_suite]
+                assert test_name == "testFail"  # this test case is designed to be failed
+
+            def test_ignored(self, class_name: str, test_name: str):
+                self.test_count += 1
+                assert False, "no skipped tests should be present"
+
+            def test_run_started(self, test_run_name: str, count: int = 0):
+                nonlocal test_suite_count
+                nonlocal expected_test_suite
+                nonlocal current_test_suite
+                current_test_suite = test_run_name
+                print("Started test suite %s" % test_run_name)
+                test_suite_count += 1
+                expected_test_suite = "test_suite%d" % test_suite_count
+                assert test_run_name == expected_test_suite
+
+        def test_generator():
+            yield (TestSuite(name='test_suite1',
+                             arguments=["-e", "class", "com.linkedin.mtotestapp.InstrumentedTestAllSuccess#useAppContext"]))
+            yield (TestSuite(name='test_suite2',
+                             arguments=["-e", "class", "com.linkedin.mtotestapp.InstrumentedTestAllSuccess#testSuccess"]))
+            yield (TestSuite(name='test_suite3',
+                             arguments=["-e", "class", "com.linkedin.mtotestapp.InstrumentedTestSomeFailures"]))
+
+        listener = TestExpectations()
+        with AndroidTestOrchestrator(artifact_dir=str(tmpdir)) as orchestrator:
+            orchestrator.add_test_listener(listener)
+            orchestrator.execute_test_plan(test_plan=test_generator(),
+                                           test_applications=[android_test_app])
+        assert listener.test_count == 4
+
+    def test_execute_test_suite_multidevice(self, device: Device, device2: Device,
+                                            android_test_app: TestApplication,
+                                            android_test_app2: TestApplication,
+                                            tmpdir):
         test_count = 0
         test_suite_count = 0
         expected_test_suite = None
         current_test_suite = None
         uninstall_apk(android_test_app, device)
+        uninstall_apk(android_test_app2, device2)
 
         class TestExpectations(TestRunListener):
 
@@ -79,7 +158,7 @@ class TestAndroidTestOrchestrator(object):
                 pass
 
             def test_started(self, class_name: str, test_name: str):
-                pass
+                log.info("Started test %s %s", class_name, test_name)
 
             def test_ended(self, class_name: str, test_name: str, **kwargs):
                 nonlocal test_count, current_test_suite
@@ -122,8 +201,8 @@ class TestAndroidTestOrchestrator(object):
         with AndroidTestOrchestrator(artifact_dir=str(tmpdir)) as orchestrator:
             orchestrator.add_test_suite_listener(TestExpectations())
             orchestrator.execute_test_plan(test_plan=test_generator(),
-                                           test_applications=[android_test_app])
-        assert test_count == 2  # last test suite had one test
+                                           test_applications=[android_test_app, android_test_app2])
+        assert test_count == 4
 
     def test_add_background_task(self,
                                  device: Device,
@@ -171,7 +250,6 @@ class TestAndroidTestOrchestrator(object):
             reverse_forwarded_ports = device.execute_remote_cmd("reverse", "--list")
             assert "5432" in reverse_forwarded_ports and "5431" in reverse_forwarded_ports
             test_prep.upload_test_vectors(test_vectors)
-            orchestrator.add_test_suite_listeners([EmptyListener(), EmptyListener()])
             orchestrator.add_background_task(some_task(orchestrator))
             orchestrator.execute_test_plan(test_plan=test_generator(),
                                            test_applications=test_prep.test_apps)
@@ -204,8 +282,9 @@ class TestAndroidTestOrchestrator(object):
             for test_app in prep.test_apps:
                 test_app.uninstall()
                 assert test_app.package_name not in device.list_installed_packages()
-            prep.setup_foreign_apps(paths_to_foreign_apks=[support_test_app])
-            assert support_test_app.package_name in device.list_installed_packages()
+            apps = prep.setup_foreign_apps(paths_to_foreign_apks=[support_test_app])
+            assert len(apps) == 1
+            assert apps[0].package_name in device.list_installed_packages()
             device.set_system_property("debug.mock2", "\"\"\"\"")
             device_prep.configure_devices(settings={'system:dim_screen': new},
                                           properties={"debug.mock2": "5555"})

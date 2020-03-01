@@ -977,11 +977,14 @@ class DeviceSet:
                 results.append(method(device, *args, **kwargs))
             except Exception as e:
                 results.append(DeviceSet.DeviceError(device, e))
+        return results
 
     async def apply_concurrent(self,
                                async_method: Callable[[Any], Awaitable[Any]],
+                               *args: Any,
                                max_concurrent: Optional[int] = None,
-                               *args: Any, **kargs: Any):
+                               **kargs: Any
+                               ):
         semaphore = asyncio.Semaphore(value=max_concurrent or len(self._devices))
 
         async def limited_async_method(device: Device):
