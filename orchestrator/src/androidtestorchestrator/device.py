@@ -380,7 +380,7 @@ class Device(object):
                 if timeout is None:
                     await proc.wait()
                 else:
-                    asyncio.wait_for(proc.wait(), timeout=timeout)
+                    await asyncio.wait_for(proc.wait(), timeout=timeout)
 
             @property
             def returncode(self) -> Optional[int]:
