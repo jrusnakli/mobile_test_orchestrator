@@ -64,6 +64,28 @@ def android_test_app(device,
     request.addfinalizer(fin)
     return app_for_test
 
+
+# noinspection PyShadowingNames
+@pytest.fixture()
+def android_test_app2(device2,
+                      request,
+                      support_app: str,
+                      support_test_app: str):
+    uninstall_apk(support_app, device2)
+    uninstall_apk(support_test_app, device2)
+    app_for_test = TestApplication.from_apk(support_test_app, device2)
+    support_app = Application.from_apk(support_app, device2)
+
+    def fin():
+        """
+        Leave the campground as clean as you found it:
+        """
+        app_for_test.uninstall()
+        support_app.uninstall()
+    request.addfinalizer(fin)
+    return app_for_test
+
+
 @pytest.fixture()
 def android_service_app(device,
                      request,
@@ -97,6 +119,7 @@ def support_app():
         raise Exception("Failed to build support app")
     return support_app
 
+
 @pytest.fixture(scope='session')
 def emulator():
     if TAG_MTO_DEVICE_ID in os.environ:
@@ -109,12 +132,33 @@ def emulator():
 
 
 @pytest.fixture(scope='session')
+def emulator2():
+    if TAG_MTO_DEVICE_ID in os.environ:
+        deviceid = os.environ[TAG_MTO_DEVICE_ID]
+        print(f"Using user-specified device id: {deviceid}")
+        return deviceid
+    port = 5556
+    support.launch_emulator(port)
+    return "emulator-%d" % port
+
+
+@pytest.fixture(scope='session')
 def sole_emulator(emulator):  # kicks off emulator launch
     android_sdk = support.find_sdk()
     Device.set_default_adb_timeout(30)  # emulator without accel can be slow
     Device.set_default_long_adb_timeout(240*4)
     return Device(adb_path=os.path.join(android_sdk, "platform-tools", add_ext("adb")),
                   device_id=emulator)
+
+
+@pytest.fixture(scope='session')
+def device2(emulator2): # kicks off emulator launch
+    android_sdk = support.find_sdk()
+    Device.set_default_adb_timeout(30)  # emulator without accel can be slow
+    Device.set_default_long_adb_timeout(240*4)
+    return Device(adb_path=os.path.join(android_sdk, "platform-tools", add_ext("adb")),
+                  device_id=emulator2)
+
 
 
 emulator_lock = threading.Semaphore(1)

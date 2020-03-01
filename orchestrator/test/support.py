@@ -77,9 +77,9 @@ def wait_for_emulator_boot(port: int, avd: str, adb_path: str, emulator_path: st
 
     # read more about cmd option https://developer.android.com/studio/run/emulator-commandline
     if is_no_window:
-        cmd = [emulator_path, "-no-window", "-port", str(port), "@%s" % avd, "-wipe-data"]
+        cmd = [emulator_path, "-no-window", "-port", str(port), "@%s" % avd, "-wipe-data", "-read-only"]
     else:
-        cmd = [emulator_path, "-port", str(port), "@%s" % avd, "-wipe-data"]
+        cmd = [emulator_path, "-port", str(port), "@%s" % avd, "-wipe-data", "-read-only"]
     if is_retry and "-no-snapshot-load" not in cmd:
         cmd.append("-no-snapshot-load")
     if os.environ.get("EMULATOR_OPTS"):
@@ -88,7 +88,6 @@ def wait_for_emulator_boot(port: int, avd: str, adb_path: str, emulator_path: st
     time.sleep(3)
     getprop_cmd = [adb_path, "-s", device_id, "shell", "getprop", "sys.boot_completed"]
     tries = 100
-    cycles = 2
     while tries > 0:
         if proc.poll() is not None:
             raise Exception("Failed to launch emulator")
