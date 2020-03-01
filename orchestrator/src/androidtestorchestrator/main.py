@@ -216,7 +216,7 @@ class AndroidTestOrchestrator:
     async def _execute_plan(self,
                             test_plan: AsyncIterator[TestSuite],
                             test_applications: List[TestApplication]) -> None:
-        queue: asyncio.Queue[Optional[TestSuite]] = asyncio.Queue(maxsize=len(test_applications))
+        queue: asyncio.Queue = asyncio.Queue(maxsize=len(test_applications))  # type: ignore
 
         async def populate_q() -> None:
             async for test_run in _preloading(test_plan):
@@ -231,7 +231,7 @@ class AndroidTestOrchestrator:
                                  return_exceptions=True)
         await asyncio.wait_for(timed(), timeout=self._instrumentation_timeout)
 
-    async def _worker(self, queue: asyncio.Queue[Optional[TestSuite]], test_application: TestApplication) -> None:
+    async def _worker(self, queue: asyncio.Queue, test_application: TestApplication) -> None:  # type: ignore
         def apply(methodname: str, *args: Any, **kargs: Any) -> Any:
             for listener in self._run_listeners:
                 method = getattr(listener, methodname)
@@ -252,7 +252,7 @@ class AndroidTestOrchestrator:
             try:
                 test_run = TestSuite(name="", arguments=[], uploadables=[])
                 while test_run is not None:
-                    test_run = await asyncio.wait_for(queue.get(), timeout=10)  # type: ignore
+                    test_run = await asyncio.wait_for(queue.get(), timeout=10)
                     apply("test_run_started", test_run.name)
                     try:
                         for local_path, remote_path in test_run.uploadables:
