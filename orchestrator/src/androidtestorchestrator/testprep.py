@@ -224,7 +224,7 @@ class EspressoTestPreparation:
         milliseconds = (time.time() - start) * 1000
         return milliseconds
 
-    def setup_foreign_apps(self, paths_to_foreign_apks: List[str]) -> None:
+    def setup_foreign_apps(self, paths_to_foreign_apks: List[str]) -> List[Application]:
         """
         Install other apps (outside of test app and app under test) in support of testing.
         A device will be blacklisted and unused in this set of devices if is fails to install
@@ -240,16 +240,19 @@ class EspressoTestPreparation:
                 self._devices.blacklist(device)
 
         async def gather():
+            installed = []
             for path in paths_to_foreign_apks:
                 apps = await self._devices.apply_concurrent(install, path)
                 if not apps:
                     raise Exception("Failed to install foreign apk on any device.  Giving up")
+                installed += [app for app in apps if app is not None]
                 self._installed += [app for app in apps if app is not None]
+            return installed
 
         async def timer():
-            await asyncio.wait_for(gather(), timeout=5*60*len(paths_to_foreign_apks))
+            return await asyncio.wait_for(gather(), timeout=5*60*len(paths_to_foreign_apks))
 
-        asyncio.run(timer())
+        return asyncio.run(timer())
 
     def cleanup(self) -> None:
         """

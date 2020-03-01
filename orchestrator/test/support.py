@@ -228,7 +228,7 @@ def gradle_build(*target_and_q: Tuple[str, Queue]):
         for target, q in target_and_q:
             if target.endswith("assembleAndroidTest"):
                 apk_path = os.path.join(TEST_SUPPORT_APP_DIR, "app", "build", "outputs", "apk", "androidTest", "debug", "app-debug-androidTest.apk")
-            else:  # assembleDebug
+            else: # assembleDebug
                 apk_path = os.path.join(TEST_SUPPORT_APP_DIR, "app", "build", "outputs", "apk", "debug", "app-debug.apk")
             if not os.path.exists(apk_path):
                 raise Exception("Failed to find built apk %s" % apk_path)
