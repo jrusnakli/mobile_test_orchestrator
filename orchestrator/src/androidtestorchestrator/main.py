@@ -1,6 +1,5 @@
 import asyncio
 import sys
-from asyncio import Task
 
 import logging
 import os
