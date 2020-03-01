@@ -3,7 +3,7 @@ import logging
 import time
 from contextlib import suppress
 
-from typing import Dict, List, Optional, Type, Tuple, Union, Sequence
+from typing import Dict, List, Optional, Type, Tuple, Union
 from types import TracebackType
 from androidtestorchestrator.device import Device, DeviceSet
 from androidtestorchestrator.devicestorage import DeviceStorage
