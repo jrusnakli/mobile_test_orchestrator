@@ -3,7 +3,7 @@ import logging
 import time
 from contextlib import suppress
 
-from typing import Dict, List, Optional, Type, Tuple, Union
+from typing import Dict, List, Optional, Type, Tuple, Union, Sequence
 from types import TracebackType
 from androidtestorchestrator.device import Device, DeviceSet
 from androidtestorchestrator.devicestorage import DeviceStorage
@@ -46,7 +46,7 @@ class DevicePreparation:
         if properties:
             for property, value in properties.items():
                 results = self._devices.apply(Device.set_system_property, property, value)
-                for index, results in enumerate(results):
+                for index, result in enumerate(results):
                     self._restoration_properties[index][property] = result
 
     def verify_network_connection(self, domain: str, count: int = 10, acceptable_loss: int = 3) -> None:
@@ -56,21 +56,23 @@ class DevicePreparation:
         :param count: number of packets to test
         :raises: IOError on failure to successfully ping given number of packets
         """
-        async def run(device: Device):
+        async def run(device: Device) -> Tuple[Device, int]:
             lost_packet_count = device.check_network_connection(domain, count)
             return device, lost_packet_count
 
-        async def gather():
+        async def gather() -> List[Tuple[Device, int]]:
             return await self._devices.apply_concurrent(run)
 
-        async def timer():
+        async def timer() -> List[Tuple[Device, int]]:
             return await asyncio.wait_for(gather(), timeout=60)
 
         results = asyncio.run(timer())
         if all([lost_packets > 0 for (_, lost_packets) in results]):
             raise IOError(
-                f"Connection to {domain} failed; expected {count} packets but got {count - lost_packet_count}")
-        for device in [device for device, lost_packets in results if lost_packets > 0]:
+                f"Connection to {domain} failed")
+        for device, lost_packets in [(device, lost_packets) for device, lost_packets in results if lost_packets > 0]:
+            log.warning(f"Failed connection from device {device.device_id}, with {lost_packets} of {count}" +
+                        f" packets lost. Blacklisting device")
             self._devices.blacklist(device)
 
     def reverse_port_forward(self, device_port: int, local_port: int) -> None:
@@ -152,34 +154,36 @@ class EspressoTestPreparation:
           with tests)
         """
         self._devices = DeviceSet([devices]) if isinstance(devices, Device) else devices
-        self._data_files_path: Optional[str] = None
+        self._data_files_paths: List[str] = []
 
-        async def install_apk(device):
+        async def install_apk(device: Device) -> Optional[Application]:
             try:
                 return await Application.from_apk_async(path_to_apk, device=device)
             except Exception:
                 self._devices.blacklist(device)
+                return None
 
-        async def gather_apk():
+        async def gather_apk() -> List[Application]:
             return await self._devices.apply_concurrent(install_apk, max_concurrent=3)
 
-        async def timer_apk():
+        async def timer_apk() -> List[Application]:
             return await asyncio.wait_for(gather_apk(), timeout=5*60)
 
         self._installed = [app for app in asyncio.run(timer_apk()) if app is not None]
         if not self._installed:
             raise Exception("Failed to install app on all devices.  Giving up")
 
-        async def install_test_apk(device):
+        async def install_test_apk(device: Device) -> Optional[TestApplication]:
             try:
                 return await TestApplication.from_apk_async(path_to_test_apk, device=device)
             except Exception:
                 self._devices.blacklist(device)
+                return None
 
-        async def gather_test_apk():
+        async def gather_test_apk() -> List[TestApplication]:
             return await self._devices.apply_concurrent(install_test_apk, max_concurrent=3)
 
-        async def timer_test_apk():
+        async def timer_test_apk() -> List[TestApplication]:
             return await asyncio.wait_for(gather_test_apk(), timeout=5*60)
 
         self._test_apps = [test_app for test_app in asyncio.run(timer_test_apk()) if test_app is not None]
@@ -215,11 +219,11 @@ class EspressoTestPreparation:
         """
         start = time.time()
 
-        async def upload(device: Device):
+        async def upload(device: Device) -> None:
             storage = DeviceStorage(device)
             basedir = os.path.basename(os.path.abspath(root_path))
             ext_storage = device.external_storage_location
-            basedir = '/'.join(ext_storage, basedir)
+            basedir = '/'.join([ext_storage, basedir])
             storage.make_dir(basedir)
             for root, dir_, files in os.walk(root_path, topdown=True):
                 if not os.path.isdir(root_path):
@@ -227,9 +231,9 @@ class EspressoTestPreparation:
                 for filename in files:
                     remote_location = "/".join([basedir, filename])
                     await storage.push_async(os.path.join(root, filename), remote_location, timeout=5*60)
-                    self._data_files_path.append(remote_location)
+                    self._data_files_paths.append(remote_location)
 
-        async def gather():
+        async def gather() -> None:
             await self._devices.apply_concurrent(upload)
 
         asyncio.run(gather())
@@ -245,14 +249,15 @@ class EspressoTestPreparation:
 
         :raises Exception: if any apk fails to install across all devices
         """
-        async def install(device: Device, path_to_apk: str) -> None:
+        async def install(device: Device, path_to_apk: str) -> Optional[Application]:
             try:
                 return await Application.from_apk_async(path_to_apk, device=device)
             except Exception:
                 self._devices.blacklist(device)
+                return None
 
-        async def gather():
-            installed = []
+        async def gather() -> List[Application]:
+            installed: List[Application] = []
             for path in paths_to_foreign_apks:
                 apps = await self._devices.apply_concurrent(install, path)
                 if not apps:
@@ -261,7 +266,7 @@ class EspressoTestPreparation:
                 self._installed += [app for app in apps if app is not None]
             return installed
 
-        async def timer():
+        async def timer() -> List[Application]:
             return await asyncio.wait_for(gather(), timeout=5*60*len(paths_to_foreign_apks))
 
         return asyncio.run(timer())
@@ -270,11 +275,11 @@ class EspressoTestPreparation:
         """
         Remove all pushed files and uninstall all apps installed by this test prep
         """
-        if self._data_files_path:
+        if self._data_files_paths:
             for device in self._devices.devices:
                 storage = DeviceStorage(device)
                 with suppress(Exception):
-                    for remote_location in self._data_files_path:
+                    for remote_location in self._data_files_paths:
                         storage.remove(remote_location)
 
         for app in self._installed:
