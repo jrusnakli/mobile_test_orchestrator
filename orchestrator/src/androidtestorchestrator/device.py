@@ -297,7 +297,6 @@ class Device(object):
                                 **kwargs)
 
     async def execute_remote_cmd_async(self, *args: str,
-                                       proc_completion_timeout: Optional[float] = 0.0,
                                        loop: Optional[AbstractEventLoop] = None
                                        ) -> AsyncContextManager[Any]:
         """
@@ -330,6 +329,7 @@ class Device(object):
             Wraps below async generator in context manager to ensure proper closure
             """
             async def __aenter__(self) -> "LineGenerator":
+                self._timedout = False
                 return self
 
             async def __aexit__(self, exc_type: Optional[Type[BaseException]], exc_val: Optional[BaseException],
@@ -341,6 +341,7 @@ class Device(object):
                     except Exception:
                         with suppress(Exception):
                             await self.stop(force=True)
+                    await self.wait(timeout=1)
 
             async def output(self,  unresponsive_timeout: Optional[float] = None) -> AsyncIterator[str]:
                 """

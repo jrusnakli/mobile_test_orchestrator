@@ -5,6 +5,7 @@
 # from there
 ##########
 import asyncio
+import datetime
 import os
 from pathlib import Path
 from unittest.mock import patch, PropertyMock
@@ -217,3 +218,29 @@ class TestAndroidDevice:
         time.sleep(3)
         new_is_screen_on = device.is_screen_on()
         assert is_screen_on != new_is_screen_on
+
+    def test_raise_on_invalid_adb_path(self):
+        with pytest.raises(FileNotFoundError):
+            Device("some_serial_id", "/no/such/path")
+
+    def test_none_return_on_no_device_datetime(self, device: Device, monkeypatch):
+        def mock_execute_cmd(*args, **kargs):
+            return ""
+
+        monkeypatch.setattr("androidtestorchestrator.device.Device.execute_remote_cmd", mock_execute_cmd)
+        device._device_server_datetime_offset = None
+        assert device.device_server_datetime_offset.total_seconds() == 0
+
+    def test_invalid_cmd_execution_unresponsive(self, device: Device, support_app: str):
+        async def execute():
+            with pytest.raises(asyncio.TimeoutError):
+                async with await device.execute_remote_cmd_async("install", support_app) as proc:
+                    async for _ in proc.output(unresponsive_timeout=0.01):
+                        pass
+
+        asyncio.run(execute(), debug=True)
+        try:
+            asyncio.get_event_loop()
+        except Exception:
+            asyncio.set_event_loop(asyncio.new_event_loop())
+

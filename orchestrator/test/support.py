@@ -77,9 +77,11 @@ def wait_for_emulator_boot(port: int, avd: str, adb_path: str, emulator_path: st
 
     # read more about cmd option https://developer.android.com/studio/run/emulator-commandline
     if is_no_window:
-        cmd = [emulator_path, "-no-window", "-port", str(port), "@%s" % avd, "-wipe-data", "-read-only"]
+        cmd = [emulator_path, "-no-window", "-port", str(port), "@%s" % avd, "-wipe-data"]
     else:
-        cmd = [emulator_path, "-port", str(port), "@%s" % avd, "-wipe-data", "-read-only"]
+        cmd = [emulator_path, "-port", str(port), "@%s" % avd, "-wipe-data"]
+    if os.environ.get("CIRCLECI") is None:
+        cmd.append("-read-only")
     if is_retry and "-no-snapshot-load" not in cmd:
         cmd.append("-no-snapshot-load")
     if os.environ.get("EMULATOR_OPTS"):
