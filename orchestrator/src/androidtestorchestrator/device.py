@@ -9,7 +9,7 @@ from asyncio import AbstractEventLoop
 from contextlib import suppress, asynccontextmanager
 from types import TracebackType
 from typing import List, Tuple, Dict, Optional, AsyncContextManager, Union, Callable, IO, Any, AsyncIterator, Type, \
-    AnyStr
+    AnyStr, Iterable, Awaitable
 
 from apk_bitminer.parsing import AXMLParser  # type: ignore
 
@@ -297,7 +297,6 @@ class Device(object):
                                 **kwargs)
 
     async def execute_remote_cmd_async(self, *args: str,
-                                       proc_completion_timeout: Optional[float] = 0.0,
                                        loop: Optional[AbstractEventLoop] = None
                                        ) -> AsyncContextManager[Any]:
         """
@@ -330,6 +329,8 @@ class Device(object):
             Wraps below async generator in context manager to ensure proper closure
             """
             async def __aenter__(self) -> "Process":
+            async def __aenter__(self) -> "LineGenerator":
+                self._timedout = False
                 return self
 
             async def __aexit__(self, exc_type: Optional[Type[BaseException]], exc_val: Optional[BaseException],
@@ -341,6 +342,7 @@ class Device(object):
                     except Exception:
                         with suppress(Exception):
                             await self.stop(force=True)
+                    await self.wait(timeout=1)
 
             async def output(self,  unresponsive_timeout: Optional[float] = None) -> AsyncIterator[str]:
                 """
@@ -453,7 +455,8 @@ class Device(object):
             output = self.execute_remote_cmd("shell", "getprop", key)
             return output.rstrip()
         except Exception as e:
-            log.error(f"Unable to get system property {key} [{str(e)}]")
+            if verbose:
+                log.error(f"Unable to get system property {key} [{str(e)}]")
             return None
 
     def get_device_properties(self) -> Dict[str, str]:

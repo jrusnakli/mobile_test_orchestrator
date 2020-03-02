@@ -135,6 +135,8 @@ def emulator():
 
 @pytest.fixture(scope='session')
 def emulator2():
+    if os.environ.get("CIRCLECI"):
+        raise Exception("Invalid environment for running multiple emulators")
     if TAG_MTO_DEVICE_ID in os.environ:
         deviceid = os.environ[TAG_MTO_DEVICE_ID]
         print(f"Using user-specified device id: {deviceid}")
@@ -163,8 +165,6 @@ def device2(emulator2): # kicks off emulator launch
 
 
 
-emulator_lock = threading.Semaphore(1)
-
 
 @pytest.fixture
 def device(sole_emulator):
@@ -175,9 +175,7 @@ def device(sole_emulator):
     :param request:
     :return: sole test emulator
     """
-    emulator_lock.acquire()
     yield sole_emulator
-    emulator_lock.release()
 
 
 @pytest.fixture
