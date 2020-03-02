@@ -207,7 +207,6 @@ at android.app.Instrumentation$InstrumentationThread.run(Instrumentation.java:17
                     assert stack_trace.strip() == TestInstrumentationOutputParser.EXPECTED_STACK_TRACE
 
             parser = InstrumentationOutputParser(test_listeners=[Listener()])
-            parser.add_test_execution_listener(logcat_marker)  # TODO: not yet tested other than to exercise interface
 
             for line in self.example_output.splitlines():
                parser.parse_line(line)

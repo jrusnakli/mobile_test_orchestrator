@@ -5,11 +5,9 @@ import logging
 from subprocess import Popen
 from types import TracebackType
 
-import psutil  # type: ignore
 from contextlib import suppress
 from typing import AsyncContextManager, Dict, Tuple, Optional, TextIO, Type, Any
 
-from .timing import StopWatch
 from .parsing import LineParser
 from .device import Device, RemoteDeviceBased
 
@@ -22,7 +20,7 @@ class DeviceLog(RemoteDeviceBased):
     Class to read, capture and clear a device's log (Android logcat)
     """
 
-    class LogCapture(RemoteDeviceBased, StopWatch):
+    class LogCapture(RemoteDeviceBased):
         """
         context manager to capture logcat output from an Android device to a file, providing interface
         to mark key positions within the file (e.g. start and end of a test)
@@ -34,7 +32,6 @@ class DeviceLog(RemoteDeviceBased):
             :param output_path: file path where logcat output is to be captured
             """
             super(DeviceLog.LogCapture, self).__init__(device)
-            self._markers: Dict[str, int] = {}
             self._proc: Optional[Popen] = None
             if os.path.exists(output_path):
                 raise Exception(f"Path {output_path} already exists; will not overwrite")
@@ -44,54 +41,13 @@ class DeviceLog(RemoteDeviceBased):
             """
             start capturing logcat output from device with given id to given output path
             """
-            self._markers = {}
             self._proc = self._device.execute_remote_cmd_background("logcat", stdout=self._output_file)
             return self
-
-        def _mark(self, marker: str, start_or_end: str) -> int:
-            """
-            Capture the current position (after flushing buffers) within the log file as a start/end marker
-
-            :param marker: name to be associated with the starting point
-            :param start_or_end: start or end (type of marker)
-
-            :returns: file position captured for the marker (will also be captured internal to this object)
-            """
-            marker = f"{marker}.{start_or_end}"
-            if marker in self._markers:
-                log.error(f"Duplicate test marker!: {marker}")
-            if self._proc and self._proc.poll() is None:
-                # For windows compat, we use psutil over os.kill(SIGSTOP/SIGCONT)
-                p = psutil.Process(self._proc.pid)
-                # pause logcat process, flush file, capture current file position and resume logcat
-                p.suspend()
-                self._output_file.flush()
-                self._markers[marker] = self._output_file.tell()
-                p.resume()
-            else:
-                raise Exception("process is not active")
-            return self._markers[marker]
-
-        def mark_start(self, name: str) -> None:
-            """
-            Capture current position within output file as a marker of the start of an activity
-            :param name: name of activity
-            """
-            self._mark(name, "start")
-
-        def mark_end(self, name: str) -> None:
-            """
-            Capture current position within output file as a marker of end of an activity
-            :param name: name of activity
-            """
-            self._mark(name, "end")
 
         def __exit__(self, exc_type: Optional[Type[BaseException]], exc_val: Optional[BaseException],
                      exc_tb: Optional[TracebackType]) -> None:
             """
-            stop logcat capture.  markers will be "line_justifyd" so that starting markers will be placed at the
-            beginning of the line at which the marker was captured and ending markers will be placed at the end of
-            the line at which the marker was captured
+            stop logcat capture and close file
             """
             if not self._proc:
                 return
@@ -100,62 +56,6 @@ class DeviceLog(RemoteDeviceBased):
             self._proc = None
             self._output_file.close()
             self._output_file = None  # type: ignore
-
-        @property
-        def markers(self) -> Dict[str, int]:
-            """
-            Only call this function once log capture has stopped
-
-            :return: a dictionary of all captured markers, with the key (appended with ".start" or ".end")
-                being the name of the marker (e.g. a test name) and the value being the associated line-justified file
-                position associated with that marker.
-            """
-            self._line_justify_markers()
-            return self._markers
-
-        def _line_justify_markers(self) -> None:
-            """
-            align start markers to just after previous return or beginning of file,
-            end marker to next return character or end of file
-            """
-            # TODO: may need to tune this to look for specific tags when searching for "start" markers
-            chunk = 100
-            with open(self._output_file.name, 'r', encoding='utf-8', errors='ignore') as f:
-                # TODO: simpler algorithm here?
-                for marker, pos in self._markers.items():
-                    if marker.endswith('start'):
-                        new_pos = max(pos - 1, 0)
-                        while True:
-                            if new_pos == 0:
-                                break
-                            size = min(chunk, new_pos + 1)
-                            new_pos = max(new_pos - chunk, 0)
-                            f.seek(new_pos)
-                            data = f.read(size)
-                            if '\n' in data:
-                                new_pos += data.rfind('\n') + 1
-                                break
-                            elif '\r' in data:
-                                new_pos += data.rfind('\r') + 1
-                                break
-                    elif marker.endswith('end'):
-                        new_pos = pos
-                        while True:
-                            f.seek(new_pos)
-                            data = f.read(chunk)
-                            if '\n' in data:
-                                new_pos += data.find('\n')
-                                break
-                            elif '\r' in data:
-                                new_pos += data.find('\r')
-                                break
-                            elif len(data) < chunk:
-                                new_pos += len(data)
-                                break
-                            new_pos += len(data)
-                    else:
-                        raise Exception("Internal error: marker is neither a start or end marker: " + marker)
-                    self._markers[marker] = new_pos
 
     DEFAULT_LOGCAT_BUFFER_SIZE = "5M"
 
@@ -213,9 +113,8 @@ class DeviceLog(RemoteDeviceBased):
         >>> device = Device("some_serial_id", "/path/to/adb")
         ... log = DeviceLog(device)
         ... with log.capture_to_file("./log.txt") as log_capture:
-        ...     log_capture.mark_start("some_task")
         ...     # do_something()
-        ...     log_capture.mark_end("some_task")
+        ...     pass
         ... # file closed, logcat process terminated
         """
         return self.LogCapture(self.device, output_path=output_path)

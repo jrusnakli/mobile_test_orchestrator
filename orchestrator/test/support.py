@@ -11,6 +11,7 @@ from typing import Tuple
 from apk_bitminer.parsing import AXMLParser
 
 from androidtestorchestrator.application import Application
+import logging
 
 _BASE_DIR = os.path.join(os.path.dirname(__file__), "..", "..")
 _SRC_BASE_DIR = os.path.join(os.path.dirname(__file__), "..", )
@@ -22,6 +23,7 @@ SETUP_PATH = os.path.join(_SRC_BASE_DIR, "setup.py")
 
 support_app_q = Queue()
 support_test_app_q = Queue()
+log = logging.getLogger(__name__)
 
 
 class Config:
@@ -77,7 +79,7 @@ def wait_for_emulator_boot(port: int, avd: str, adb_path: str, emulator_path: st
 
     # read more about cmd option https://developer.android.com/studio/run/emulator-commandline
     if is_no_window:
-        cmd = [emulator_path, "-no-window", "-port", str(port), "@%s" % avd, "-wipe-data"]
+        cmd = [emulator_path, "-no-window", "-port", str(port), "@%s" % avd, "-wipe-data", "-no-boot-anim"]
     else:
         cmd = [emulator_path, "-port", str(port), "@%s" % avd, "-wipe-data"]
     if os.environ.get("CIRCLECI") is None:
@@ -139,11 +141,19 @@ def launch_emulator(port: int):
 
     is_no_window = False
 
-    if sys.platform == 'win32':
-        emulator_path = os.path.join(android_sdk, "emulator", "emulator-headless.exe")
+    if os.environ.get("CIRCLECI"):
+        if sys.platform == 'win32':
+            emulator_path = os.path.join(android_sdk, "emulator", "emulator-headless.exe")
+        else:
+            # latest Android SDK should use $SDK_ROOT/emulator/emulator instead of $SDK_ROOT/tools/emulator
+            emulator_path = os.path.join(android_sdk, "emulator", "emulator-headless")
     else:
-        # latest Android SDK should use $SDK_ROOT/emulator/emulator instead of $SDK_ROOT/tools/emulator
-        emulator_path = os.path.join(android_sdk, "emulator", "emulator-headless")
+        if sys.platform == 'win32':
+            emulator_path = os.path.join(android_sdk, "emulator", "emulator.exe")
+        else:
+            # latest Android SDK should use $SDK_ROOT/emulator/emulator instead of $SDK_ROOT/tools/emulator
+            emulator_path = os.path.join(android_sdk, "emulator", "emulator")
+        is_no_window = True
     sdkmanager_path = os.path.join(android_sdk, "tools", "bin", "sdkmanager")
     avdmanager_path = os.path.join(android_sdk, "tools", "bin", "avdmanager")
     if sys.platform.lower() == 'win32':

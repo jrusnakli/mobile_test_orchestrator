@@ -246,9 +246,8 @@ class AndroidTestOrchestrator:
         device_log = DeviceLog(test_application.device)
         device_storage = DeviceStorage(test_application.device)
         logcat_output_path = os.path.join(self._artifact_dir, f"logcat-{test_application.device.device_id}.txt")
-        with device_log.capture_to_file(output_path=logcat_output_path) as log_capture:
+        with device_log.capture_to_file(output_path=logcat_output_path):
             # log_capture is to listen to test status to mark beginning/end of each test run:
-            instrumentation_parser.add_test_execution_listener(log_capture)
             try:
                 test_run = TestSuite(name="", arguments=[], uploadables=[])
                 while test_run is not None:
@@ -275,14 +274,6 @@ class AndroidTestOrchestrator:
                 if test_application.device in self._logcat_procs:
                     asyncio.wait_for(self._logcat_procs[test_application.device].stop(), timeout=10)
                     self._logcat_procs[test_application.device].remove(test_application.device)
-
-            # capture logcat markers (begin/end of each test/test suite)
-            marker_output_path = os.path.join(self._artifact_dir, 'log_markers.txt')
-            if os.path.exists(marker_output_path):
-                os.remove(marker_output_path)
-            with open(marker_output_path, 'w') as f:
-                for marker, pos in log_capture.markers.items():
-                    f.write("%s=%s\n" % (marker, str(pos)))
 
     # TASK-3: monitor logcat for given tags in _tag_monitors
     async def _process_logcat_tags(self, device: Device) -> None:
