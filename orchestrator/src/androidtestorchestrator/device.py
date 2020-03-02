@@ -326,7 +326,6 @@ class Device:
                                 **kwargs)
 
     async def execute_remote_cmd_async(self, *args: str,
-                                       proc_completion_timeout: Optional[float] = 0.0,
                                        loop: Optional[AbstractEventLoop] = None
                                        ) -> AsyncContextManager[Any]:
         """
@@ -483,7 +482,8 @@ class Device:
             output = self.execute_remote_cmd("shell", "getprop", key)
             return output.rstrip()
         except Exception as e:
-            log.error(f"Unable to get system property {key} [{str(e)}]")
+            if verbose:
+                log.error(f"Unable to get system property {key} [{str(e)}]")
             return None
 
     def get_device_properties(self) -> Dict[str, str]:
