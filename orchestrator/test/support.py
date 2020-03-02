@@ -1,4 +1,3 @@
-import logging
 import os
 # TODO: CAUTION: WE CANNOT USE asyncio.subprocess as we executein in a thread other than made and on unix-like systems, there
 # is bug in Python 3.7.
@@ -12,6 +11,7 @@ from typing import Tuple
 from apk_bitminer.parsing import AXMLParser
 
 from androidtestorchestrator.application import Application
+import logging
 
 _BASE_DIR = os.path.join(os.path.dirname(__file__), "..", "..")
 _SRC_BASE_DIR = os.path.join(os.path.dirname(__file__), "..", )
@@ -23,7 +23,6 @@ SETUP_PATH = os.path.join(_SRC_BASE_DIR, "setup.py")
 
 support_app_q = Queue()
 support_test_app_q = Queue()
-
 log = logging.getLogger(__name__)
 
 
@@ -152,11 +151,19 @@ def launch_emulator(port: int):
 
     is_no_window = False
 
-    if sys.platform == 'win32':
-        emulator_path = os.path.join(android_sdk, "emulator", "emulator-headless.exe")
+    if os.environ.get("CIRCLECI"):
+        if sys.platform == 'win32':
+            emulator_path = os.path.join(android_sdk, "emulator", "emulator-headless.exe")
+        else:
+            # latest Android SDK should use $SDK_ROOT/emulator/emulator instead of $SDK_ROOT/tools/emulator
+            emulator_path = os.path.join(android_sdk, "emulator", "emulator-headless")
     else:
-        # latest Android SDK should use $SDK_ROOT/emulator/emulator instead of $SDK_ROOT/tools/emulator
-        emulator_path = os.path.join(android_sdk, "emulator", "emulator-headless")
+        if sys.platform == 'win32':
+            emulator_path = os.path.join(android_sdk, "emulator", "emulator.exe")
+        else:
+            # latest Android SDK should use $SDK_ROOT/emulator/emulator instead of $SDK_ROOT/tools/emulator
+            emulator_path = os.path.join(android_sdk, "emulator", "emulator")
+        is_no_window = True
     sdkmanager_path = os.path.join(android_sdk, "tools", "bin", "sdkmanager")
     avdmanager_path = os.path.join(android_sdk, "tools", "bin", "avdmanager")
     if sys.platform.lower() == 'win32':

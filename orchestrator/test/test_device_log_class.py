@@ -77,19 +77,6 @@ class TestDeviceLog:
             assert "new_line" in line
             assert line not in output_before
 
-    def test_capture_mark_start_stop(self, device: Device, tmpdir):
-        device_log = DeviceLog(device)
-        output_path = os.path.join(str(tmpdir), "logcat.txt")
-        with device_log.capture_to_file(output_path) as log_capture:
-            time.sleep(2)
-            log_capture.mark_start("test1")
-            time.sleep(5)
-            log_capture.mark_end("test1")
-            time.sleep(2)
-            assert "test1.start" in log_capture.markers
-            assert "test1.end" in log_capture.markers
-            assert log_capture.markers["test1.start"] < log_capture.markers["test1.end"]
-
     def test_invalid_output_path(self, fake_sdk, tmpdir):
         device = Device("fakeid", os.path.join(fake_sdk, "platform-tools", "adb"))
         tmpfile = os.path.join(str(tmpdir), "somefile")
