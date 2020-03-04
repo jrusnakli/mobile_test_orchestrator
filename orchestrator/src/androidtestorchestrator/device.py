@@ -342,7 +342,8 @@ class Device(object):
                     except Exception:
                         with suppress(Exception):
                             await self.stop(force=True)
-                    await self.wait(timeout=1)
+                    with suppress(Exception):
+                        await self.wait(timeout=1)  # attempt to wait for process true end
 
             async def output(self,  unresponsive_timeout: Optional[float] = None) -> AsyncIterator[str]:
                 """
