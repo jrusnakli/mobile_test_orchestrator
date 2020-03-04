@@ -5,7 +5,7 @@ from abc import abstractmethod, ABC
 from contextlib import suppress
 from typing import List, Optional, Any
 
-from .reporting import TestStatus, TestRunListener
+from .reporting import TestStatus, TestExecutionListener
 from .timing import StopWatch
 
 with suppress(ModuleNotFoundError):
@@ -74,7 +74,7 @@ class InstrumentationOutputParser(LineParser):
             else:
                 log.warning("Unrecognized field: %s;  ignoring" % field_name)
 
-    def __init__(self, test_listeners: List[TestRunListener]) -> None:
+    def __init__(self, test_run_name: str, test_listeners: List[TestExecutionListener]) -> None:
         """
         :param test_listener: Reporter object to report test status on an on-going basis
         """
@@ -89,6 +89,7 @@ class InstrumentationOutputParser(LineParser):
         self._total_test_count: int = 0
         self._return_code: Optional[int] = None
         self._streamed: List[str] = []
+        self._test_run_name = test_run_name
 
     # PROPERTIES
 
@@ -112,7 +113,7 @@ class InstrumentationOutputParser(LineParser):
         def apply(methodname: str, *args: Any, **kargs: Any) -> Any:
             for reporter in self._reporters:
                 method = getattr(reporter, methodname)
-                method(*args, **kargs)
+                method(self._test_run_name, *args, **kargs)
 
         assert self._test_result, "expected self._test_result to be set"
         if code > 0:
@@ -137,7 +138,8 @@ class InstrumentationOutputParser(LineParser):
             # capture result and start over with clean slate:
             if self._test_result.result == TestStatus.PASSED:
                 duration = (datetime.datetime.utcnow() - self._test_result.start_time).total_seconds()
-                apply("test_ended", class_name=self._test_result.clazz,
+                apply("test_ended",
+                      class_name=self._test_result.clazz,
                       test_name=self._test_result.test_id,
                       test_no=self._test_result.test_no,
                       duration=duration,

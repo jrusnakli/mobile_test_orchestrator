@@ -256,5 +256,4 @@ def uninstall_apk(apk, device):
         Application(AXMLParser.parse(apk).package_name, device).uninstall()
 
 
-
 find_sdk()
