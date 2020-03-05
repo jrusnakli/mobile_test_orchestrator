@@ -238,9 +238,5 @@ class TestAndroidDevice:
                     async for _ in proc.output(unresponsive_timeout=0.01):
                         pass
 
-        asyncio.run(execute(), debug=True)
-        try:
-            asyncio.get_event_loop()
-        except Exception:
-            asyncio.set_event_loop(asyncio.new_event_loop())
+        asyncio.get_event_loop().run_until_complete(execute())
 
