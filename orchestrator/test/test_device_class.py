@@ -155,12 +155,12 @@ class TestAndroidDevice:
 
     def test_invalid_cmd_execution(self, device: Device):
         async def execute():
-            async with await device.execute_remote_cmd_async("some", "bad", "command", proc_completion_timeout=10) as lines:
-                async for _ in lines:
+            async with await device.execute_remote_cmd_async("some", "bad", "command") as proc:
+                async for _ in proc.output(unresponsive_timeout=10):
                     pass
-        with pytest.raises(Exception) as exc_info:
-            asyncio.get_event_loop().run_until_complete(execute())
-        assert "some bad command" in str(exc_info.value)
+                assert proc.returncode is not None
+                assert proc.returncode != 0
+        asyncio.get_event_loop().run_until_complete(execute())
 
     def test_get_locale(self, device: Device):
         locale = device.get_locale()

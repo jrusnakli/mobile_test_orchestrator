@@ -4,7 +4,7 @@ import time
 from asyncio import AbstractEventLoop
 
 from apk_bitminer.parsing import AXMLParser  # type: ignore
-from typing import List, TypeVar, Type, Optional, AsyncContextManager, AsyncIterator, Dict, Union
+from typing import List, TypeVar, Type, Optional, AsyncContextManager, Dict, Union, Any
 
 from .device import Device, RemoteDeviceBased
 
@@ -358,15 +358,12 @@ class TestApplication(Application):
         return items
 
     async def run(self, *options: str, loop: Optional[AbstractEventLoop] = None,
-                  unresponsive_timeout: Optional[float] = None, max_test_time: Optional[float] = None
-                  ) -> AsyncContextManager[AsyncIterator[str]]:
+                  ) -> AsyncContextManager[Any]:
         """
         Run an instrumentation test package, yielding lines from std output
 
         :param options: arguments to pass to instrument command
         :param loop: event loop to execute under, or None for default event loop
-        :param unresponsive_timeout: time to wait for run to complete, or None to wait indefinitely
-        :param max_test_time: maximum test time before Timeout is raised, or None for noe timeout
 
         :returns: return coroutine wrapping an asyncio context manager for iterating over lines
 
@@ -385,8 +382,6 @@ class TestApplication(Application):
         options = tuple('"%s"' % arg if not arg.startswith('"') else arg for arg in options)
         return await self.device.execute_remote_cmd_async("shell", "am", "instrument", "-w", *options, "-r",
                                                           "/".join([self._package_name, self._runner]),
-                                                          proc_completion_timeout=unresponsive_timeout,
-                                                          unresponsive_timeout=max_test_time,
                                                           loop=loop)
 
     @classmethod

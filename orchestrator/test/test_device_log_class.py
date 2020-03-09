@@ -27,8 +27,9 @@ class TestDeviceLog:
         counter = 2
 
         async def parse_logcat():
-            async with await device_log.logcat("-v", "brief", "-s", "MTO-TEST") as lines:
-                async for line in lines:
+
+            async with await device_log.logcat("-v", "brief", "-s", "MTO-TEST") as proc:
+                async for line in proc.output(unresponsive_timeout=120):
                     nonlocal output
                     # makes easy to debug on circleci when emulator accel is not available
                     print(f"test_logcat_and_clear:DEBUG: {line}")
@@ -37,6 +38,7 @@ class TestDeviceLog:
                     output.append(line)
                     if len(output) >= counter:
                         break
+                await proc.stop(timeout=10)
 
         async def timer():
             await asyncio.wait_for(parse_logcat(), timeout=120)
