@@ -305,7 +305,7 @@ class Device(object):
         lines of output.
 
         :param args: command to execute
-       :param loop: event loop to asynchronously run under, or None for default event loop
+        :param loop: event loop to asynchronously run under, or None for default event loop
 
         :return: AsyncGenerator iterating over lines of output from command
 
@@ -321,7 +321,7 @@ class Device(object):
         print(f"Executing: {' '.join(cmd)}")
         proc = await asyncio.subprocess.create_subprocess_exec(*cmd,
                                                                stdout=asyncio.subprocess.PIPE,
-                                                               stderr=asyncio.subprocess.STDOUT,
+                                                               stderr=asyncio.subprocess.PIPE,
                                                                loop=loop or asyncio.events.get_event_loop(),
                                                                bufsize=0)  # noqa
 
@@ -438,9 +438,10 @@ class Device(object):
         self.execute_remote_cmd("shell", "setprop", key, value, capture_stdout=False)
         return previous_value
 
-    def get_system_property(self, key: str) -> Optional[str]:
+    def get_system_property(self, key: str, verbose: bool = True) -> Optional[str]:
         """
         :param key: the key of the property to be retrieved
+        :param verbose: whether to print error messages on command execution problems or not
 
         :return: the property from the device associated with the given key, or None if no such property exists
         """
@@ -448,7 +449,8 @@ class Device(object):
             output = self.execute_remote_cmd("shell", "getprop", key)
             return output.rstrip()
         except Exception as e:
-            log.error(f"Unable to get system property {key} [{str(e)}]")
+            if verbose:
+                log.error(f"Unable to get system property {key} [{str(e)}]")
             return None
 
     def get_device_properties(self) -> Dict[str, str]:
@@ -687,7 +689,7 @@ class Device(object):
         # Do not allow more than one install at a time on a specific device, as this can be problematic
         async with self.lock():
             async with await self.execute_remote_cmd_async(*cmd) as proc:
-                async for msg in proc.output():
+                async for msg in proc.output(unresponsive_timeout=Device.TIMEOUT_ADB_CMD):
                     log.debug(msg)
 
                     if self.ERROR_MSG_INSUFFICIENT_STORAGE in msg:
@@ -697,7 +699,7 @@ class Device(object):
                     # (non-standard Android):
                     if on_full_install and msg and any([condition in msg for condition in conditions]):
                         on_full_install()
-                proc.wait(Device.TIMEOUT_LONG_ADB_CMD)
+                await proc.wait(Device.TIMEOUT_ADB_CMD)
 
         # On some devices, a pop-up may prevent successful install even if return code from adb install showed success,
         # so must explicitly verify the install was successful:
@@ -845,6 +847,46 @@ class Device(object):
                 app_package = matches.group(1)
                 activity_list.append(app_package)
         return activity_list
+
+    def reverse_port_forward(self, device_port: int, local_port: int):
+        """
+        reverse forward traffic on remote port to local port
+
+        :param device_port: remote device port to forward
+        :param local_port: port to forward to
+        """
+        self.execute_remote_cmd("reverse", f"tcp:{device_port}", f"tcp:{local_port}")
+
+    def port_forward(self, local_port: int, device_port: int):
+        """
+        forward traffic from local port to remote device port
+
+        :param local_port: port to forward from
+        :param device_port: port to forward to
+        """
+        self.execute_remote_cmd("forward", f"tcp:{device_port}", f"tcp:{local_port}")
+
+    def remove_reverse_port_forward(self, port: Optional[int] = None):
+        """
+        Remove reverse port forwarding
+
+        :param port: port to remove or None to remove all reverse forwarded ports
+        """
+        if port is not None:
+            self.execute_remote_cmd("reverse", "--remove", f"tcp:{port}")
+        else:
+            self.execute_remote_cmd("reverse", "--remove-all")
+
+    def remove_port_forward(self, port: Optional[int] = None):
+        """
+        Remove reverse port forwarding
+
+        :param port: port to remove or None to remove all reverse forwarded ports
+        """
+        if port is not None:
+            self.execute_remote_cmd("forward", "--remove", f"tcp:{port}")
+        else:
+            self.execute_remote_cmd("forward", "--remove-all")
 
 
 class RemoteDeviceBased(object):

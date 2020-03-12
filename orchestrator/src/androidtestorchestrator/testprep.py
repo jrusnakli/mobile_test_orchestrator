@@ -53,6 +53,24 @@ class DevicePreparation:
             raise IOError(
                 f"Connection to {domain} failed; expected {count} packets but got {count - lost_packet_count}")
 
+    def reverse_port_forward(self, device_port: int, local_port: int):
+        """
+        reverse forward traffic on remote port to local port
+
+        :param device_port: remote device port to forward
+        :param local_port: port to forward to
+        """
+        self._device.reverse_port_forward(device_port=device_port, local_port=local_port)
+
+    def port_forward(self, local_port: int, device_port: int):
+        """
+        forward traffic from local port to remote device port
+
+        :param local_port: port to forward from
+        :param device_port: port to forward to
+        """
+        self._device.port_forward(local_port=local_port, device_port=device_port)
+
     def cleanup(self) -> None:
         """
         Remove all pushed files and uninstall all apps installed by this test prep
@@ -63,6 +81,8 @@ class DevicePreparation:
         for prop in self._restoration_properties:
             with suppress(Exception):
                 self._device.set_system_property(prop, self._restoration_properties[prop] or '\"\"')
+        self._device.remove_port_forward()
+        self._device.remove_reverse_port_forward()
 
     def __enter__(self) -> "DevicePreparation":
         return self
