@@ -51,7 +51,7 @@ class InstrumentationOutputParser(LineParser):
         started: bool = False
         result: Optional[TestStatus] = None
         runner: str = ""
-        start_time: datetime.datetime = datetime.datetime.utcnow()
+        start_time: Optional[datetime.datetime] = None
 
         def set(self, field_name: str, value: str) -> None:
             value = value.strip()
@@ -59,6 +59,8 @@ class InstrumentationOutputParser(LineParser):
                 self.runner = value
             elif field_name == 'test':
                 self.test_id = value
+                self.started = True
+                self.start_time = datetime.datetime.utcnow()
             elif field_name == 'stream':
                 if self.stream:
                     self.stream += '\n'
@@ -82,7 +84,7 @@ class InstrumentationOutputParser(LineParser):
         # internal attributes:
         self._reporters: List[TestRunListener] = [test_listener] if test_listener else []
         self._execution_listeners: List[StopWatch] = []
-        self._test_result: Optional[InstrumentationOutputParser.InstrumentTestResult] = None
+        self._test_result = InstrumentationOutputParser.InstrumentTestResult()
         self._current_key: Optional[str] = None
         # attributes made public through getters:
         self._execution_time: float = -1.0
@@ -100,6 +102,10 @@ class InstrumentationOutputParser(LineParser):
     def total_test_count(self) -> int:
         return self._total_test_count
 
+    def start(self) -> None:
+        self._test_result.started = True
+        self._test_result.start_time = datetime.datetime.utcnow()
+
     # PRIVATE API
 
     def _process_test_code(self, code: int) -> None:
@@ -111,8 +117,10 @@ class InstrumentationOutputParser(LineParser):
         """
         assert self._test_result, "expected self._test_result to be set"
         if code > 0:
-            self._test_result.started = True
-            self._test_result.start_time = datetime.datetime.utcnow()
+            if not self._test_result.started:
+                log.error("Test was not started as expected!?")
+                self._test_result.started = True
+                self._test_result.start_time = datetime.datetime.utcnow()
             for listener in self._execution_listeners:
                 listener.mark_start(".".join([self._test_result.clazz, self._test_result.test_id]))
 
@@ -132,7 +140,10 @@ class InstrumentationOutputParser(LineParser):
             # capture result and start over with clean slate:
             for reporter in self._reporters:
                 if self._test_result.result == TestStatus.PASSED:
-                    duration = (datetime.datetime.utcnow() - self._test_result.start_time).total_seconds()
+                    if self._test_result.start_time:
+                        duration = (datetime.datetime.utcnow() - self._test_result.start_time).total_seconds()
+                    else:
+                        duration = -1.0  # undetermined
                     reporter.test_ended(class_name=self._test_result.clazz,
                                         test_name=self._test_result.test_id,
                                         test_no=self._test_result.test_no,
@@ -154,7 +165,8 @@ class InstrumentationOutputParser(LineParser):
         finally:
             for listener in self._execution_listeners:
                 listener.mark_end(".".join([self._test_result.clazz, self._test_result.test_id]))
-            self._test_result = None
+            self._test_result = InstrumentationOutputParser.InstrumentTestResult()
+            self.start()  # starts a new test result with new timestamp
             self._current_key = None
 
     def add_listener(self, listener: TestRunListener) -> None:
@@ -197,7 +209,7 @@ class InstrumentationOutputParser(LineParser):
             if self._test_result:
                 log.error("Incomplete test found: %s" % self._test_result.test_id)
             self._current_key = None
-            self._test_result = None
+            self._test_result = InstrumentationOutputParser.InstrumentTestResult()
         elif self._current_key:
             # A continuation of last processed key:
             assert self._test_result, "expected self._test_result to be set"

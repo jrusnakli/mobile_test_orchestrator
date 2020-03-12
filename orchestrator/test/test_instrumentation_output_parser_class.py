@@ -210,7 +210,7 @@ at android.app.Instrumentation$InstrumentationThread.run(Instrumentation.java:17
             parser.add_test_execution_listener(logcat_marker)  # TODO: not yet tested other than to exercise interface
 
             for line in self.example_output.splitlines():
-               parser.parse_line(line)
+                parser.parse_line(line)
 
             assert got_test_passed is True
             assert got_test_assumption_failure is True
@@ -252,4 +252,4 @@ at android.app.Instrumentation$InstrumentationThread.run(Instrumentation.java:17
         parser._process_test_code(parser.CODE_SKIPPED)
         assert got_test_ignored, "Failed to report skipped test"
         with pytest.raises(Exception):
-            parser._process_test_code(42)  # unknown code raises exception
+            parser._process_test_code(-42)  # unknown error code raises exception

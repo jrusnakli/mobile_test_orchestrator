@@ -217,6 +217,7 @@ class AndroidTestOrchestrator:
                 async for test_run in test_plan:
                     for listener in self._test_listeners:
                         listener.test_run_started(test_run.name)
+                        instrumentation_parser.start()
                     try:
                         for local_path, remote_path in test_run.uploadables:
                             device_storage.push(local_path=local_path, remote_path=remote_path)

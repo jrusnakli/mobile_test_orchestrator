@@ -225,12 +225,12 @@ def gradle_build(*target_and_q: Tuple[str, Queue]):
         for target, q in target_and_q:
             if target.endswith("assembleAndroidTest"):
                 apk_path = os.path.join(TEST_SUPPORT_APP_DIR, "app", "build", "outputs", "apk", "androidTest", "debug", "app-debug-androidTest.apk")
-            else: # assembleDebug
+            else:  # assembleDebug
                 apk_path = os.path.join(TEST_SUPPORT_APP_DIR, "app", "build", "outputs", "apk", "debug", "app-debug.apk")
             if not os.path.exists(apk_path):
                 raise Exception("Failed to find built apk %s" % apk_path)
             q.put(apk_path)
-    except Exception as e:
+    except Exception:
         for _, q in target_and_q:
             q.put(None)
         # harsh exit to prevent tests from attempting to run that require apk that wasn't built
@@ -242,7 +242,7 @@ def gradle_build(*target_and_q: Tuple[str, Queue]):
 def compile_all():
     gradle_build(("assembleAndroidTest", support_test_app_q),
                  ("assembleDebug", support_app_q)
-                )
+                 )
 
 
 def uninstall_apk(apk, device):
@@ -254,7 +254,6 @@ def uninstall_apk(apk, device):
     """
     with suppress(Exception):
         Application(AXMLParser.parse(apk).package_name, device).uninstall()
-
 
 
 find_sdk()

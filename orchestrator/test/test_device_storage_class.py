@@ -23,7 +23,7 @@ class TestDeviceStorage:
         if os.path.basename(remote_location) in output:
             raise Exception("Error: did not expect file %s on remote device" % remote_location)
         storage.push(local_path=(os.path.abspath(__file__)), remote_path=remote_location)
-        output = device.execute_remote_cmd("shell", "ls", device.external_storage_location +"/", capture_stdout=True)
+        output = device.execute_remote_cmd("shell", "ls", device.external_storage_location + "/", capture_stdout=True)
         assert os.path.basename(remote_location) in output
 
         storage.remove(remote_location)

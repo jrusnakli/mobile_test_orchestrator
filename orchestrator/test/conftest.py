@@ -22,6 +22,7 @@ class BackgroundThread(threading.Thread):
     def run(self):
         support.compile_all()
 
+
 background_thread = BackgroundThread()
 background_thread.start()
 
@@ -64,10 +65,11 @@ def android_test_app(device,
     request.addfinalizer(fin)
     return app_for_test
 
+
 @pytest.fixture()
 def android_service_app(device,
-                     request,
-                     support_app: str):
+                        request,
+                        support_app: str):
     # the support app is created to act as a service app as well
     uninstall_apk(support_app, device)
     service_app = ServiceApplication.from_apk(support_app, device)
@@ -96,6 +98,7 @@ def support_app():
     if isinstance(support_app, Exception) or support_app is None:
         raise Exception("Failed to build support app")
     return support_app
+
 
 @pytest.fixture(scope='session')
 def emulator():
