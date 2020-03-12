@@ -70,17 +70,21 @@ class DeviceStorage(RemoteDeviceBased):
         else:
             self.device.execute_remote_cmd("shell", "mkdir", "-p", path, capture_stdout=False)
 
-    def remove(self, path: str, recursive: bool = False) -> None:
+    def remove(self, path: str, recursive: bool = False, run_as: Optional[str] = None) -> None:
         """
         remove a file or directory from remote device
 
         :param path: path to remove
         :param recursive: if True and path is directory, recursively remove all contents otherwise, othrewise raise
             Exception if directory is not empty
+        :param run_as: user to run command under on remote device, or None
 
         :raises Exception: on failure to remote specified path
         """
-        cmd = ["shell", "rm"]
+        if run_as:
+            cmd = ["shell", "run-as", run_as, "rm"]
+        else:
+            cmd = ["shell", "rm"]
         if recursive:
             cmd.append("-r")
         cmd.append(path)

@@ -1,11 +1,11 @@
 import asyncio
 import sys
+
 from asyncio import Task
 
 import logging
 import os
 import traceback
-from dataclasses import dataclass, field
 from types import TracebackType
 from typing import Dict, Iterator, List, Tuple, Coroutine, Optional, Any, Type, AsyncIterator, \
     TypeVar, Union
@@ -15,7 +15,7 @@ from .device import Device
 from .devicelog import DeviceLog, LogcatTagDemuxer
 from .devicestorage import DeviceStorage
 from .parsing import InstrumentationOutputParser, LineParser
-from .reporting import TestRunListener
+from .reporting import TestRunListener, TestSuite, TestSuiteListener
 from .timing import Timer
 
 log = logging.getLogger(__name__)
@@ -31,24 +31,6 @@ def trace(e: Exception) -> str:
 
 
 T = TypeVar('T')
-
-
-@dataclass(frozen=True)
-class TestSuite:
-    """
-    A dataclass representing a test suite that defines the attributes:
-
-    *name*
-        unique name of test suite
-    *arguments*
-        arguments to be passed to the am instrument command, run as
-        "am instrument -w -r [arguments] <package>/<runner> "
-    *uploadables*
-        optional list of tuples of (loacl_path, remote_path) of test vector files to be uploaded to remote device
-    """
-    name: str
-    arguments: List[str]
-    uploadables: List[Tuple[str, str]] = field(default_factory=list)
 
 
 # noinspection PyShadowingNames
@@ -153,8 +135,9 @@ class AndroidTestOrchestrator:
         self._test_timeout = max_test_time
         self._timer = None
         self._tag_monitors: Dict[str, Tuple[str, LineParser]] = {}
-        self._test_listeners: List[TestRunListener] = []
         self._logcat_proc = None
+        self._instrumentation_parser = InstrumentationOutputParser()
+        self._test_suite_listeners: List[TestSuiteListener] = []
 
     def __enter__(self) -> "AndroidTestOrchestrator":
         return self
@@ -200,13 +183,13 @@ class AndroidTestOrchestrator:
         :param test_plan: generator of tuples of (test_suite_name, list_of_instrument_arguments)
         :param test_application: test application containing (remote) runner to execute tests
         """
-        instrumentation_parser = InstrumentationOutputParser()
-        for listener in self._test_listeners:
-            instrumentation_parser.add_listener(listener)
+        for listener in self._test_suite_listeners:
+            if isinstance(listener, TestRunListener):
+                self._instrumentation_parser.add_listener(listener)
 
         # add timer that times timeout if any INDIVIDUAL test takes too long
         if self._test_timeout is not None:
-            instrumentation_parser.add_test_execution_listener(Timer(self._test_timeout))
+            self._instrumentation_parser.add_test_execution_listener(Timer(self._test_timeout))
 
         # TASK-3: capture logcat to file and markers for beginning/end of each test
         device_log = DeviceLog(test_application.device)
@@ -215,23 +198,27 @@ class AndroidTestOrchestrator:
         with device_log.capture_to_file(output_path=os.path.join(self._artifact_dir, "logcat.txt")) as log_capture:
             try:
                 async for test_run in test_plan:
-                    for listener in self._test_listeners:
-                        listener.test_run_started(test_run.name)
-                        instrumentation_parser.start()
+                    if test_run.clean_data_on_start:
+                        test_application.clear_data()
+                        test_application.grant_permissions()
+                    for test_run_listener in self._test_suite_listeners:
+                        test_run_listener.test_suite_started(test_run)
+                    self._instrumentation_parser.start()
                     try:
                         for local_path, remote_path in test_run.uploadables:
                             device_storage.push(local_path=local_path, remote_path=remote_path)
                         async with await test_application.run(*test_run.arguments) as proc:
                             async for line in proc.output(unresponsive_timeout=self._test_timeout):
-                                instrumentation_parser.parse_line(line)
+                                self._instrumentation_parser.parse_line(line)
                             proc.wait(timeout=self._test_timeout)
+
                     except Exception as e:
                         print(trace(e))
-                        for listener in self._test_listeners:
-                            listener.test_run_failed(str(e))
+                        for listener in self._test_suite_listeners:
+                            listener.test_suite_failed(test_run, str(e))
                     finally:
-                        for listener in self._test_listeners:
-                            listener.test_run_ended(instrumentation_parser.execution_time)
+                        for listener in self._test_suite_listeners:
+                            test_run_listener.test_suite_ended(test_run)
                         for _, remote_path in test_run.uploadables:
                             try:
                                 device_storage.remove(remote_path, recursive=True)
@@ -272,21 +259,21 @@ class AndroidTestOrchestrator:
         except Exception as e:
             log.error("Exception on logcat processing, aborting: \n%s" % trace(e))
 
-    def add_test_listener(self, listener: TestRunListener) -> None:
+    def add_test_suite_listener(self, listener: TestSuiteListener) -> None:
         """
         add the given listener to listent for test status updates
 
         :param listener:
         """
-        self._test_listeners.append(listener)
+        self._test_suite_listeners.append(listener)
 
-    def add_test_listeners(self, listeners: List[TestRunListener]) -> None:
+    def add_test_suite_listeners(self, listeners: List[TestSuiteListener]) -> None:
         """
         Add the given list of listeners that will listen for test status updates
 
         :param listeners:
         """
-        self._test_listeners += listeners
+        self._test_suite_listeners += listeners
 
     def execute_test_plan(self,
                           test_application: TestApplication,

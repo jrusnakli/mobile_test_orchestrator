@@ -114,12 +114,13 @@ class TestAndroidTestOrchestrator(object):
             yield (TestSuite(name='test_suite1',
                              arguments=["-e", "class", "com.linkedin.mtotestapp.InstrumentedTestAllSuccess#useAppContext"]))
             yield (TestSuite(name='test_suite2',
-                             arguments=["-e", "class", "com.linkedin.mtotestapp.InstrumentedTestAllSuccess"]))
+                             arguments=["-e", "class", "com.linkedin.mtotestapp.InstrumentedTestAllSuccess"],
+                             clean_data_on_start=True))
             yield (TestSuite(name='test_suite3',
                              arguments=["-e", "class", "com.linkedin.mtotestapp.InstrumentedTestSomeFailures"]))
 
         with AndroidTestOrchestrator(artifact_dir=str(tmpdir)) as orchestrator:
-            orchestrator.add_test_listener(TestExpectations())
+            orchestrator.add_test_suite_listener(TestExpectations())
             orchestrator.execute_test_plan(test_plan=test_generator(),
                                            test_application=android_test_app)
         assert test_count == 2  # last test suite had one test
@@ -193,7 +194,7 @@ class TestAndroidTestOrchestrator(object):
                 DevicePreparation(device) as device_prep:
             device_prep.verify_network_connection("localhost", 4)
             test_prep.upload_test_vectors(test_vectors)
-            orchestrator.add_test_listeners([EmptyListener(), EmptyListener()])
+            orchestrator.add_test_suite_listeners([EmptyListener(), EmptyListener()])
             orchestrator.add_background_task(some_task(orchestrator))
             orchestrator.execute_test_plan(test_plan=test_generator(),
                                            test_application=test_prep.test_app)

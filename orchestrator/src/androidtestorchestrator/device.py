@@ -325,18 +325,25 @@ class Device(object):
                                                                loop=loop or asyncio.events.get_event_loop(),
                                                                bufsize=0)  # noqa
 
-        class LineGenerator:
+        class Process:
             """
             Wraps below async generator in context manager to ensure proper closure
             """
-            async def __aenter__(self) -> "LineGenerator":
+            async def __aenter__(self) -> "Process":
                 return self
 
             async def __aexit__(self, exc_type: Optional[Type[BaseException]], exc_val: Optional[BaseException],
                                 exc_tb: Optional[TracebackType]) -> None:
-                if proc.returncode is not None:
+                if proc.returncode is None:
                     log.info("Terminating process %d", proc.pid)
-                    self.stop()
+                    with suppress(Exception):
+                        await self.stop(timeout=3)
+                if proc.returncode is None:
+                    with suppress(Exception):
+                        try:
+                            await self.stop(timeout=3, force=True)
+                        except TimeoutError:
+                            log.error("Failed to kill subprocess while exiting its context")
 
             async def output(self,  unresponsive_timeout: Optional[float] = None) -> AsyncIterator[str]:
                 """
@@ -382,7 +389,7 @@ class Device(object):
             def returncode(self) -> Optional[int]:
                 return proc.returncode
 
-        return LineGenerator()
+        return Process()
 
     def set_device_setting(self, namespace: str, key: str, value: str) -> Optional[str]:
         """
