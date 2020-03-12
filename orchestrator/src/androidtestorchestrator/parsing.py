@@ -157,7 +157,7 @@ class InstrumentationOutputParser(LineParser):
             self._test_result = None
             self._current_key = None
 
-    def add_listener(self, listener: TestRunListener):
+    def add_listener(self, listener: TestRunListener) -> None:
         self._reporters.append(listener)
 
     def parse_line(self, line: str) -> None:

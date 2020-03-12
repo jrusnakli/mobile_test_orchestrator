@@ -53,7 +53,7 @@ class DevicePreparation:
             raise IOError(
                 f"Connection to {domain} failed; expected {count} packets but got {count - lost_packet_count}")
 
-    def reverse_port_forward(self, device_port: int, local_port: int):
+    def reverse_port_forward(self, device_port: int, local_port: int) -> None:
         """
         reverse forward traffic on remote port to local port
 
@@ -62,7 +62,7 @@ class DevicePreparation:
         """
         self._device.reverse_port_forward(device_port=device_port, local_port=local_port)
 
-    def port_forward(self, local_port: int, device_port: int):
+    def port_forward(self, local_port: int, device_port: int) -> None:
         """
         forward traffic from local port to remote device port
 

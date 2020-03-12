@@ -271,10 +271,20 @@ class AndroidTestOrchestrator:
         except Exception as e:
             log.error("Exception on logcat processing, aborting: \n%s" % trace(e))
 
-    def add_test_listener(self, listener: TestRunListener):
+    def add_test_listener(self, listener: TestRunListener) -> None:
+        """
+        add the given listener to listent for test status updates
+
+        :param listener:
+        """
         self._test_listeners.append(listener)
 
-    def add_test_listeners(self, listeners: List[TestRunListener]):
+    def add_test_listeners(self, listeners: List[TestRunListener]) -> None:
+        """
+        Add the given list of listeners that will listen for test status updates
+
+        :param listeners:
+        """
         self._test_listeners += listeners
 
     def execute_test_plan(self,
