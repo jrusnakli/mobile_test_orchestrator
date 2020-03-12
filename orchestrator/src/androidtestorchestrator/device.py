@@ -848,7 +848,7 @@ class Device(object):
                 activity_list.append(app_package)
         return activity_list
 
-    def reverse_port_forward(self, device_port: int, local_port: int):
+    def reverse_port_forward(self, device_port: int, local_port: int) -> None:
         """
         reverse forward traffic on remote port to local port
 
@@ -857,7 +857,7 @@ class Device(object):
         """
         self.execute_remote_cmd("reverse", f"tcp:{device_port}", f"tcp:{local_port}")
 
-    def port_forward(self, local_port: int, device_port: int):
+    def port_forward(self, local_port: int, device_port: int) -> None:
         """
         forward traffic from local port to remote device port
 
@@ -866,7 +866,7 @@ class Device(object):
         """
         self.execute_remote_cmd("forward", f"tcp:{device_port}", f"tcp:{local_port}")
 
-    def remove_reverse_port_forward(self, port: Optional[int] = None):
+    def remove_reverse_port_forward(self, port: Optional[int] = None) -> None:
         """
         Remove reverse port forwarding
 
@@ -877,7 +877,7 @@ class Device(object):
         else:
             self.execute_remote_cmd("reverse", "--remove-all")
 
-    def remove_port_forward(self, port: Optional[int] = None):
+    def remove_port_forward(self, port: Optional[int] = None) -> None:
         """
         Remove reverse port forwarding
 

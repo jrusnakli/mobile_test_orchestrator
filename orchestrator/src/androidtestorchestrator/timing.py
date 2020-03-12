@@ -81,6 +81,6 @@ class Timer(StopWatch):
             with suppress(Exception):
                 self._task.cancel()
         # create a new future and start the timer:
-        self._future: Optional[Future[bool]] = asyncio.get_event_loop().create_future()
+        self._future = asyncio.get_event_loop().create_future()
         # in principle, a loop is already running, so just add another task to process:
         self._task = asyncio.get_event_loop().create_task(timer())
