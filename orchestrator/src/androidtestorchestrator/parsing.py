@@ -179,7 +179,6 @@ class InstrumentationOutputParser(LineParser):
         """
         if not line:
             return
-        log.info(f"Instrumentation parsing line: {line}")
         if line.startswith("INSTRUMENTATION_STATUS_CODE:"):
             if not self._test_result:
                 raise Exception("test start code received but not in test execution block!")
