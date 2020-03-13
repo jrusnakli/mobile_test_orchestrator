@@ -201,8 +201,8 @@ class AndroidTestOrchestrator:
                     if test_run.clean_data_on_start:
                         test_application.clear_data()
                         test_application.grant_permissions()
-                    for test_run_listener in self._test_suite_listeners:
-                        test_run_listener.test_suite_started(test_run)
+                    for listener in self._test_suite_listeners:
+                        listener.test_suite_started(test_run)
                     self._instrumentation_parser.start()
                     try:
                         for local_path, remote_path in test_run.uploadables:
@@ -218,7 +218,7 @@ class AndroidTestOrchestrator:
                             listener.test_suite_failed(test_run, str(e))
                     finally:
                         for listener in self._test_suite_listeners:
-                            test_run_listener.test_suite_ended(test_run)
+                            listener.test_suite_ended(test_run)
                         for _, remote_path in test_run.uploadables:
                             try:
                                 device_storage.remove(remote_path, recursive=True)
