@@ -207,7 +207,10 @@ class AndroidTestOrchestrator:
                     try:
                         for local_path, remote_path in test_run.uploadables:
                             device_storage.push(local_path=local_path, remote_path=remote_path)
-                        async with await test_application.run(*test_run.arguments) as proc:
+                        arguments = list(test_run.arguments)
+                        for key, value in test_run.test_parameters.items():
+                            arguments += ["-e", key, value]
+                        async with await test_application.run(*arguments) as proc:
                             async for line in proc.output(unresponsive_timeout=self._test_timeout):
                                 self._instrumentation_parser.parse_line(line)
                             await proc.wait(timeout=self._test_timeout)

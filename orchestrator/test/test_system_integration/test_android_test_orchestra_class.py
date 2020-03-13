@@ -112,7 +112,7 @@ class TestAndroidTestOrchestrator(object):
 
         def test_generator():
             yield (TestSuite(name='test_suite1',
-                             arguments=["-e", "class", "com.linkedin.mtotestapp.InstrumentedTestAllSuccess#useAppContext"]))
+                             test_parameters={"class": "com.linkedin.mtotestapp.InstrumentedTestAllSuccess#useAppContext"}))
             yield (TestSuite(name='test_suite2',
                              arguments=["-e", "class", "com.linkedin.mtotestapp.InstrumentedTestAllSuccess"],
                              clean_data_on_start=True))

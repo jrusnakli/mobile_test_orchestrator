@@ -20,23 +20,20 @@ class TestStatus(Enum):
 @dataclass(frozen=True)
 class TestSuite:
     """
-    A dataclass representing a test suite that defines the attributes:
-
-    *name*
-        unique name of test suite
-    *arguments*
-        arguments to be passed to the am instrument command, run as
-        "am instrument -w -r [arguments] <package>/<runner> "
-    *uploadables*
-        optional list of tuples of (loacl_path, remote_path) of test vector files to be uploaded to remote device
-
-    *clean_data_on_start*
-         whether to clean user data and re-grant permissions before executing this test
+    A dataclass representing a test suite
     """
     name: str
-    arguments: List[str]
+    "unique name for this test suite"
+    arguments: List[str] = field(default_factory=list)
+    """optional direct arguments to be passed to the am instrument command, such as
+        "am instrument -w -r <<arguments>> <package>/<runner> """
+    test_parameters: Dict[str, str] = field(default_factory=dict)
+    """optional test parameters to be passed to the am instrument command under the "-e" option, such as
+        "am instrument -w -r <<"-e" key value for key, value in arguments>> <package>/<runner> """
     uploadables: List[Tuple[str, str]] = field(default_factory=list)
+    "optional list of tuples of (loacl_path, remote_path) of test vector files to be uploaded to remote device"
     clean_data_on_start: bool = field(default_factory=lambda: False)
+    "whether to clean user data and re-grant permissions before executing this test"
 
 
 class TestSuiteListener(ABC):
