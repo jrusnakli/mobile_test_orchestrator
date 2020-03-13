@@ -210,7 +210,7 @@ class AndroidTestOrchestrator:
                         async with await test_application.run(*test_run.arguments) as proc:
                             async for line in proc.output(unresponsive_timeout=self._test_timeout):
                                 self._instrumentation_parser.parse_line(line)
-                            proc.wait(timeout=self._test_timeout)
+                            await proc.wait(timeout=self._test_timeout)
 
                     except Exception as e:
                         print(trace(e))
