@@ -28,33 +28,43 @@ class DeviceStorage(RemoteDeviceBased):
         """
         return self.device.external_storage_location
 
-    def push(self, local_path: str, remote_path: str) -> None:
+    def push(self, local_path: str, remote_path: str, run_as: Optional[str] = None) -> None:
         """
         Push a local file to the given location on the remote device
 
         :param local_path: path to local host file
         :param remote_path: path to place file on the remote device
+        :param run_as: user to run command under on remote device, or None
 
         :raises FileNotFoundError: if provide local path does not exist and is a file
         :raises Exception: if command to push file failed
         """
         if not os.path.isfile(local_path):
             raise FileNotFoundError("No such file found: %s" % local_path)
-        self.device.execute_remote_cmd('push', '%s' % local_path, '%s' % remote_path, capture_stdout=False)
+        if run_as:
+            self.device.execute_remote_cmd('shell', 'run-as', run_as,
+                                           'push', local_path, remote_path, capture_stdout=False)
+        else:
+            self.device.execute_remote_cmd('push', local_path, remote_path, capture_stdout=False)
 
-    def pull(self, remote_path: str, local_path: str) -> None:
+    def pull(self, remote_path: str, local_path: str, run_as: Optional[str] = None) -> None:
         """
         Pull a file from device
 
         :param remote_path: location on phone to pull file from
         :param local_path: path to file to be created from content from device
+        :param run_as: user to run command under on remote device, or None
 
         :raises FileExistsError: if the locat path already exists
         :raises Exception: if command to pull file failed
         """
         if os.path.exists(local_path):
-            log.warning("File %s already exists when pulling. Potential to overwrite files." % local_path)
-        self.device.execute_remote_cmd('pull', '%s' % remote_path, '%s' % local_path)
+            log.warning("File %s already exists when pulling. Potential to overwrite files.", local_path)
+        if run_as:
+            with open(local_path, 'w') as out:
+                self.device.execute_remote_cmd('shell', 'run-as', run_as, 'cat', remote_path, stdout_redirect=out)
+        else:
+            self.device.execute_remote_cmd('pull', remote_path, local_path)
 
     def make_dir(self, path: str, run_as: Optional[str] = None) -> None:
         """

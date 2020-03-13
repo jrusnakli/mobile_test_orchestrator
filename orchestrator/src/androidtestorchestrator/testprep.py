@@ -117,9 +117,9 @@ class EspressoTestPreparation:
           test app (prevents pop-ups from occurring on first request for a user permission that can interfere
           with tests)
         """
-        app = Application.from_apk(path_to_apk, device=device)
+        self._app = Application.from_apk(path_to_apk, device=device)
         self._test_app: TestApplication = TestApplication.from_apk(path_to_test_apk, device=device)
-        self._installed = [app, self._test_app]
+        self._installed = [self._app, self._test_app]
         self._storage = DeviceStorage(device)
         self._data_files: List[str] = []
         self._device = device
@@ -129,6 +129,10 @@ class EspressoTestPreparation:
     @property
     def test_app(self) -> TestApplication:
         return self._test_app
+
+    @property
+    def target_app(self) -> Application:
+        return self._app
 
     def __enter__(self) -> "EspressoTestPreparation":
         return self
