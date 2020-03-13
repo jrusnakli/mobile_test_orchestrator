@@ -28,24 +28,21 @@ class DeviceStorage(RemoteDeviceBased):
         """
         return self.device.external_storage_location
 
-    def push(self, local_path: str, remote_path: str, run_as: Optional[str] = None) -> None:
+    def push(self, local_path: str, remote_path: str) -> None:
         """
-        Push a local file to the given location on the remote device
+        Push a local file to the given location on the remote device.
+        NOTE: pushin to an app's data directory is not possible and leads to
+          a permission-denied response even when using "run-as"
 
         :param local_path: path to local host file
         :param remote_path: path to place file on the remote device
-        :param run_as: user to run command under on remote device, or None
 
         :raises FileNotFoundError: if provide local path does not exist and is a file
         :raises Exception: if command to push file failed
         """
         if not os.path.isfile(local_path):
             raise FileNotFoundError("No such file found: %s" % local_path)
-        if run_as:
-            self.device.execute_remote_cmd('shell', 'run-as', run_as,
-                                           'push', local_path, remote_path, capture_stdout=False)
-        else:
-            self.device.execute_remote_cmd('push', local_path, remote_path, capture_stdout=False)
+        self.device.execute_remote_cmd('push', local_path, remote_path, capture_stdout=False)
 
     def pull(self, remote_path: str, local_path: str, run_as: Optional[str] = None) -> None:
         """
