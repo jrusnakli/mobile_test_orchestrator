@@ -136,7 +136,6 @@ class AndroidTestOrchestrator:
         self._timer = None
         self._tag_monitors: Dict[str, Tuple[str, LineParser]] = {}
         self._logcat_proc = None
-        self._instrumentation_parser = InstrumentationOutputParser()
         self._test_suite_listeners: List[TestSuiteListener] = []
 
     def __enter__(self) -> "AndroidTestOrchestrator":
@@ -183,19 +182,20 @@ class AndroidTestOrchestrator:
         :param test_plan: generator of tuples of (test_suite_name, list_of_instrument_arguments)
         :param test_application: test application containing (remote) runner to execute tests
         """
-        for listener in self._test_suite_listeners:
-            if isinstance(listener, TestRunListener):
-                self._instrumentation_parser.add_listener(listener)
-
-        # add timer that times timeout if any INDIVIDUAL test takes too long
-        if self._test_timeout is not None:
-            self._instrumentation_parser.add_test_execution_listener(Timer(self._test_timeout))
-
         # TASK-3: capture logcat to file and markers for beginning/end of each test
         device_log = DeviceLog(test_application.device)
         device_storage = DeviceStorage(test_application.device)
 
-        with device_log.capture_to_file(output_path=os.path.join(self._artifact_dir, "logcat.txt")) as log_capture:
+        with InstrumentationOutputParser() as instrumentation_parser, \
+                device_log.capture_to_file(output_path=os.path.join(self._artifact_dir, "logcat.txt")) as log_capture:
+            for listener in self._test_suite_listeners:
+                if isinstance(listener, TestRunListener):
+                    instrumentation_parser.add_listener(listener)
+
+            # add timer that times timeout if any INDIVIDUAL test takes too long
+            if self._test_timeout is not None:
+                instrumentation_parser.add_test_execution_listener(Timer(self._test_timeout))
+
             try:
                 async for test_run in test_plan:
                     if test_run.clean_data_on_start:
@@ -211,7 +211,7 @@ class AndroidTestOrchestrator:
                             arguments += ["-e", key, value]
                         async with await test_application.run(*arguments) as proc:
                             async for line in proc.output(unresponsive_timeout=self._test_timeout):
-                                self._instrumentation_parser.parse_line(line)
+                                instrumentation_parser.parse_line(line)
                             await proc.wait(timeout=self._test_timeout)
 
                     except Exception as e:

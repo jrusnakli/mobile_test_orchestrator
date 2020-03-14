@@ -134,9 +134,9 @@ class InstrumentationOutputParser(LineParser):
         def __repr__(self) -> str:
             return self.__class__.__name__ + str(self.__dict__)
 
-    def __init__(self, test_listener: Optional[TestRunListener] = None) -> None:
+    def __init__(self, test_run_listener: Optional[TestRunListener] = None) -> None:
         super().__init__()
-        self._reporters: List[TestRunListener] = [test_listener] if test_listener else []
+        self._reporters: List[TestRunListener] = [test_run_listener] if test_run_listener else []
         self._execution_listeners: List[StopWatch] = []
         self._current_test: Optional[InstrumentationOutputParser.TestParsingResult] = None
         self._last_test: Optional[InstrumentationOutputParser.TestParsingResult] = None
