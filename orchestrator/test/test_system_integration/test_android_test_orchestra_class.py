@@ -71,8 +71,7 @@ class TestAndroidTestOrchestrator(object):
                 assert False, "did not expect test process to error; \n%s" % error_message
 
             def test_assumption_failure(self, class_name: str, test_name: str, stack_trace: str):
-                nonlocal test_count
-                test_count += 1
+                pass
 
             def test_run_ended(self, duration: float = -1.0, **kwargs: Optional[Any]) -> None:
                 pass
@@ -85,18 +84,17 @@ class TestAndroidTestOrchestrator(object):
                 test_count += 1
                 assert test_name in ["useAppContext",
                                      "testSuccess",
+                                     "testFail"
                                      ]
                 assert class_name == self.expected_test_class[current_test_suite]
 
             def test_failed(self, class_name: str, test_name: str, stack_trace: str):
                 nonlocal test_count, current_test_suite
-                test_count += 1
                 assert class_name == self.expected_test_class[current_test_suite]
                 assert test_name == "testFail"  # this test case is designed to be failed
 
             def test_ignored(self, class_name: str, test_name: str):
                 nonlocal test_count
-                test_count += 1
                 assert False, "no skipped tests should be present"
 
             def test_run_started(self, test_run_name: str, count: int = 0):

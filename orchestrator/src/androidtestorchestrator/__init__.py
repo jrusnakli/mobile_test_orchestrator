@@ -203,7 +203,6 @@ class AndroidTestOrchestrator:
                         test_application.grant_permissions()
                     for listener in self._test_suite_listeners:
                         listener.test_suite_started(test_run)
-                    self._instrumentation_parser.start()
                     try:
                         for local_path, remote_path in test_run.uploadables:
                             device_storage.push(local_path=local_path, remote_path=remote_path)
