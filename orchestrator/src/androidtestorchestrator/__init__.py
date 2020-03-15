@@ -194,6 +194,7 @@ class AndroidTestOrchestrator:
 
             # add timer that times timeout if any INDIVIDUAL test takes too long
             if self._test_timeout is not None:
+                instrumentation_parser.add_test_execution_listener(log_capture)
                 instrumentation_parser.add_test_execution_listener(Timer(self._test_timeout))
 
             try:
