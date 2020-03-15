@@ -41,7 +41,7 @@ class DevicePreparation:
             for property, value in properties.items():
                 self._restoration_properties[property] = self._device.set_system_property(property, value)
 
-    def verify_network_connection(self, domain: str, count: int = 3) -> None:
+    def verify_network_connection(self, domain: str, count: int = 10, accetable_loss: int = 3) -> None:
         """
         Verify connection to given domain is active.
         :param domain: address to test connection to
@@ -49,7 +49,7 @@ class DevicePreparation:
         :raises: IOError on failure to successfully ping given number of packets
         """
         lost_packet_count = self._device.check_network_connection(domain, count)
-        if lost_packet_count > 0:
+        if lost_packet_count > accetable_loss:
             raise IOError(
                 f"Connection to {domain} failed; expected {count} packets but got {count - lost_packet_count}")
 

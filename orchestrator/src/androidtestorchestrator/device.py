@@ -594,6 +594,8 @@ class Device(object):
                     count -= 1
                 if count <= 0:
                     break
+            if count > 0:
+                log.error("Output from ping was: \n%s", output)
             return count
         except subprocess.TimeoutExpired:
             log.error("ping is hanging and not yielding any results. Returning error code.")
