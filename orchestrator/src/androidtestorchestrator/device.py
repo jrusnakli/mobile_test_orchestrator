@@ -708,7 +708,7 @@ class Device(object):
                     # (non-standard Android):
                     if on_full_install and msg and any([condition in msg for condition in conditions]):
                         on_full_install()
-                await proc.wait(Device.TIMEOUT_ADB_CMD)
+                await proc.wait(Device.TIMEOUT_LONG_ADB_CMD)
 
         # On some devices, a pop-up may prevent successful install even if return code from adb install showed success,
         # so must explicitly verify the install was successful:
