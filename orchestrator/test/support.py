@@ -1,3 +1,4 @@
+import logging
 import os
 # TODO: CAUTION: WE CANNOT USE asyncio.subprocess as we executein in a thread other than made and on unix-like systems, there
 # is bug in Python 3.7.
@@ -22,6 +23,8 @@ SETUP_PATH = os.path.join(_SRC_BASE_DIR, "setup.py")
 
 support_app_q = Queue()
 support_test_app_q = Queue()
+
+log = logging.getLogger(__name__)
 
 
 class Config:
@@ -51,7 +54,7 @@ def find_sdk():
     :rasise: Exception if sdk not found through environ vars or in standard user-home location per platform
     """
     if os.environ.get("ANDROID_HOME"):
-        print("Please use ANDROID_SDK_ROOT over ANDROID_HOME")
+        log.info("Please use ANDROID_SDK_ROOT over ANDROID_HOME")
         os.environ["ANDROID_SDK_ROOT"] = os.environ["ANDROID_HOME"]
         del os.environ["ANDROID_HOME"]
     if os.environ.get("ANDROID_SDK_ROOT"):
@@ -77,9 +80,19 @@ def wait_for_emulator_boot(port: int, avd: str, adb_path: str, emulator_path: st
 
     # read more about cmd option https://developer.android.com/studio/run/emulator-commandline
     if is_no_window:
-        cmd = [emulator_path, "-no-window", "-port", str(port), "@%s" % avd, "-wipe-data"]
+        cmd = [emulator_path, "-no-window", "-port", str(port), "@%s" % avd,
+               "-wipe-data",
+               "-gpu", "off",
+               "-no-boot-anim",
+               "-skin", "320x640",
+               "-partition-size", "1024"]
     else:
-        cmd = [emulator_path, "-port", str(port), "@%s" % avd, "-wipe-data"]
+        cmd = [emulator_path, "-port", str(port), "@%s" % avd,
+               "-wipe-data",
+               "-gpu", "off",
+               "-no-boot-anim",
+               "-skin", "320x640",
+               "-partition-size", "1024"]
     if is_retry and "-no-snapshot-load" not in cmd:
         cmd.append("-no-snapshot-load")
     if os.environ.get("EMULATOR_OPTS"):
@@ -88,16 +101,17 @@ def wait_for_emulator_boot(port: int, avd: str, adb_path: str, emulator_path: st
     time.sleep(3)
     getprop_cmd = [adb_path, "-s", device_id, "shell", "getprop", "sys.boot_completed"]
     tries = 100
-    cycles = 2
+    start = time.time()
     while tries > 0:
         if proc.poll() is not None:
             raise Exception("Failed to launch emulator")
         completed = subprocess.run(getprop_cmd, stdout=subprocess.PIPE,
                                    stderr=subprocess.PIPE, encoding='utf-8')
         if completed.returncode != 0:
-            print(completed.stderr)
+            log.info(completed.stderr)
         elif completed.stdout.strip() == '1':  # boot complete
             time.sleep(3)
+            log.info(f"\n>>>>>> Boot took {time.time() - start} seconds\n")
             break
         time.sleep(3)
         tries -= 1
@@ -133,7 +147,7 @@ def launch_emulator(port: int):
 
     completed = subprocess.run([adb_path, "devices"], stdout=subprocess.PIPE, encoding='utf-8')
     if f"emulator-{port}" in completed.stdout:
-        print(f"WARNING: using existing emulator at port {port}")
+        log.info(f"WARNING: using existing emulator at port {port}")
         return
 
     is_no_window = False
@@ -202,7 +216,7 @@ def gradle_build(*target_and_q: Tuple[str, Queue]):
         else:
             cmd = [os.path.join(".", gradle_path)] + targets
             shell = False
-        print(f"Launching: {cmd} from {TEST_SUPPORT_APP_DIR}")
+        log.info(f"Launching: {cmd} from {TEST_SUPPORT_APP_DIR}")
         process = subprocess.run(cmd,
                                  cwd=TEST_SUPPORT_APP_DIR,
                                  env=os.environ.copy(),
@@ -214,24 +228,24 @@ def gradle_build(*target_and_q: Tuple[str, Queue]):
         for target, q in target_and_q:
             if target.endswith("assembleAndroidTest"):
                 apk_path = os.path.join(TEST_SUPPORT_APP_DIR, "app", "build", "outputs", "apk", "androidTest", "debug", "app-debug-androidTest.apk")
-            else: # assembleDebug
+            else:  # assembleDebug
                 apk_path = os.path.join(TEST_SUPPORT_APP_DIR, "app", "build", "outputs", "apk", "debug", "app-debug.apk")
             if not os.path.exists(apk_path):
                 raise Exception("Failed to find built apk %s" % apk_path)
             q.put(apk_path)
-    except Exception as e:
+    except Exception:
         for _, q in target_and_q:
             q.put(None)
         # harsh exit to prevent tests from attempting to run that require apk that wasn't built
         raise
     else:
-        print(f"Built {apk_path}")
+        log.info(f"Built {apk_path}")
 
 
 def compile_all():
     gradle_build(("assembleAndroidTest", support_test_app_q),
                  ("assembleDebug", support_app_q)
-                )
+                 )
 
 
 def uninstall_apk(apk, device):
@@ -243,7 +257,6 @@ def uninstall_apk(apk, device):
     """
     with suppress(Exception):
         Application(AXMLParser.parse(apk).package_name, device).uninstall()
-
 
 
 find_sdk()

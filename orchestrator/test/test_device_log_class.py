@@ -25,10 +25,12 @@ class TestDeviceLog:
         device_log = DeviceLog(device)
         device_log.clear()  # ensure logcat is clean before the test
         counter = 2
+        logcat_proc = None
 
         async def parse_logcat():
-
+            nonlocal logcat_proc
             async with await device_log.logcat("-v", "brief", "-s", "MTO-TEST") as proc:
+                logcat_proc = proc
                 async for line in proc.output(unresponsive_timeout=120):
                     nonlocal output
                     # makes easy to debug on circleci when emulator accel is not available
@@ -45,16 +47,16 @@ class TestDeviceLog:
 
         for _ in range(counter):
             android_service_app.broadcast(".MTOBroadcastReceiver", "--es", "command", "old_line",
-                                       action="com.linkedin.mto.FOR_TEST_ONLY_SEND_CMD")
+                                          action="com.linkedin.mto.FOR_TEST_ONLY_SEND_CMD")
             time.sleep(2)
         asyncio.get_event_loop().run_until_complete(timer())
         for line in output:
             assert "old_line" in line
-
+        assert logcat_proc.returncode is not None  # proc is terminated/completed
         output_before = output[:]
         retries = 3
         try:
-            time.sleep(5) # give enough time for testapp to receive the intent and emmit log to logcat
+            time.sleep(5)  # give enough time for testapp to receive the intent and emmit log to logcat
             device_log.clear()
         except Device.CommandExecutionFailureException as e:
             if retries > 0 and "Failed to clear" in str(e):
@@ -67,7 +69,7 @@ class TestDeviceLog:
         # now emitting some new logs
         for _ in range(counter):
             android_service_app.broadcast(".MTOBroadcastReceiver", "--es", "command", "new_line",
-                                       action="com.linkedin.mto.FOR_TEST_ONLY_SEND_CMD")
+                                          action="com.linkedin.mto.FOR_TEST_ONLY_SEND_CMD")
             time.sleep(1)
 
         asyncio.get_event_loop().run_until_complete(timer())
@@ -91,7 +93,7 @@ class TestDeviceLog:
     def test_invalid_output_path(self, fake_sdk, tmpdir):
         device = Device("fakeid", os.path.join(fake_sdk, "platform-tools", "adb"))
         tmpfile = os.path.join(str(tmpdir), "somefile")
-        with open(tmpfile, 'w')as f:
+        with open(tmpfile, 'w'):
             pass
         with pytest.raises(Exception) as exc_info:
             DeviceLog.LogCapture(device, tmpfile)

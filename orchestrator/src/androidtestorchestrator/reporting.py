@@ -1,9 +1,9 @@
 import datetime
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from types import TracebackType
-from typing import Any, Dict, Optional, Type
+from typing import Any, Dict, Optional, Type, List, Tuple
 
 
 class TestStatus(Enum):
@@ -17,7 +17,52 @@ class TestStatus(Enum):
         return self.value  # type: ignore
 
 
-class TestRunListener(ABC):
+@dataclass(frozen=True)
+class TestSuite:
+    """
+    A dataclass representing a test suite
+    """
+    name: str
+    "unique name for this test suite"
+    arguments: List[str] = field(default_factory=list)
+    """optional direct arguments to be passed to the am instrument command, such as
+        "am instrument -w -r <<arguments>> <package>/<runner> """
+    test_parameters: Dict[str, str] = field(default_factory=dict)
+    """optional test parameters to be passed to the am instrument command under the "-e" option, such as
+        "am instrument -w -r <<"-e" key value for key, value in arguments>> <package>/<runner> """
+    uploadables: List[Tuple[str, str]] = field(default_factory=list)
+    "optional list of tuples of (loacl_path, remote_path) of test vector files to be uploaded to remote device"
+    clean_data_on_start: bool = field(default_factory=lambda: False)
+    "whether to clean user data and re-grant permissions before executing this test"
+
+
+class TestSuiteListener(ABC):
+
+    @abstractmethod
+    def test_suite_started(self, test_run: TestSuite) -> None:
+        """
+        Signal given test_run (suite) has started
+        :param test_run:
+        """
+
+    @abstractmethod
+    def test_suite_failed(self, test_run: TestSuite, error_message: str) -> None:
+        """
+        Signal given test_run (suite) has ended
+        :param test_run:
+        :param error_message: error message from failure output
+        """
+
+    @abstractmethod
+    def test_suite_ended(self, test_run: TestSuite, duration: float = -1.0) -> None:
+        """
+        Signal given test_run (suite) has ended
+        :param test_run:
+        :param duration: how long the test took, or -1.0 if unknown
+        """
+
+
+class TestRunListener(TestSuiteListener):
     """
     Abstraction for reporting test status (coming from InstrumentationOutputParser)
 
@@ -28,6 +73,18 @@ class TestRunListener(ABC):
         """
         """
         # having constructor prevents pytest from picking this up ! :-(
+
+    def test_suite_started(self, test_run: TestSuite) -> None:
+        # default is to defer to legacy method
+        self.test_run_started(test_run.name)
+
+    def test_suite_failed(self, _: TestSuite, error_message: str) -> None:
+        # default is to defer to legacy method
+        self.test_run_failed(error_message)
+
+    def test_suite_ended(self, test_run: TestSuite, duration: float = -1.0) -> None:
+        # default is to defer to legacy method
+        self.test_run_ended(duration)
 
     @abstractmethod
     def test_run_started(self, test_run_name: str, count: int = 0) -> None:

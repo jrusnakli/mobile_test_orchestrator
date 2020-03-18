@@ -16,7 +16,8 @@ class DevicePreparation:
      Class used to prepare a device for test execution, including installing app, configuring settings/properties, etc.
 
      Typically used as a context manager that will then automatically call cleanup() at exit.  The class provides
-     a list of features to setup and configure a device before test execution and teardown afterwards.
+     a list of features to setup and configure a device before test execution and teardown afterwards to restore
+     original settings/port configurations.
      This includes:
      * Ability to configure settings and system properties of the device (restored to original values on exit)
      * Ability to upload test vectors to external storage
@@ -30,6 +31,8 @@ class DevicePreparation:
         self._device: Device = device
         self._restoration_settings: Dict[Tuple[str, str], Optional[str]] = {}
         self._restoration_properties: Dict[str, Optional[str]] = {}
+        self._reverse_forwarded_ports: List[int] = []
+        self._forwarded_ports: List[int] = []
 
     def configure_device(self, settings: Optional[Dict[str, str]] = None,
                          properties: Optional[Dict[str, str]] = None) -> None:
@@ -41,7 +44,7 @@ class DevicePreparation:
             for property, value in properties.items():
                 self._restoration_properties[property] = self._device.set_system_property(property, value)
 
-    def verify_network_connection(self, domain: str, count: int = 3) -> None:
+    def verify_network_connection(self, domain: str, count: int = 10, acceptable_loss: int = 3) -> None:
         """
         Verify connection to given domain is active.
         :param domain: address to test connection to
@@ -49,9 +52,29 @@ class DevicePreparation:
         :raises: IOError on failure to successfully ping given number of packets
         """
         lost_packet_count = self._device.check_network_connection(domain, count)
-        if lost_packet_count > 0:
+        if lost_packet_count > acceptable_loss:
             raise IOError(
                 f"Connection to {domain} failed; expected {count} packets but got {count - lost_packet_count}")
+
+    def reverse_port_forward(self, device_port: int, local_port: int) -> None:
+        """
+        reverse forward traffic on remote port to local port
+
+        :param device_port: remote device port to forward
+        :param local_port: port to forward to
+        """
+        self._device.reverse_port_forward(device_port=device_port, local_port=local_port)
+        self._reverse_forwarded_ports.append(device_port)
+
+    def port_forward(self, local_port: int, device_port: int) -> None:
+        """
+        forward traffic from local port to remote device port
+
+        :param local_port: port to forward from
+        :param device_port: port to forward to
+        """
+        self._device.port_forward(local_port=local_port, device_port=device_port)
+        self._forwarded_ports.append(device_port)
 
     def cleanup(self) -> None:
         """
@@ -63,6 +86,10 @@ class DevicePreparation:
         for prop in self._restoration_properties:
             with suppress(Exception):
                 self._device.set_system_property(prop, self._restoration_properties[prop] or '\"\"')
+        for port in self._forwarded_ports:
+            self._device.remove_port_forward(port)
+        for port in self._reverse_forwarded_ports:
+            self._device.remove_reverse_port_forward(port)
 
     def __enter__(self) -> "DevicePreparation":
         return self
@@ -97,9 +124,9 @@ class EspressoTestPreparation:
           test app (prevents pop-ups from occurring on first request for a user permission that can interfere
           with tests)
         """
-        app = Application.from_apk(path_to_apk, device=device)
+        self._app = Application.from_apk(path_to_apk, device=device)
         self._test_app: TestApplication = TestApplication.from_apk(path_to_test_apk, device=device)
-        self._installed = [app, self._test_app]
+        self._installed = [self._app, self._test_app]
         self._storage = DeviceStorage(device)
         self._data_files: List[str] = []
         self._device = device
@@ -109,6 +136,10 @@ class EspressoTestPreparation:
     @property
     def test_app(self) -> TestApplication:
         return self._test_app
+
+    @property
+    def target_app(self) -> Application:
+        return self._app
 
     def __enter__(self) -> "EspressoTestPreparation":
         return self

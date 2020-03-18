@@ -1,3 +1,5 @@
+from contextlib import suppress
+
 import asyncio
 import logging
 
@@ -51,10 +53,14 @@ class Timer(StopWatch):
         Mark the end of an activity and cancel timer
         :param name: name associated with the activity
         """
-        if self._future is None or self._task is None:
-            raise Exception("Internal error: marking end without a start?!")
-        self._future.set_result(True)
-        self._task.cancel()
+        # if we are in a timer, set the future to True to mark as done
+        # thiw will release the timer task and prevent a TimeoutError
+        if self._future:
+            self._future.set_result(True)
+        # if there is a current task, ensure it is not active:
+        if self._task:
+            with suppress(Exception):
+                self._task.cancel()
 
     def mark_start(self, name: str) -> None:
         """
@@ -70,6 +76,11 @@ class Timer(StopWatch):
                 asyncio.get_event_loop().stop()
             self._future = None  # timer is used up
 
-        assert not self._task, "Internal error: marking start multiple times"
+        # cancel any existing task if needed(restart timer essentially)
+        if self._task:
+            with suppress(Exception):
+                self._task.cancel()
+        # create a new future and start the timer:
+        self._future = asyncio.get_event_loop().create_future()
         # in principle, a loop is already running, so just add another task to process:
         self._task = asyncio.get_event_loop().create_task(timer())
