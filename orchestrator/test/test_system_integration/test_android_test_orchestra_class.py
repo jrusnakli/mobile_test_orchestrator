@@ -191,6 +191,12 @@ class TestAndroidTestOrchestrator(object):
                                         grant_all_user_permissions=True) as test_prep, \
                 DevicePreparation(device) as device_prep:
             device_prep.verify_network_connection("localhost", 4)
+            device_prep.port_forward(5748, 5749)
+            forwarded_ports = device.execute_remote_cmd("forward", "--list")
+            assert "5748" in forwarded_ports and "5749" in forwarded_ports
+            device_prep.reverse_port_forward(5432, 5431)
+            reverse_forwarded_ports = device.execute_remote_cmd("reverse", "--list")
+            assert "5432" in reverse_forwarded_ports and "5431" in reverse_forwarded_ports
             test_prep.upload_test_vectors(test_vectors)
             orchestrator.add_test_suite_listeners([EmptyListener(), EmptyListener()])
             orchestrator.add_background_task(some_task(orchestrator))
@@ -199,6 +205,10 @@ class TestAndroidTestOrchestrator(object):
         assert was_called, "Failed to call user-define background task"
         # listener was added a second time, so expect call counts of 2
         assert all([v == 2 for v in EmptyListener._call_count.values()])
+        forwarded_ports = device.execute_remote_cmd("forward", "--list")
+        assert forwarded_ports.strip() == ""
+        reverse_forwarded_ports = device.execute_remote_cmd("reverse", "--list")
+        assert reverse_forwarded_ports.strip() == ""
 
     def test_invalid_test_timesout(self, device: Device, tmpdir):
         with pytest.raises(ValueError):

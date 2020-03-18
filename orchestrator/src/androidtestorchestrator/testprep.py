@@ -86,9 +86,9 @@ class DevicePreparation:
         for prop in self._restoration_properties:
             with suppress(Exception):
                 self._device.set_system_property(prop, self._restoration_properties[prop] or '\"\"')
-        for port in self._reverse_forwarded_ports:
-            self._device.remove_port_forward(port)
         for port in self._forwarded_ports:
+            self._device.remove_port_forward(port)
+        for port in self._reverse_forwarded_ports:
             self._device.remove_reverse_port_forward(port)
 
     def __enter__(self) -> "DevicePreparation":
