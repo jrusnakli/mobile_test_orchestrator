@@ -16,7 +16,8 @@ class DevicePreparation:
      Class used to prepare a device for test execution, including installing app, configuring settings/properties, etc.
 
      Typically used as a context manager that will then automatically call cleanup() at exit.  The class provides
-     a list of features to setup and configure a device before test execution and teardown afterwards.
+     a list of features to setup and configure a device before test execution and teardown afterwards to restore
+     original settings/port configurations.
      This includes:
      * Ability to configure settings and system properties of the device (restored to original values on exit)
      * Ability to upload test vectors to external storage
@@ -30,6 +31,8 @@ class DevicePreparation:
         self._device: Device = device
         self._restoration_settings: Dict[Tuple[str, str], Optional[str]] = {}
         self._restoration_properties: Dict[str, Optional[str]] = {}
+        self._reverse_forwarded_ports: List[int] = []
+        self._forwarded_ports: List[int] = []
 
     def configure_device(self, settings: Optional[Dict[str, str]] = None,
                          properties: Optional[Dict[str, str]] = None) -> None:
@@ -61,6 +64,7 @@ class DevicePreparation:
         :param local_port: port to forward to
         """
         self._device.reverse_port_forward(device_port=device_port, local_port=local_port)
+        self._reverse_forwarded_ports.append(device_port)
 
     def port_forward(self, local_port: int, device_port: int) -> None:
         """
@@ -70,6 +74,7 @@ class DevicePreparation:
         :param device_port: port to forward to
         """
         self._device.port_forward(local_port=local_port, device_port=device_port)
+        self._forwarded_ports.append(device_port)
 
     def cleanup(self) -> None:
         """
@@ -81,8 +86,10 @@ class DevicePreparation:
         for prop in self._restoration_properties:
             with suppress(Exception):
                 self._device.set_system_property(prop, self._restoration_properties[prop] or '\"\"')
-        self._device.remove_port_forward()
-        self._device.remove_reverse_port_forward()
+        for port in self._reverse_forwarded_ports:
+            self._device.remove_port_forward(port)
+        for port in self._forwarded_ports:
+            self._device.remove_reverse_port_forward(port)
 
     def __enter__(self) -> "DevicePreparation":
         return self

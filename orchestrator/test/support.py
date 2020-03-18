@@ -1,3 +1,4 @@
+import logging
 import os
 # TODO: CAUTION: WE CANNOT USE asyncio.subprocess as we executein in a thread other than made and on unix-like systems, there
 # is bug in Python 3.7.
@@ -22,6 +23,8 @@ SETUP_PATH = os.path.join(_SRC_BASE_DIR, "setup.py")
 
 support_app_q = Queue()
 support_test_app_q = Queue()
+
+log = logging.getLogger(__name__)
 
 
 class Config:
@@ -51,7 +54,7 @@ def find_sdk():
     :rasise: Exception if sdk not found through environ vars or in standard user-home location per platform
     """
     if os.environ.get("ANDROID_HOME"):
-        print("Please use ANDROID_SDK_ROOT over ANDROID_HOME")
+        log.info("Please use ANDROID_SDK_ROOT over ANDROID_HOME")
         os.environ["ANDROID_SDK_ROOT"] = os.environ["ANDROID_HOME"]
         del os.environ["ANDROID_HOME"]
     if os.environ.get("ANDROID_SDK_ROOT"):
@@ -105,10 +108,10 @@ def wait_for_emulator_boot(port: int, avd: str, adb_path: str, emulator_path: st
         completed = subprocess.run(getprop_cmd, stdout=subprocess.PIPE,
                                    stderr=subprocess.PIPE, encoding='utf-8')
         if completed.returncode != 0:
-            print(completed.stderr)
+            log.info(completed.stderr)
         elif completed.stdout.strip() == '1':  # boot complete
             time.sleep(3)
-            print(f"\n>>>>>> Boot took {time.time() - start} seconds\n")
+            log.info(f"\n>>>>>> Boot took {time.time() - start} seconds\n")
             break
         time.sleep(3)
         tries -= 1
@@ -144,7 +147,7 @@ def launch_emulator(port: int):
 
     completed = subprocess.run([adb_path, "devices"], stdout=subprocess.PIPE, encoding='utf-8')
     if f"emulator-{port}" in completed.stdout:
-        print(f"WARNING: using existing emulator at port {port}")
+        log.info(f"WARNING: using existing emulator at port {port}")
         return
 
     is_no_window = False
@@ -213,7 +216,7 @@ def gradle_build(*target_and_q: Tuple[str, Queue]):
         else:
             cmd = [os.path.join(".", gradle_path)] + targets
             shell = False
-        print(f"Launching: {cmd} from {TEST_SUPPORT_APP_DIR}")
+        log.info(f"Launching: {cmd} from {TEST_SUPPORT_APP_DIR}")
         process = subprocess.run(cmd,
                                  cwd=TEST_SUPPORT_APP_DIR,
                                  env=os.environ.copy(),
@@ -236,7 +239,7 @@ def gradle_build(*target_and_q: Tuple[str, Queue]):
         # harsh exit to prevent tests from attempting to run that require apk that wasn't built
         raise
     else:
-        print(f"Built {apk_path}")
+        log.info(f"Built {apk_path}")
 
 
 def compile_all():
