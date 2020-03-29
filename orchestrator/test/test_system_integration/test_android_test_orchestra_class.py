@@ -88,18 +88,14 @@ class TestAndroidTestOrchestrator(object):
             def test_ended(self, test_run_name: str, class_name: str, test_name: str, **kwargs):
                 nonlocal current_test_suite
                 self.test_count += 1
-                assert test_name in ["useAppContext",
-                                     "testSuccess",
-                                     ]
+                assert test_name in ["useAppContext", "testSuccess", "testFail"]
                 assert class_name == self.expected_test_class[current_test_suite]
 
             def test_failed(self, test_run_name: str, class_name: str, test_name: str, stack_trace: str):
-                self.test_count += 1
                 assert class_name == self.expected_test_class[current_test_suite]
                 assert test_name == "testFail"  # this test case is designed to be failed
 
             def test_ignored(self, test_run_name: str, class_name: str, test_name: str):
-                self.test_count += 1
                 assert False, "no skipped tests should be present"
 
             def test_run_started(self, test_run_name: str, count: int = 0):
@@ -114,17 +110,17 @@ class TestAndroidTestOrchestrator(object):
 
         def test_generator():
             yield (TestSuite(name='test_suite1',
-                             arguments=["-e", "class", "com.linkedin.mtotestapp.InstrumentedTestAllSuccess#useAppContext"]))
+                             test_parameters={"class": "com.linkedin.mtotestapp.InstrumentedTestAllSuccess#useAppContext"}))
             yield (TestSuite(name='test_suite2',
-                             arguments=["-e", "class", "com.linkedin.mtotestapp.InstrumentedTestAllSuccess#testSuccess"]))
+                             test_parameters={"class": "com.linkedin.mtotestapp.InstrumentedTestAllSuccess#testSuccess"}))
             yield (TestSuite(name='test_suite3',
-                             arguments=["-e", "class", "com.linkedin.mtotestapp.InstrumentedTestSomeFailures"]))
+                             test_parameters={"class": "com.linkedin.mtotestapp.InstrumentedTestSomeFailures"}))
 
         listener = TestExpectations()
         with AndroidTestOrchestrator(artifact_dir=str(tmpdir)) as orchestrator:
             orchestrator.add_test_listener(listener)
             orchestrator.execute_test_plan(test_plan=test_generator(),
-                                           test_applications=[android_test_app])
+                                           test_application=android_test_app)
         assert listener.test_count == 4
 
     @pytest.mark.skipif(os.environ.get("CIRCLECI") is not None, reason="Circleci cannot handle more than one emulator")
@@ -152,8 +148,7 @@ class TestAndroidTestOrchestrator(object):
                 assert False, "did not expect test process to error; \n%s" % error_message
 
             def test_assumption_failure(self, test_run_name: str, class_name: str, test_name: str, stack_trace: str):
-                nonlocal test_count
-                test_count += 1
+                assert False, "did not expect test assumption failure"
 
             def test_run_ended(self, test_run_name: str, duration: float = -1.0, **kwargs: Optional[Any]) -> None:
                 pass
@@ -166,18 +161,18 @@ class TestAndroidTestOrchestrator(object):
                 test_count += 1
                 assert test_name in ["useAppContext",
                                      "testSuccess",
+                                     "testFail"
                                      ]
+                assert test_run_name in ["test_suite1", "test_suite2", "test_suite3"]
                 assert class_name in self.expected_test_class.values()
 
             def test_failed(self, test_run_name: str, class_name: str, test_name: str, stack_trace: str):
                 nonlocal test_count
-                test_count += 1
                 assert class_name in self.expected_test_class.values()
                 assert test_name == "testFail"  # this test case is designed to be failed
 
             def test_ignored(self, test_run_name: str, class_name: str, test_name: str):
                 nonlocal test_count
-                test_count += 1
                 assert False, "no skipped tests should be present"
 
             def test_run_started(self, test_run_name: str, count: int = 0):
@@ -192,17 +187,16 @@ class TestAndroidTestOrchestrator(object):
             yield (TestSuite(name='test_suite1',
                              test_parameters={"class": "com.linkedin.mtotestapp.InstrumentedTestAllSuccess#useAppContext"}))
             yield (TestSuite(name='test_suite2',
-                             arguments=["-e", "class", "com.linkedin.mtotestapp.InstrumentedTestAllSuccess#testSuccess"]))
-                             arguments=["-e", "class", "com.linkedin.mtotestapp.InstrumentedTestAllSuccess"],
+                             test_parameters={"class": "com.linkedin.mtotestapp.InstrumentedTestAllSuccess"},
                              clean_data_on_start=True))
             yield (TestSuite(name='test_suite3',
-                             arguments=["-e", "class", "com.linkedin.mtotestapp.InstrumentedTestSomeFailures"]))
+                             test_parameters={"class": "com.linkedin.mtotestapp.InstrumentedTestSomeFailures"}))
 
         with AndroidTestOrchestrator(artifact_dir=str(tmpdir)) as orchestrator:
             orchestrator.add_test_listener(TestExpectations())
-            orchestrator.execute_test_plan(test_plan=test_generator(),
-                                           test_applications=[android_test_app, android_test_app2])
-        assert test_count == 4
+            orchestrator.execute_test_plan_distributed(test_plan=test_generator(),
+                                                       test_appl_instances=[android_test_app, android_test_app2])
+        assert test_count == 5
 
     def test_add_background_task(self,
                                  device: Device,
@@ -217,7 +211,7 @@ class TestAndroidTestOrchestrator(object):
 
         def test_generator():
             yield (TestSuite(name='test_suite1',
-                             arguments=["-e", "class", "com.linkedin.mtotestapp.InstrumentedTestAllSuccess#useAppContext"]))
+                             test_parameters={"class": "com.linkedin.mtotestapp.InstrumentedTestAllSuccess#useAppContext"}))
 
         was_called = False
 
@@ -251,8 +245,8 @@ class TestAndroidTestOrchestrator(object):
             assert "5432" in reverse_forwarded_ports and "5431" in reverse_forwarded_ports
             test_prep.upload_test_vectors(test_vectors)
             orchestrator.add_background_task(some_task(orchestrator))
-            orchestrator.execute_test_plan(test_plan=test_generator(),
-                                           test_applications=test_prep.test_apps)
+            orchestrator.execute_test_plan_distributed(test_plan=test_generator(),
+                                                       test_appl_instances=test_prep.test_apps)
         assert was_called, "Failed to call user-define background task"
 
     def test_invalid_test_timesout(self, device: Device, tmpdir):

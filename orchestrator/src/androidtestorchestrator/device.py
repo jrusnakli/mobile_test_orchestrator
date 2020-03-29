@@ -329,7 +329,6 @@ class Device(object):
             Wraps below async generator in context manager to ensure proper closure
             """
             async def __aenter__(self) -> "Process":
-            async def __aenter__(self) -> "LineGenerator":
                 self._timedout = False
                 return self
 

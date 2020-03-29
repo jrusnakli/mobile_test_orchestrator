@@ -378,7 +378,7 @@ class TestApplication(Application):
         if self._target_application.package_name not in self.device.list_installed_packages():
             raise Exception("App under test, as designatee by this test app's manifest, is not installed!")
         # surround each arg with quotes to preserve spaces in any arguments when sent to remote device:
-        options = tuple('"%s"' % arg if not arg.startswith('"') else arg for arg in options)
+        options = tuple('"%s"' % arg if not arg.startswith('"') and not arg.startswith("-") else arg for arg in options)
         return await self.device.execute_remote_cmd_async("shell", "am", "instrument", "-w", *options, "-r",
                                                           "/".join([self._package_name, self._runner]),
                                                           loop=loop)

@@ -116,7 +116,7 @@ class TestExecutionListener(ABC):
 
     def observing_test(self, test_run_name: str, class_name: str, test_name: str) -> 'TestResultContextManager':
         """
-        Taken from mdl-integration. Creates a context manager to wrap test execution for reporting. By default, exiting
+        Taken from mdl-integration. Creates an context manager to wrap test execution for reporting. By default, exiting
         the context manager marks the test as passed, unless an exception was raised, in which case the test is marked
         as failed with that exception's message. This may be overridden by calling "test_failed" (or other similar
         methods) manually on the context manager.

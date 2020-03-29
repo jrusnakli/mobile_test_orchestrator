@@ -44,7 +44,6 @@ class DeviceStorage(RemoteDeviceBased):
             raise FileNotFoundError("No such file found: %s" % local_path)
         self.device.execute_remote_cmd('push', local_path, remote_path, capture_stdout=False)
 
-    def pull(self, remote_path: str, local_path: str, run_as: Optional[str] = None) -> None:
     async def push_async(self, local_path: str, remote_path: str, timeout: Optional[int] = None) -> None:
         """
         Push a local file asynchronously to the given location on the remote device

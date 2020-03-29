@@ -3,7 +3,7 @@ import logging
 from abc import abstractmethod, ABC
 from typing import List, Optional, Any
 
-from .reporting import TestRunListener
+from .reporting import TestExecutionListener
 from .timing import StopWatch
 
 log = logging.getLogger(__name__)
@@ -30,7 +30,7 @@ class InstrumentationOutputParser(LineParser):
     https://android.googlesource.com/platform/tools/base/+/master/ddmlib/src/main/java/com/android/ddmlib/testrunner/InstrumentationResultParser.java
 
     Parses the 'raw output mode' results of an instrumentation test run from shell and informs a
-    TestRunListener of the results.
+    TestExecutionListener of the results.
 
     Expects the following output:
 
@@ -134,10 +134,11 @@ class InstrumentationOutputParser(LineParser):
         def __repr__(self) -> str:
             return self.__class__.__name__ + str(self.__dict__)
 
-    def __init__(self, test_run_listener: Optional[TestRunListener] = None) -> None:
+    def __init__(self, test_run_name: str, test_run_listener: Optional[TestExecutionListener] = None) -> None:
         super().__init__()
-        self._reporters: List[TestRunListener] = [test_run_listener] if test_run_listener else []
-        self._execution_listeners: List[StopWatch] = []
+        self._test_run_name = test_run_name
+        self._execution_listeners: List[TestExecutionListener] = [test_run_listener] if test_run_listener else []
+        self._test_listeners: List[StopWatch] = []
         self._current_test: Optional[InstrumentationOutputParser.TestParsingResult] = None
         self._last_test: Optional[InstrumentationOutputParser.TestParsingResult] = None
         self._in_result_key_value: bool = False
@@ -174,19 +175,26 @@ class InstrumentationOutputParser(LineParser):
     def num_tests_expected(self) -> int:
         return self._num_tests_expected
 
-    def add_listener(self, listener: TestRunListener) -> None:
+    def add_execution_listener(self, listener: TestExecutionListener) -> None:
         """
         Add listener for test start/end as well as test status
         :param listener: listener to add
         """
-        self._reporters.append(listener)
+        self._execution_listeners.append(listener)
 
-    def add_test_execution_listener(self, listener: StopWatch) -> None:
+    def add_execution_listeners(self, listeners: List[TestExecutionListener]) -> None:
+        """
+        Add a list of listeners for test run status
+        :param listeners: list of listeners to add
+        """
+        self._execution_listeners += listeners
+
+    def add_simple_test_listener(self, listener: StopWatch) -> None:
         """
         add an agent for this parser to use to mark the start and end of tests
         without need to listen for test status
         """
-        self._execution_listeners.append(listener)
+        self._test_listeners.append(listener)
 
     def parse_line(self, line: str) -> None:
         """
@@ -248,10 +256,10 @@ class InstrumentationOutputParser(LineParser):
             self._current_test = None
         elif test.code == self.CODE_START:
             # mark start of next test
-            for listener in self._execution_listeners:
+            for listener in self._test_listeners:
                 listener.mark_start(".".join([test_class, test_name]))
         else:
-            for listener in self._execution_listeners:
+            for listener in self._test_listeners:
                 listener.mark_end(".".join([test_class, test_name]))
 
     def _parse_key_value(self, line: str) -> None:
@@ -327,7 +335,7 @@ class InstrumentationOutputParser(LineParser):
 
     def _report_result(self, test: TestParsingResult) -> None:
         """
-        Reports the given TestParsingResult to the TestRunListener (test starting or test ending).
+        Reports the given TestParsingResult to the TestExecutionListener (test starting or test ending).
         :param test: the TestParsingResult that should be reported
         """
         if not test.is_complete():
@@ -342,35 +350,37 @@ class InstrumentationOutputParser(LineParser):
         test_name = test.test_name or self.UNKNOWN_TEST_NAME
 
         if test.code == self.CODE_START:
-            for reporter in self._reporters:
-                reporter.test_started(test_class, test_name)
+            for reporter in self._execution_listeners:
+                reporter.test_started(self._test_run_name, test_class, test_name)
             return
 
         self._num_tests_run += 1
         if test.code == self.CODE_FAIL or test.code == self.CODE_ERROR:
-            for reporter in self._reporters:
-                reporter.test_failed(test_class, test_name, test.stack_trace or self.MISSING_STACK_TRACE)
-                reporter.test_ended(test_class, test_name)
+            for reporter in self._execution_listeners:
+                reporter.test_failed(self._test_run_name, test_class, test_name, test.stack_trace or self.MISSING_STACK_TRACE)
+                reporter.test_ended(self._test_run_name, test_class, test_name)
         elif test.code == self.CODE_SKIPPED:
-            for reporter in self._reporters:
-                reporter.test_started(test_class, test_name)
-                reporter.test_ignored(test_class, test_name)
-                reporter.test_ended(test_class, test_name)
+            for reporter in self._execution_listeners:
+                reporter.test_started(self._test_run_name, test_class, test_name)
+                reporter.test_ignored(self._test_run_name, test_class, test_name)
+                reporter.test_ended(self._test_run_name, test_class, test_name)
         elif test.code == self.CODE_ASSUMPTION_VIOLATION:
-            for reporter in self._reporters:
-                reporter.test_assumption_failure(test_class, test_name, test.stack_trace or self.MISSING_STACK_TRACE)
-                reporter.test_ended(test_class, test_name)
+            for reporter in self._execution_listeners:
+                reporter.test_assumption_failure(self._test_run_name, test_class, test_name, test.stack_trace or self.MISSING_STACK_TRACE)
+                reporter.test_ended(self._test_run_name, test_class, test_name)
         elif test.code == self.CODE_PASS:
-            for reporter in self._reporters:
-                reporter.test_ended(test_class, test_name)
+            for reporter in self._execution_listeners:
+                reporter.test_ended(self._test_run_name, test_class, test_name)
         else:
             log.warning("Unknown status code %s. Stacktrace: %s", test.code, test.stack_trace)
-            for reporter in self._reporters:
-                reporter.test_ended(test_class, test_name)
+            for reporter in self._execution_listeners:
+                reporter.test_failed(self._test_run_name, test_class, test_name,
+                                     stack_trace=f"<<internal errro:unknown status code {test.code}")
+                reporter.test_ended(self._test_run_name, test_class, test_name)
 
     def _report_test_run_failed(self, error_message: str) -> None:
         """
-        Reports a test run failure to the TestRunListener
+        Reports a test run failure to the TestExecutionListener
         :param error_message: The error message to report
         """
         log.info("Test run failed: %s", error_message)
@@ -381,11 +391,11 @@ class InstrumentationOutputParser(LineParser):
             # todo: get logs here?
             stack_trace = "Test failed to run to completion. Reason: '%s'." \
                           " Check device logcat for details." % error_message
-            for reporter in self._reporters:
+            for reporter in self._execution_listeners:
                 reporter.test_failed(test_class, test_name, stack_trace)
                 reporter.test_ended(test_class, test_name)
 
-        for reporter in self._reporters:
+        for reporter in self._execution_listeners:
             reporter.test_run_failed(error_message)
         self._reported_any_results = True
         self._reported_test_run_fail = True

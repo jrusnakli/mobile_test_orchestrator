@@ -1,3 +1,4 @@
+import asyncio
 import os
 import logging
 import time
@@ -81,7 +82,8 @@ class DevicePreparation:
         :param device_port: remote device port to forward
         :param local_port: port to forward to
         """
-        self._device.reverse_port_forward(device_port=device_port, local_port=local_port)
+        for device in self._devices.devices:
+            device.reverse_port_forward(device_port=device_port, local_port=local_port)
         self._reverse_forwarded_ports.append(device_port)
 
     def port_forward(self, local_port: int, device_port: int) -> None:
@@ -91,7 +93,8 @@ class DevicePreparation:
         :param local_port: port to forward from
         :param device_port: port to forward to
         """
-        self._device.port_forward(local_port=local_port, device_port=device_port)
+        for device in self._devices.devices:
+            device.port_forward(local_port=local_port, device_port=device_port)
         self._forwarded_ports.append(device_port)
 
     def cleanup(self) -> None:
@@ -106,6 +109,19 @@ class DevicePreparation:
             for prop in restoration_properties:
                 with suppress(Exception):
                     self._devices.devices[index].set_system_property(prop, restoration_properties[prop] or '\"\"')
+        for port in self._forwarded_ports:
+            for device in self._devices.devices:
+                try:
+                    device.remove_port_forward(port)
+                except Exception as e:
+                    log.error(f"Failed to remove port forwarding for device {device.device_id} on port {port}: {str(e)}")
+        for port in self._reverse_forwarded_ports:
+            for device in self._devices.devices:
+                try:
+                    device.remove_reverse_port_forward(port)
+                except Exception as e:
+                    log.error(f"Failed to remove reverse port forwarding for device {device.device_id}:"
+                              + f"on port {port}: {str(e)}")
 
     def __enter__(self) -> "DevicePreparation":
         return self

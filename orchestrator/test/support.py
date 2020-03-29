@@ -84,6 +84,7 @@ def wait_for_emulator_boot(port: int, avd: str, adb_path: str, emulator_path: st
                "-gpu", "off",
                "-no-boot-anim",
                "-skin", "320x640",
+               "-read-only",
                "-partition-size", "1024"]
     else:
         cmd = [emulator_path, "-port", str(port), "@%s" % avd,
@@ -91,6 +92,7 @@ def wait_for_emulator_boot(port: int, avd: str, adb_path: str, emulator_path: st
                "-gpu", "off",
                "-no-boot-anim",
                "-skin", "320x640",
+               "-read-only",
                "-partition-size", "1024"]
     if is_retry and "-no-snapshot-load" not in cmd:
         cmd.append("-no-snapshot-load")
@@ -103,7 +105,7 @@ def wait_for_emulator_boot(port: int, avd: str, adb_path: str, emulator_path: st
     start = time.time()
     while tries > 0:
         if proc.poll() is not None:
-            raise Exception("Failed to launch emulator")
+            raise Exception(f"Failed to launch emulator\n {proc.stdout}\n{proc.stderr}")
         completed = subprocess.run(getprop_cmd, stdout=subprocess.PIPE,
                                    stderr=subprocess.PIPE, encoding='utf-8')
         if completed.returncode != 0:
