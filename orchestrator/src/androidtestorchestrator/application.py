@@ -317,9 +317,8 @@ class TestApplication(Application):
         >>> test_app = TestApplication.from_apk("some.apk", device)
         >>> test_app.run()
 
-        :param package_name: package name of app
         :param device: which device app resides on
-        :param runner: runner to use when running tests
+        :param mainfest: contains info about app
         """
         super(TestApplication, self).__init__(device=device, manifest=manifest)
         valid = (hasattr(manifest, "instrumentation") and (manifest.instrumentation is not None) and

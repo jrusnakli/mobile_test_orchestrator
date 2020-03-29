@@ -5,5 +5,7 @@ pytest-html
 pytest-cov
 pytest-asyncio
 mypy==0.720
+shiv
+pathlib
 typed-ast
 flake8
