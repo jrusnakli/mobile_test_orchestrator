@@ -3,7 +3,6 @@ import sys
 
 import logging
 import os
-import traceback
 from contextlib import suppress
 from dataclasses import dataclass, field
 from types import TracebackType
@@ -25,26 +24,23 @@ if sys.platform == 'win32':
     asyncio.set_event_loop(loop)
 
 
-def trace(e: Exception) -> str:
-    return str(e) + "\n\n" + traceback.format_exc()
-
-
 @dataclass(frozen=True)
 class TestSuite:
     """
     A dataclass representing a test suite that defines the attributes:
-
-    *name*
-        unique name of test suite
-    *arguments*
-        arguments to be passed to the am instrument command, run as
-        "am instrument -w -r [arguments] <package>/<runner> "
-    *uploadables*
-        optional list of tuples of (loacl_path, remote_path) of test vector files to be uploaded to remote device
     """
+
+    "unique name of test suite"
     name: str
-    arguments: List[str]
+    """
+    arguments to be passed to the am instrument command, run as
+        "am instrument -w -r [-e key value for key,value in arguments] <package>/<runner> ..."
+    """
+    test_parameters: Dict[str, str]
+    "optional list of tuples of (loacl_path, remote_path) of test vector files to be uploaded to remote device"
     uploadables: List[Tuple[str, str]] = field(default_factory=list)
+    "optional list of tuples of (loacl_path, remote_path) of test vector files to be uploaded to remote device"
+    clean_data_on_start: bool = False
 
 
 # noinspection PyShadowingNames
@@ -242,7 +238,7 @@ class AndroidTestOrchestrator:
                 elif results[0] is not None:
                     raise Exception("Failed to distribute all tests for execution") from results[0]
             elif len(test_applications) == 1:
-                # serial testing, since only on test app:
+                # serial testing, since only one test app:
                 test_app = test_applications[0]
                 results = await asyncio.gather(self._worker(test_plan, test_app),
                                                self._process_logcat_tags(test_app.device),
@@ -283,21 +279,25 @@ class AndroidTestOrchestrator:
             try:
                 async for test_run in iterator:
                     signal_listeners("test_run_started", test_run.name)
-                    instrumentation_parser = InstrumentationOutputParser(test_run.name, self._run_listeners)
+                    instrumentation_parser = InstrumentationOutputParser(test_run.name)
+                    instrumentation_parser.add_execution_listeners(self._run_listeners)
                     # add timer that times timeout if any INDIVIDUAL test takes too long
                     if self._test_timeout is not None:
-                        instrumentation_parser.add_test_execution_listener(Timer(self._test_timeout))
+                        instrumentation_parser.add_simple_test_listener(Timer(self._test_timeout))
                     try:
                         # push test vectors, if any, to device
                         for local_path, remote_path in test_run.uploadables:
                             device_storage.push(local_path=local_path, remote_path=remote_path)
                         # run tests on the device, and parse output
-                        async with await test_application.run(*test_run.arguments) as proc:
+                        test_args = []
+                        for key, value in test_run.test_parameters.items():
+                            test_args += ["-e", key, value]
+                        async with await test_application.run(*test_args) as proc:
                             async for line in proc.output(unresponsive_timeout=self._test_timeout):
                                 instrumentation_parser.parse_line(line)
                             proc.wait(timeout=self._test_timeout)
                     except Exception as e:
-                        log.error("Test run failed \n%s", trace(e))
+                        log.error("Test run failed \n%s", str(e))
                         signal_listeners("test_run_failed", str(e))
                     finally:
                         signal_listeners("test_run_ended", instrumentation_parser.execution_time)
@@ -331,16 +331,16 @@ class AndroidTestOrchestrator:
                 # proc is stopped by test execution coroutine
 
         except Exception as e:
-            log.error("Exception on logcat processing, aborting: \n%s" % trace(e))
+            log.error("Exception on logcat processing, aborting: \n%s" % str(e))
 
     def execute_test_plan(self,
-                          test_applications: Union[TestApplication, List[TestApplication]],
+                          test_application: TestApplication,
                           test_plan: Union[AsyncIterator[TestSuite], Iterator[TestSuite]],
                           global_uploadables: Optional[List[Tuple[str, str]]] = None) -> None:
         """
-        Execute a test plan (a collection of test suites)
+        Execute a test plan (a collection of test suites) against a given test application running on a single device
 
-        :param test_applications:  single TestApplication or list of TestApplication's available to run against
+        :param test_application: list of distributed TestApplication instances available against which tests will be run
         :param test_plan: iterator or async iterator with each element being a tuple of test suite name and list of
            string arguments to provide to an execution of "adb instrument".  The test suit name is used to report start
            and end of each test suite via the test_listeners of this object
@@ -348,14 +348,29 @@ class AndroidTestOrchestrator:
 
         :raises: asyncio.TimeoutError if test or test suite times out based on this orchestrator's configuration
         """
-        if isinstance(test_applications, TestApplication):
-            test_apps = [test_applications]
-        else:
-            test_apps = test_applications
+
+        self.execute_test_plan_distributed([test_application], test_plan, global_uploadables)
+
+    def execute_test_plan_distributed(self,
+                                      test_appl_instances:List[TestApplication],
+                                      test_plan: Union[AsyncIterator[TestSuite], Iterator[TestSuite]],
+                                      global_uploadables: Optional[List[Tuple[str, str]]] = None) -> None:
+        """
+        Execute a test plan (a collection of test suites) across multiple instantitions of a test application runing
+        across a set of distributed devices
+
+        :param test_appl_instances: list of distributed TestApplication instances available against which tests will be run
+        :param test_plan: iterator or async iterator with each element being a tuple of test suite name and list of
+           string arguments to provide to an execution of "adb instrument".  The test suit name is used to report start
+           and end of each test suite via the test_listeners of this object
+        :param global_uploadables: files (for test) to upload and accessible across all tests
+
+        :raises: asyncio.TimeoutError if test or test suite times out based on this orchestrator's configuration
+        """
         if not isinstance(test_plan, AsyncIterator):
             async def _async_iter(test_plan: Iterator[TestSuite]) -> AsyncIterator[TestSuite]:
-                for i in test_plan:
-                    yield i
+                for item in test_plan:
+                    yield item
             test_plan = _async_iter(test_plan)
 
         # push uploadables to device
@@ -366,7 +381,7 @@ class AndroidTestOrchestrator:
                                                 timeout=5*60)
 
         async def gather() -> None:
-            device_set = DeviceSet([test_app.device for test_app in test_apps])
+            device_set = DeviceSet([test_app.device for test_app in test_appl_instances])
             await device_set.apply_concurrent(push)
 
         if global_uploadables:
@@ -384,7 +399,7 @@ class AndroidTestOrchestrator:
                 background_tasks.append(asyncio.create_task(coroutine))
 
             await asyncio.wait_for(self._execute_plan(test_plan=test_plan,
-                                                      test_applications=test_apps),
+                                                      test_applications=test_appl_instances),
                                    timeout=self._instrumentation_timeout)
 
         try:
@@ -393,19 +408,19 @@ class AndroidTestOrchestrator:
             for task in background_tasks:
                 with suppress(Exception):
                     task.cancel()
-            for device in [test_app.device for test_app in test_apps]:
+            for device in [test_app.device for test_app in test_appl_instances]:
                 device_storage = DeviceStorage(device)
                 for _, remote_path in global_uploadables or []:
                     device_storage.remove(remote_path, recursive=True)
 
     def execute_test_suite(self,
-                           test_applications: Union[TestApplication, List[TestApplication]],
+                           test_application: TestApplication,
                            test_suite: TestSuite,
                            global_uploadables: Optional[List[Tuple[str, str]]] = None) -> None:
         """
         Execute a suite of tests as given by the argument list, and report test results
 
-        :param test_applications: single TestApplication or list of TestApplications to run against
+        :param test_application: single TestApplication against which tests will be executed
         :param test_suite: `TestSuite` to execute on remote device
         :param global_uploadables: list of tuples of (local_path, remote_path) of files/dirs to upload to device or None
            The files will stay on the device until the entire test plan is completed.  Note that each test suite
@@ -414,11 +429,30 @@ class AndroidTestOrchestrator:
 
         :raises asyncio.TimeoutError if test or test suite times out
         """
-        if isinstance(test_applications, TestApplication):
-            test_applications = [test_applications]
-        self.execute_test_plan(test_applications,
+        self.execute_test_plan(test_application,
                                test_plan=iter([test_suite]),
                                global_uploadables=global_uploadables)
+
+    def execute_test_suite_distributed(self,
+                                       test_appl_instances: Union[TestApplication, List[TestApplication]],
+                                       test_suite: TestSuite,
+                                       global_uploadables: Optional[List[Tuple[str, str]]] = None) -> None:
+        """
+        Execute a suite of tests as given by the argument list, and report test results
+
+        :param test_appl_instances: list of TestApplication instancess on a distributed set of devices, against whicfh
+           tests will be run
+        :param test_suite: `TestSuite` to execute on remote device
+        :param global_uploadables: list of tuples of (local_path, remote_path) of files/dirs to upload to device or None
+           The files will stay on the device until the entire test plan is completed.  Note that each test suite
+           can also specify uploadables that are pushed and then removed once the suite is completed.  The choice is
+           a trade-off of efficiency vs storage utilization
+
+        :raises asyncio.TimeoutError if test or test suite times out
+        """
+        self.execute_test_plan_distributed(test_appl_instances,
+                                           test_plan=iter([test_suite]),
+                                           global_uploadables=global_uploadables)
 
     def add_background_task(self, coroutine: Coroutine[Any, Any, Any]) -> None:
         """

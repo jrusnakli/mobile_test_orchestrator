@@ -42,6 +42,7 @@ else:
         "brand": device.get_system_property("ro.product.brand"),
     }
 
+
 # noinspection PyShadowingNames
 class TestAndroidDevice:
 

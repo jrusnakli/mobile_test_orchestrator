@@ -61,23 +61,6 @@ class DeviceStorage(RemoteDeviceBased):
             await proc.wait(timeout)
 
     def pull(self, remote_path: str, local_path: str, run_as: Optional[str] = None) -> None:
-    async def push_async(self, local_path: str, remote_path: str, timeout: Optional[int] = None) -> None:
-        """
-        Push a local file asynchronously to the given location on the remote device
-
-        :param local_path: path to local host file
-        :param remote_path: path to place file on the remote device
-        :param timeout: timeout in seconds before raising TimeoutError, or None for no expiry
-
-        :raises FileNotFoundError: if provide local path does not exist and is a file
-        :raises Exception: if command to push file failed
-        """
-        if not os.path.isfile(local_path):
-            raise FileNotFoundError("No such file found: %s" % local_path)
-        async with await self.device.execute_remote_cmd_async('push', f"{local_path}", f"{remote_path}") as proc:
-            await proc.wait(timeout)
-
-    def pull(self, remote_path: str, local_path: str, run_as: Optional[str] = None) -> None:
         """
         Pull a file from device
 
