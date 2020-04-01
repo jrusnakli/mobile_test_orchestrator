@@ -186,7 +186,7 @@ at android.app.Instrumentation$InstrumentationThread.run(Instrumentation.java:17
 
                 def test_ended(self, class_name: str, test_name: str, **kwargs: Mapping[Any, Any]):
                     assert test_name in ["transcode1080pAvc", "transcode1440pAvc", "transcode2160pAvc"]
-                    assert class_name in  ["com.test.Test2", "com.test.TestSkipped", "com.test.TestFailure"]
+                    assert class_name in ["com.test.Test2", "com.test.TestSkipped", "com.test.TestFailure"]
 
                 def test_ignored(self, class_name: str, test_name: str):
                     nonlocal got_test_ignored

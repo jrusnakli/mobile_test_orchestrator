@@ -1,14 +1,15 @@
 import os
-import sys
-import threading
+import pytest_mproc
 from pathlib import Path
 
 import pytest
+from typing import Optional
 
 from androidtestorchestrator.application import Application, TestApplication, ServiceApplication
 from androidtestorchestrator.device import Device
+from androidtestorchestrator.emulators import EmulatorQueue, EmulatorBundleConfiguration
 from . import support
-from .support import Config, uninstall_apk
+from .support import uninstall_apk
 
 TAG_MTO_DEVICE_ID = "MTO_DEVICE_ID"
 
@@ -18,32 +19,71 @@ TAG_MTO_DEVICE_ID = "MTO_DEVICE_ID"
 # (hence once a test needs that fixture, it would block until the dependent task(s) are complete, but only then)
 
 
-class BackgroundThread(threading.Thread):
-    def run(self):
-        support.compile_all()
+def _start_queue():
+    AVD = "MTO_emulator"
+    CONFIG = EmulatorBundleConfiguration(
+        sdk=Path(support.find_sdk()),
+        boot_timeout=10 * 60  # seconds
+    )
+    if "CIRCLECI" in os.environ or TAG_MTO_DEVICE_ID in os.environ:
+        count = 1
+    else:
+        count = int(os.environ.get("MTO_EMULATOR_COUNT", "4"))
+    if TAG_MTO_DEVICE_ID in os.environ:
+        queue = EmulatorQueue(count)
+    else:
+        queue = EmulatorQueue.start(count, AVD, CONFIG,
+                                    "-no-window",
+                                    "-wipe-data",
+                                    "-gpu", "off",
+                                    "-no-boot-anim",
+                                    "-skin", "320x640",
+                                    "-partition-size", "1024"
+                                    )
+    return queue
 
 
-background_thread = BackgroundThread()
-background_thread.start()
+@pytest_mproc.utils.global_session_context()
+class TestEmulatorQueue:
+    _queue: EmulatorQueue = _start_queue()
+    _app_queue, _test_app_queue = support.compile_all()
+    _app: Optional[str] = None
+    _test_app: Optional[str] = None
+
+    def __enter__(self):
+        self._queue.__enter__()
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self._queue.__exit__(exc_type, exc_val, exc_tb)
+
+    @classmethod
+    def test_app(cls):
+        if cls._test_app is None:
+            cls._test_app = cls._test_app_queue.get()
+        return cls._test_app
+
+    @classmethod
+    def app(cls):
+        if cls._app is None:
+            cls._app = cls._app_queue.get()
+        return cls._app
 
 
-def pytest_sessionfinish(exitstatus):
-    for proc in Config.procs():
-        proc.kill()
-        proc.poll()
-    background_thread.join()
+@pytest.fixture()
+def device(request):
+    if TAG_MTO_DEVICE_ID in os.environ:
+        deviceid = os.environ[TAG_MTO_DEVICE_ID]
+        print(f"Using user-specified device id: {deviceid}")
+        # force this into the underlying queue as it is a one-off path:
+        TestEmulatorQueue.queue._q.put(Device(deviceid,
+                                              str(TestEmulatorQueue.CONFIG.adb_path())))
+    emulator = TestEmulatorQueue._queue.reserve(timeout=5*30)
 
+    def finalizer():
+        TestEmulatorQueue._queue.relinquish(emulator)
 
-def add_ext(app):
-    """
-    if Windows, add ".exe" extension
-    :param app: app path to add extension to
-    :return: app with .exe extension if Windows, else app
-    """
-    if sys.platform == 'win32':
-        return app + ".exe"
-    return app
-
+    request.addfinalizer(finalizer)
+    return emulator
 
 # noinspection PyShadowingNames
 @pytest.fixture()
@@ -86,55 +126,18 @@ def android_service_app(device,
 
 @pytest.fixture(scope='session')
 def support_test_app():
-    app = support.support_test_app_q.get()
-    if app is None:
+    test_app = TestEmulatorQueue.test_app()
+    if test_app is None:
         raise Exception("Failed to build test app")
-    return app
+    return test_app
 
 
 @pytest.fixture(scope='session')
 def support_app():
-    support_app = support.support_app_q.get()
+    support_app = TestEmulatorQueue.app()
     if isinstance(support_app, Exception) or support_app is None:
         raise Exception("Failed to build support app")
     return support_app
-
-
-@pytest.fixture(scope='session')
-def emulator():
-    if TAG_MTO_DEVICE_ID in os.environ:
-        deviceid = os.environ[TAG_MTO_DEVICE_ID]
-        print(f"Using user-specified device id: {deviceid}")
-        return deviceid
-    port = 5554
-    support.launch_emulator(port)
-    return "emulator-%d" % port
-
-
-@pytest.fixture(scope='session')
-def sole_emulator(emulator):  # kicks off emulator launch
-    android_sdk = support.find_sdk()
-    Device.set_default_adb_timeout(30)  # emulator without accel can be slow
-    Device.set_default_long_adb_timeout(240*4)
-    return Device(adb_path=os.path.join(android_sdk, "platform-tools", add_ext("adb")),
-                  device_id=emulator)
-
-
-emulator_lock = threading.Semaphore(1)
-
-
-@pytest.fixture
-def device(sole_emulator):
-    """
-    test-specific fixture that allows other tests not dependent on this fixture to run in parallel,
-    but forces dependent tests to run serially
-    :param sole_emulator: the only emulator we test against
-    :param request:
-    :return: sole test emulator
-    """
-    emulator_lock.acquire()
-    yield sole_emulator
-    emulator_lock.release()
 
 
 @pytest.fixture
