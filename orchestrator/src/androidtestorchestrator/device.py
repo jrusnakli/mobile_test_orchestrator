@@ -13,8 +13,8 @@ from typing import List, Tuple, Dict, Optional, AsyncContextManager, Union, Call
 
 from apk_bitminer.parsing import AXMLParser  # type: ignore
 
-log = logging.getLogger(__name__)
-log.setLevel(logging.INFO)
+log = logging.getLogger("MTO")
+log.setLevel(logging.ERROR)
 
 
 class Device(object):
@@ -317,7 +317,7 @@ class Device(object):
         # provide a cleaner and more direct API (e.g. TestApplication.run and DeviceLog.logcat will call this function
         # to do the heavy lifting, but they provide a clean external-facing interface to perform those functions).
         cmd = self.formulate_adb_cmd(*args)
-        print(f"Executing: {' '.join(cmd)}")
+        log.debug(f"Executing: {' '.join(cmd)}")
         proc = await asyncio.subprocess.create_subprocess_exec(*cmd,
                                                                stdout=asyncio.subprocess.PIPE,
                                                                stderr=asyncio.subprocess.STDOUT,
@@ -413,7 +413,7 @@ class Device(object):
             log.warning(f"Unable to detect device setting {namespace}:{key}")
         return previous_value
 
-    def get_device_setting(self, namespace: str, key: str) -> Optional[str]:
+    def get_device_setting(self, namespace: str, key: str, verbose: bool = True) -> Optional[str]:
         """
         Get a device setting
 
@@ -428,7 +428,8 @@ class Device(object):
                 return None
             return output.rstrip()
         except Exception as e:
-            log.error(f"Could not get setting for {namespace}:{key} [{str(e)}]")
+            if verbose:
+                log.error(f"Could not get setting for {namespace}:{key} [{str(e)}]")
             return None
 
     def set_system_property(self, key: str, value: str) -> Optional[str]:
@@ -698,8 +699,6 @@ class Device(object):
         async with self.lock():
             async with await self.execute_remote_cmd_async(*cmd) as proc:
                 async for msg in proc.output(unresponsive_timeout=Device.TIMEOUT_ADB_CMD):
-                    log.debug(msg)
-
                     if self.ERROR_MSG_INSUFFICIENT_STORAGE in msg:
                         raise self.InsufficientStorageError("Insufficient storage for install of %s" %
                                                             apk_path)
@@ -711,7 +710,7 @@ class Device(object):
 
         # On some devices, a pop-up may prevent successful install even if return code from adb install showed success,
         # so must explicitly verify the install was successful:
-        log.debug("Verifying install...")
+        log.info("Verifying install...")
         self._verify_install(apk_path, package)  # raises exception on failure to verify
 
     @asynccontextmanager
@@ -895,6 +894,15 @@ class Device(object):
             self.execute_remote_cmd("forward", "--remove", f"tcp:{port}")
         else:
             self.execute_remote_cmd("forward", "--remove-all")
+
+    def get_state(self) -> str:
+        """
+        :return: current state of emulaor ("device", "offline", "non-existent", ...)
+        """
+        try:
+            return self.execute_remote_cmd("get-state", capture_stdout=True, timeout=10).strip()
+        except Exception:
+            return "non-existent"
 
 
 class DeviceSet:
