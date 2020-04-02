@@ -133,6 +133,7 @@ class Emulator(Device):
                 while not booted:
                     booted = device.get_system_property("sys.boot_completed", ) == "1"
                     await asyncio.sleep(1)
+                    print(f">>> {device.device_id} Booted?: {booted}")
 
             await asyncio.wait_for(wait_for_boot(), config.boot_timeout)
             return Emulator(device_id, config=config, launch_mcd=cmd, env=environ)
