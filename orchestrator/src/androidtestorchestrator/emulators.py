@@ -60,7 +60,7 @@ class Emulator(Device):
         self._launch_cmd = launch_mcd
         self._env = env
         self._config = config
-        self._proc = proc
+        self._proc = None
 
     def is_alive(self) -> bool:
         return self.get_state() == 'device'
