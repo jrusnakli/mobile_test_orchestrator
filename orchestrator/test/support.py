@@ -152,7 +152,7 @@ def ensure_avd(android_sdk: str, avd: str):
     if completed.returncode != 0:
         raise Exception("Command '%s -list-avds' failed with code %d" % (emulator_path, completed.returncode))
     if avd not in completed.stdout:
-        image = "system-images;android-28;default;x86"
+        image = "system-images;android-28;default;x86_64"
         download_emulator_cmd = [sdkmanager_path, image]
         p = subprocess.Popen(download_emulator_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
         print(">>>> Downloading system image to create avd...(May take some time)")

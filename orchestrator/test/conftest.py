@@ -20,14 +20,14 @@ TAG_MTO_DEVICE_ID = "MTO_DEVICE_ID"
 
 
 def _start_queue():
-    AVD = "MTO_emulator.i386"
+    AVD = "MTO_emulator"
     CONFIG = EmulatorBundleConfiguration(
         sdk=Path(support.find_sdk()),
         boot_timeout=10 * 60  # seconds
     )
     support.ensure_avd(str(CONFIG.sdk), AVD)
     if "CIRCLECI" in os.environ or TAG_MTO_DEVICE_ID in os.environ:
-        count = 2
+        count = 1
     else:
         count = int(os.environ.get("MTO_EMULATOR_COUNT", "4"))
     if TAG_MTO_DEVICE_ID in os.environ:
