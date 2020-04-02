@@ -698,7 +698,7 @@ class Device(object):
         # Do not allow more than one install at a time on a specific device, as this can be problematic
         async with self.lock():
             async with await self.execute_remote_cmd_async(*cmd) as proc:
-                async for msg in proc.output(unresponsive_timeout=Device.TIMEOUT_ADB_CMD):
+                async for msg in proc.output(unresponsive_timeout=Device.TIMEOUT_LONG_ADB_CMD):
                     if self.ERROR_MSG_INSUFFICIENT_STORAGE in msg:
                         raise self.InsufficientStorageError("Insufficient storage for install of %s" %
                                                             apk_path)
