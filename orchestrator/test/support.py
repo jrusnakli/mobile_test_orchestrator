@@ -114,8 +114,7 @@ def uninstall_apk(apk, device):
         Application(AXMLParser.parse(apk).package_name, device).uninstall()
 
 
-def ensure_avd(android_sdk: str):
-    EMULATOR_NAME = "MTO_emulator"
+def ensure_avd(android_sdk: str, avd: str):
     adb_path = os.path.join(android_sdk, "platform-tools", "adb")
     if sys.platform.lower() == 'win32':
         adb_path += ".exe"
@@ -152,15 +151,22 @@ def ensure_avd(android_sdk: str):
                                encoding='utf-8', shell=shell)
     if completed.returncode != 0:
         raise Exception("Command '%s -list-avds' failed with code %d" % (emulator_path, completed.returncode))
-    if EMULATOR_NAME not in completed.stdout:
-        download_emulator_cmd = [sdkmanager_path, "system-images;android-28;default;x86_64"]
-        p = subprocess.Popen(download_emulator_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, stdin=subprocess.PIPE)
-        p.stdin.write(b"Y\n")
+    if avd not in completed.stdout:
+        image = "system-images;android-28;default;x86"
+        download_emulator_cmd = [sdkmanager_path, image]
+        p = subprocess.Popen(download_emulator_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
+        print(">>>> Downloading system image to create avd...(May take some time)")
+        while p.returncode is None:
+            bytes = p.stdout.read(100)
+            if not bytes:
+                break
+            sys.stdout.write(bytes.decode('latin-1'))
         if p.wait() != 0:
-            raise Exception("Failed to download image for AVD")
-        create_avd_cmd = [avdmanager_path, "create", "avd", "-n", EMULATOR_NAME, "-k", "system-images;android-28;default;x86_64",
-                          "-d", "pixel_xl"]
-        p = subprocess.Popen(create_avd_cmd,  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.PIPE)
+            stdout, _ = p.communicate()
+            raise Exception(f"Failed to download image for AVD {stdout}")
+        print(">>>> Download complete.")
+        create_avd_cmd = [avdmanager_path, "create", "avd", "-n", avd, "-k", image, "-d", "pixel_xl"]
+        p = subprocess.Popen(create_avd_cmd,  stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.PIPE)
         if p.wait() != 0:
             stdout, stderr = p.communicate()
             raise Exception(f"Failed to create avd: {stdout}\n{stderr}")
@@ -168,7 +174,8 @@ def ensure_avd(android_sdk: str):
                                    encoding='utf-8')
         if completed.returncode != 0:
             raise Exception("Command '%s -list-avds' failed with code %d" % (emulator_path, completed.returncode))
-        if EMULATOR_NAME not in completed.stdout:
+        if avd not in completed.stdout:
             raise Exception("Unable to create AVD for testing")
+
 
 find_sdk()
