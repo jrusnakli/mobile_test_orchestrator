@@ -60,6 +60,7 @@ def _start_queues() -> Tuple[Union[Emulator, EmulatorQueue], str, str]:
 @pytest_mproc.utils.global_session_context("device")  # only use if device fixture is needed
 class TestEmulatorQueue:
     _queue, _app_queue, _test_app_queue = _start_queues()
+    _app: Optional[str] = None
     _test_app: Optional[str] = None
 
     def __enter__(self):
