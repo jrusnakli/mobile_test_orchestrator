@@ -60,7 +60,7 @@ class Emulator(Device):
         self._launch_cmd = launch_mcd
         self._env = env
         self._config = config
-        self._proc = None
+        self._proc: Optional[subprocess.Popen] = None
 
     def is_alive(self) -> bool:
         return self.get_state() == 'device'
@@ -70,10 +70,10 @@ class Emulator(Device):
         Restart this emulator and make it available for use again
         """
         async def wait_for_boot() -> None:
-            self._proc = subprocess.Popen(self._launch_cmd,
-                                          stderr=subprocess.STDOUT,
-                                          stdout=subprocess.PIPE,
-                                          env=self._env)
+            subprocess.Popen(self._launch_cmd,
+                             stderr=subprocess.STDOUT,
+                             stdout=subprocess.PIPE,
+                             env=self._env)
             booted = False
             while self.get_state().strip() != 'device':
                 await asyncio.sleep(1)
