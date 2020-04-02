@@ -42,22 +42,24 @@ def find_sdk():
 
 
 class TestEmulator:
-
+    ARGS = [
+        "-wipe-data",
+        "-gpu", "off",
+        "-no-boot-anim",
+        "-skin", "320x640",
+        "-no-window",
+        "-no-audio",
+        "-partition-size", "1024"
+    ]
     EMULATOR_CONFIG = EmulatorBundleConfiguration(
         sdk=Path(find_sdk()),
         boot_timeout=10*60  # seconds
     )
-    AVD = "MTO_emulator"  # set up before tests execute
+    AVD = "MTO_emulator.i386"  # set up before tests execute
 
     def test_launch(self):
         async def launch():
-            emulator = await Emulator.launch(5584, self.AVD, self.EMULATOR_CONFIG,
-                                             "-wipe-data",
-                                             "-gpu", "off",
-                                             "-no-boot-anim",
-                                             "-skin", "320x640",
-                                             "-no-window",
-                                             "-partition-size", "1024")
+            emulator = await Emulator.launch(5584, self.AVD, self.EMULATOR_CONFIG, *self.ARGS)
             assert emulator.is_alive()
             emulator.kill()
             if emulator.is_alive():
@@ -69,13 +71,7 @@ class TestEmulator:
     def test_launch_bad_port(self):
         async def launch():
 
-            await Emulator.launch(2345, self.AVD, self.EMULATOR_CONFIG,
-                                  "-wipe-data",
-                                  "-gpu", "off",
-                                  "-no-boot-anim",
-                                  "-skin", "320x640",
-                                  "-no-window",
-                                  "-partition-size", "1024")
+            await Emulator.launch(2345, self.AVD, self.EMULATOR_CONFIG, *self.ARGS)
         with pytest.raises(ValueError):
             asyncio.get_event_loop().run_until_complete(launch())
 
@@ -85,13 +81,7 @@ class TestEmulatorQueue:
     @pytest.mark.skipif("STANDALONE_Q_TEST" not in os.environ,
                         reason="Can only run this standalone, as testing itself is using an EmulatorQueue")
     def test_start_queue(self):
-        with EmulatorQueue.start(2, TestEmulator.AVD, TestEmulator.EMULATOR_CONFIG,
-                                 "-wipe-data",
-                                 "-gpu", "off",
-                                 "-no-boot-anim",
-                                 "-no-window",
-                                 "-skin", "320x640",
-                                 "-partition-size", "1024") as queue:
+        with EmulatorQueue.start(2, TestEmulator.AVD, TestEmulator.EMULATOR_CONFIG, *self.ARGS) as queue:
             emulator1 = queue.reserve(timeout=10*60)
             emulator2 = queue.reserve(timeout=10*60)
             with pytest.raises(Empty):
