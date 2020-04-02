@@ -30,7 +30,6 @@ def _start_queue():
         "-no-audio",
         "-wipe-data",
         "-gpu", "off",
-        "-no-accel",
         "-no-boot-anim",
         "-skin", "320x640",
         "-partition-size", "1024"
@@ -38,8 +37,9 @@ def _start_queue():
     support.ensure_avd(str(CONFIG.sdk), AVD)
     if "CIRCLECI" in os.environ or TAG_MTO_DEVICE_ID in os.environ:
         count = 1
+        ARGS.append("-no-accel")
     else:
-        count = int(os.environ.get("MTO_EMULATOR_COUNT", "1"))
+        count = int(os.environ.get("MTO_EMULATOR_COUNT", "4"))
     if TAG_MTO_DEVICE_ID in os.environ:
         queue = EmulatorQueue(count)
     else:
