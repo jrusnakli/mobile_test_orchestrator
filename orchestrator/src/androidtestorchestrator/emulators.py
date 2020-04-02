@@ -88,8 +88,6 @@ class Emulator(Device):
         Launch an emulator on the given port, with named avd and configuration
 
         :param args:  add'l arguments to pass to emulator command
-
-        :return:
         """
         if port not in cls.PORTS:
             raise ValueError(f"Port must be one of {cls.PORTS}")

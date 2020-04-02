@@ -1,13 +1,14 @@
+import asyncio
 import os
 import pytest_mproc
 from pathlib import Path
 
 import pytest
-from typing import Optional
+from typing import Optional, Union
 
 from androidtestorchestrator.application import Application, TestApplication, ServiceApplication
 from androidtestorchestrator.device import Device
-from androidtestorchestrator.emulators import EmulatorQueue, EmulatorBundleConfiguration
+from androidtestorchestrator.emulators import EmulatorQueue, EmulatorBundleConfiguration, Emulator
 from . import support
 from .support import uninstall_apk
 
@@ -19,7 +20,7 @@ TAG_MTO_DEVICE_ID = "MTO_DEVICE_ID"
 # (hence once a test needs that fixture, it would block until the dependent task(s) are complete, but only then)
 
 
-def _start_queue():
+def _start_queue() -> Union[Emulator, EmulatorQueue]:
     AVD = "MTO_emulator"
     CONFIG = EmulatorBundleConfiguration(
         sdk=Path(support.find_sdk()),
@@ -36,31 +37,30 @@ def _start_queue():
     ]
     support.ensure_avd(str(CONFIG.sdk), AVD)
     if "CIRCLECI" in os.environ or TAG_MTO_DEVICE_ID in os.environ:
-        count = 1
         ARGS.append("-no-accel")
-    else:
-        count = int(os.environ.get("MTO_EMULATOR_COUNT", "4"))
-    if TAG_MTO_DEVICE_ID in os.environ:
-        queue = EmulatorQueue(count)
-    else:
-        if "CIRCLECI" in os.environ:
-            ARGS.append("-no-accel")
-        queue = EmulatorQueue.start(count, AVD, CONFIG, *ARGS)
+        emulator = asyncio.get_event_loop().run_until_complete(Emulator.launch(Emulator.PORTS[0], AVD, CONFIG, *ARGS))
+        return emulator
+    count = int(os.environ.get("MTO_EMULATOR_COUNT", "4"))
+    queue = EmulatorQueue.start(count, AVD, CONFIG, *ARGS)
     return queue
 
 
-@pytest_mproc.utils.global_session_context()
+@pytest_mproc.utils.global_session_context("device")  # only use if device fixture is needed
 class TestEmulatorQueue:
-    _queue: EmulatorQueue = _start_queue()
+    _queue: Union[Emulator, EmulatorQueue] = _start_queue()
     _app_queue, _test_app_queue = support.compile_all()
     _app: Optional[str] = None
     _test_app: Optional[str] = None
 
     def __enter__(self):
-        self._queue.__enter__()
+        if isinstance(self._queue, EmulatorQueue):
+            self._queue.__enter__()
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        self._queue.__exit__(exc_type, exc_val, exc_tb)
+        if isinstance(self._queue, EmulatorQueue):
+            self._queue.__exit__(exc_type, exc_val, exc_tb)
+        else:
+            self._queue.kill()
 
     @classmethod
     def test_app(cls):
@@ -77,19 +77,19 @@ class TestEmulatorQueue:
 
 @pytest.fixture()
 def device(request):
-    if TAG_MTO_DEVICE_ID in os.environ:
-        deviceid = os.environ[TAG_MTO_DEVICE_ID]
-        print(f"Using user-specified device id: {deviceid}")
-        # force this into the underlying queue as it is a one-off path:
-        TestEmulatorQueue.queue._q.put(Device(deviceid,
-                                              str(TestEmulatorQueue.CONFIG.adb_path())))
-    emulator = TestEmulatorQueue._queue.reserve(timeout=10*60)
+    if isinstance(TestEmulatorQueue._queue, Emulator):
+        emulator = TestEmulatorQueue._queue  # queue of 1 == an emulator
+        return emulator
+    else:
+        queue = TestEmulatorQueue._queue
+        emulator = queue.reserve(timeout=10*60)
 
-    def finalizer():
-        TestEmulatorQueue._queue.relinquish(emulator)
+        def finalizer():
+            queue.relinquish(emulator)
 
-    request.addfinalizer(finalizer)
-    return emulator
+        request.addfinalizer(finalizer)
+        return emulator
+
 
 # noinspection PyShadowingNames
 @pytest.fixture()
@@ -158,7 +158,7 @@ def fake_sdk(tmpdir_factory):
 @pytest.fixture
 def in_tmp_dir(tmp_path: Path) -> Path:
     cwd = os.getcwd()
-    os.chdir(tmp_path)
+    os.chdir(str(tmp_path))
     yield tmp_path
     os.chdir(cwd)
 
