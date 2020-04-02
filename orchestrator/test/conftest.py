@@ -1,3 +1,5 @@
+import multiprocessing
+
 import asyncio
 import getpass
 import os
@@ -29,6 +31,12 @@ else:
 
 
 def _start_queues() -> Tuple[Union[Emulator, EmulatorQueue], str, str]:
+    """
+    start the emulator queue and the queues for the app/test app compiles running in parallel
+
+    :return: Tuple of Emulator(if only one in queue)/EmulatorQueue and two string names of app & test_app apks
+    TODO: just return Application and TestApplication and do the install here
+    """
     AVD = "MTO_emulator"
     CONFIG = EmulatorBundleConfiguration(
         sdk=Path(support.find_sdk()),
@@ -51,7 +59,8 @@ def _start_queues() -> Tuple[Union[Emulator, EmulatorQueue], str, str]:
         app_queue, test_app_queue = support.compile_all()
         emulator = asyncio.get_event_loop().run_until_complete(Emulator.launch(Emulator.PORTS[0], AVD, CONFIG, *ARGS))
         return emulator, app_queue, test_app_queue
-    count = int(os.environ.get("MTO_EMULATOR_COUNT", "4"))
+    max_count = min(multiprocessing.cpu_count(), 6)
+    count = int(os.environ.get("MTO_EMULATOR_COUNT", f"{max_count}"))
     queue = EmulatorQueue.start(count, AVD, CONFIG, *ARGS)
     app_queue, test_app_queue = support.compile_all()
     return queue, app_queue, test_app_queue
@@ -60,6 +69,7 @@ def _start_queues() -> Tuple[Union[Emulator, EmulatorQueue], str, str]:
 @pytest_mproc.utils.global_session_context("device")  # only use if device fixture is needed
 class TestEmulatorQueue:
     _queue, _app_queue, _test_app_queue = _start_queues()
+    # place to cache the app and test app once they are gotten from the Queue
     _app: Optional[str] = None
     _test_app: Optional[str] = None
 
