@@ -24,7 +24,7 @@ RESOURCE_DIR = os.path.join(os.path.dirname(__file__), "resources")
 
 if TAG_MTO_DEVICE_ID not in os.environ:
     expected_device_info = {
-        "model": "Android SDK built for x86",
+        "model": "Android SDK built for x86_64",
         "manufacturer": "unknown",
         "brand": "Android",
     }
@@ -125,10 +125,10 @@ class TestAndroidDevice:
         """
         The emulator used in test has following properties
         [ro.product.vendor.brand]: [Android]
-        [ro.product.vendor.device]: [generic_x86]
+        [ro.product.vendor.device]: [generic_x86_64]
         [ro.product.vendor.manufacturer]: [unknown]
-        [ro.product.vendor.model]: [Android SDK built for x86]
-        [ro.product.vendor.name]: [sdk_phone_x86]
+        [ro.product.vendor.model]: [Android SDK built for x86_64]
+        [ro.product.vendor.name]: [sdk_phone_x86_64]
         """
         assert device.manufacturer == expected_device_info["manufacturer"]
 
