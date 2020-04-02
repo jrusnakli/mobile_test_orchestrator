@@ -53,6 +53,7 @@ def _start_queues() -> Tuple[Union[Emulator, EmulatorQueue], str, str]:
     ]
     support.ensure_avd(str(CONFIG.sdk), AVD)
     if IS_CIRCLECI or TAG_MTO_DEVICE_ID in os.environ:
+        Device.TIMEOUT_ADB_CMD *= 10  # slow machine
         ARGS.append("-no-accel")
         # on circleci, do build first to not take up too much
         # memory if emulator were started first

@@ -29,6 +29,7 @@ class MockAXMLParser(AXMLParser):
     def package_name(self):
         return
 
+
 # noinspection PyShadowingNames
 class TestApplicationClass:
 
