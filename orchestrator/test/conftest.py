@@ -15,8 +15,10 @@ from .support import uninstall_apk
 
 TAG_MTO_DEVICE_ID = "MTO_DEVICE_ID"
 IS_CIRCLECI = getpass.getuser() == 'circleci'
+
+
 if IS_CIRCLECI:
-    print(">>>> Running in Circleci environcment.  Not using parallelized testing")
+    print(">>>> Running in Circleci environment.  Not using parallelized testing")
 else:
     print(">>>> Parallelized testing is enabled for this run.")
 
@@ -85,6 +87,7 @@ class TestEmulatorQueue:
 def device(request):
     if isinstance(TestEmulatorQueue._queue, Emulator):
         emulator = TestEmulatorQueue._queue  # queue of 1 == an emulator
+        assert emulator.get_state() == 'device'
         return emulator
     else:
         queue = TestEmulatorQueue._queue

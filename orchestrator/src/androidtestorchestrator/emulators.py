@@ -51,7 +51,8 @@ class Emulator(Device):
     def __init__(self, device_id: str,
                  config: EmulatorBundleConfiguration,
                  launch_mcd: List[str],
-                 env: Dict[str, str]):
+                 env: Dict[str, str],
+                 proc: suppress.Popen):
         """
         Launch an emulator and create this Device instance
         """
@@ -59,6 +60,7 @@ class Emulator(Device):
         self._launch_cmd = launch_mcd
         self._env = env
         self._config = config
+        self._proc = proc
 
     def is_alive(self) -> bool:
         return self.get_state() == 'device'
@@ -68,12 +70,12 @@ class Emulator(Device):
         Restart this emulator and make it available for use again
         """
         async def wait_for_boot() -> None:
-            proc = await asyncio.subprocess.create_subprocess_shell(" ".join(self._launch_cmd),
-                                                                    stderr=subprocess.STDOUT,
-                                                                    stdout=subprocess.PIPE,
-                                                                    env=self._env)
+            await asyncio.subprocess.create_subprocess_shell(" ".join(self._launch_cmd),
+                                                             stderr=subprocess.STDOUT,
+                                                             stdout=subprocess.PIPE,
+                                                             env=self._env)
             booted = False
-            while proc.returncode is None and self.get_state().strip() != 'device':
+            while self.get_state().strip() != 'device':
                 await asyncio.sleep(1)
 
             while not booted:
@@ -115,10 +117,15 @@ class Emulator(Device):
         environ["ANDROID_AVD_HOME"] = str(config.avd_dir)
         environ["ANDROID_SDK_HOME"] = str(config.sdk)
         booted = False
-        proc = await asyncio.subprocess.create_subprocess_shell(" ".join(cmd),
-                                                                stderr=subprocess.STDOUT,
-                                                                stdout=subprocess.PIPE,
-                                                                env=environ)
+        proc = subprocess.Popen(cmd,
+                                stderr=subprocess.STDOUT,
+                                stdout=subprocess.PIPE,
+                                env=environ)
+
+        # proc = await asyncio.subprocess.create_subprocess_shell(" ".join(cmd),
+        #                                                       stderr=subprocess.STDOUT,
+        #                                                        stdout=subprocess.PIPE,
+        #                                                        env=environ)
         try:
 
             async def wait_for_boot() -> None:
@@ -126,9 +133,9 @@ class Emulator(Device):
                 nonlocal proc
                 nonlocal device_id
 
-                while proc.returncode is None and device.get_state().strip() != 'device':
+                while device.get_state().strip() != 'device':
                     await asyncio.sleep(1)
-                if proc.returncode is not None:
+                if proc.poll() is not None:
                     stdout, _ = await proc.communicate()
                     raise Emulator.FailedBootError(port, stdout.decode('utf-8'))
                 start = time.time()
@@ -139,7 +146,7 @@ class Emulator(Device):
                     print(f">>> {device.device_id} [{duration}] Booted?: {booted}")
 
             await asyncio.wait_for(wait_for_boot(), config.boot_timeout)
-            return Emulator(device_id, config=config, launch_mcd=cmd, env=environ)
+            return Emulator(device_id, config=config, launch_mcd=cmd, env=environ, proc=proc)
         except Exception as e:
             raise Emulator.FailedBootError(port, str(e)) from e
         finally:
@@ -151,6 +158,7 @@ class Emulator(Device):
         """
         Kill this emulator (underlying Process)
         """
+        print(f">>>>> Killing emulator {self.device_id}")
         self.execute_remote_cmd("emu", "kill")
 
 
