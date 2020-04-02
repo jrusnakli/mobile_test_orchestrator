@@ -1,5 +1,6 @@
 import sys
 
+import getpass
 from queue import Empty
 
 import asyncio
@@ -59,6 +60,8 @@ class TestEmulator:
     )
     AVD = "MTO_emulator"  # set up before tests execute
 
+    @pytest.mark.skipif(getpass.getuser() == 'circleci',
+                        reason="Unable to run multiple emulators in circleci without upgrading machine")
     def test_launch(self):
         async def launch():
             emulator = await Emulator.launch(5584, self.AVD, self.EMULATOR_CONFIG, *self.ARGS)
