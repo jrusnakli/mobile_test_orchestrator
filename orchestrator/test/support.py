@@ -114,4 +114,61 @@ def uninstall_apk(apk, device):
         Application(AXMLParser.parse(apk).package_name, device).uninstall()
 
 
+def ensure_avd(android_sdk: str):
+    EMULATOR_NAME = "MTO_emulator"
+    adb_path = os.path.join(android_sdk, "platform-tools", "adb")
+    if sys.platform.lower() == 'win32':
+        adb_path += ".exe"
+
+    is_no_window = False
+
+    if sys.platform == 'win32':
+        emulator_path = os.path.join(android_sdk, "emulator", "emulator-headless.exe")
+    else:
+        # latest Android SDK should use $SDK_ROOT/emulator/emulator instead of $SDK_ROOT/tools/emulator
+        emulator_path = os.path.join(android_sdk, "emulator", "emulator-headless")
+    sdkmanager_path = os.path.join(android_sdk, "tools", "bin", "sdkmanager")
+    avdmanager_path = os.path.join(android_sdk, "tools", "bin", "avdmanager")
+    if sys.platform.lower() == 'win32':
+        sdkmanager_path += ".bat"
+        avdmanager_path += ".bat"
+        shell = True
+    else:
+        shell = False
+    if not os.path.isfile(emulator_path):
+        # As of v29.2.11, emulator-headless is no longer present, but has been merged to emulator -no-window,
+        # so check for newer command
+        if sys.platform == 'win32':
+            emulator_path = os.path.join(android_sdk, "emulator", "emulator.exe")
+        else:
+            emulator_path = os.path.join(android_sdk, "emulator", "emulator")
+        if not os.path.isfile(emulator_path):
+            raise Exception("Unable to find path to 'emulator' command")
+        is_no_window = True
+    list_emulators_cmd = [emulator_path, "-list-avds"]
+    if is_no_window:
+        list_emulators_cmd.append("-no-window")
+    completed = subprocess.run(list_emulators_cmd, timeout=10, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                               encoding='utf-8', shell=shell)
+    if completed.returncode != 0:
+        raise Exception("Command '%s -list-avds' failed with code %d" % (emulator_path, completed.returncode))
+    if EMULATOR_NAME not in completed.stdout:
+        download_emulator_cmd = [sdkmanager_path, "system-images;android-28;default;x86_64"]
+        p = subprocess.Popen(download_emulator_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, stdin=subprocess.PIPE)
+        p.stdin.write(b"Y\n")
+        if p.wait() != 0:
+            raise Exception("Failed to download image for AVD")
+        create_avd_cmd = [avdmanager_path, "create", "avd", "-n", EMULATOR_NAME, "-k", "system-images;android-28;default;x86_64",
+                          "-d", "pixel_xl"]
+        p = subprocess.Popen(create_avd_cmd,  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.PIPE)
+        if p.wait() != 0:
+            stdout, stderr = p.communicate()
+            raise Exception(f"Failed to create avd: {stdout}\n{stderr}")
+        completed = subprocess.run(list_emulators_cmd, timeout=10, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                   encoding='utf-8')
+        if completed.returncode != 0:
+            raise Exception("Command '%s -list-avds' failed with code %d" % (emulator_path, completed.returncode))
+        if EMULATOR_NAME not in completed.stdout:
+            raise Exception("Unable to create AVD for testing")
+
 find_sdk()
