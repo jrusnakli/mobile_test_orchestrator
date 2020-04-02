@@ -5,7 +5,7 @@ import pytest_mproc
 from pathlib import Path
 
 import pytest
-from typing import Optional, Union
+from typing import Optional, Union, Tuple
 
 from androidtestorchestrator.application import Application, TestApplication, ServiceApplication
 from androidtestorchestrator.device import Device
@@ -28,7 +28,7 @@ else:
 # (hence once a test needs that fixture, it would block until the dependent task(s) are complete, but only then)
 
 
-def _start_queue() -> Union[Emulator, EmulatorQueue]:
+def _start_queues() -> Tuple[Union[Emulator, EmulatorQueue], str, str]:
     AVD = "MTO_emulator"
     CONFIG = EmulatorBundleConfiguration(
         sdk=Path(support.find_sdk()),
@@ -46,18 +46,20 @@ def _start_queue() -> Union[Emulator, EmulatorQueue]:
     support.ensure_avd(str(CONFIG.sdk), AVD)
     if IS_CIRCLECI or TAG_MTO_DEVICE_ID in os.environ:
         ARGS.append("-no-accel")
+        # on circleci, do build first to not take up too much
+        # memory if emulator were started first
+        app_queue, test_app_queue = support.compile_all()
         emulator = asyncio.get_event_loop().run_until_complete(Emulator.launch(Emulator.PORTS[0], AVD, CONFIG, *ARGS))
-        return emulator
+        return emulator, app_queue, test_app_queue
     count = int(os.environ.get("MTO_EMULATOR_COUNT", "4"))
     queue = EmulatorQueue.start(count, AVD, CONFIG, *ARGS)
-    return queue
+    app_queue, test_app_queue = support.compile_all()
+    return queue, app_queue, test_app_queue
 
 
 @pytest_mproc.utils.global_session_context("device")  # only use if device fixture is needed
 class TestEmulatorQueue:
-    _app_queue, _test_app_queue = support.compile_all()
-    _queue: Union[Emulator, EmulatorQueue] = _start_queue()
-    _app: Optional[str] = None
+    _queue, _app_queue, _test_app_queue = _start_queues()
     _test_app: Optional[str] = None
 
     def __enter__(self):

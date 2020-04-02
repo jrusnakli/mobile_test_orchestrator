@@ -192,7 +192,7 @@ class Application(RemoteDeviceBased):
         More to read about adb monkey at https://developer.android.com/studio/test/monkey#command-options-reference
         """
         cmd = ["shell", "monkey", "-p", self._package_name, "-c", "android.intent.category.LAUNCHER", str(count)]
-        self.device.execute_remote_cmd(*cmd, capture_stdout=False)
+        self.device.execute_remote_cmd(*cmd, capture_stdout=False, timeout=Device.TIMEOUT_LONG_ADB_CMD)
 
     def stop(self, force: bool = True) -> None:
         """
