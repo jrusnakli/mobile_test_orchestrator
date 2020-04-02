@@ -72,8 +72,8 @@ class TestEmulator:
 
     def test_launch_bad_port(self):
         async def launch():
-
             await Emulator.launch(2345, self.AVD, self.EMULATOR_CONFIG, *self.ARGS)
+
         with pytest.raises(ValueError):
             asyncio.get_event_loop().run_until_complete(launch())
 
