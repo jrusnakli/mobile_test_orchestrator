@@ -15,6 +15,10 @@ from .support import uninstall_apk
 
 TAG_MTO_DEVICE_ID = "MTO_DEVICE_ID"
 IS_CIRCLECI = getpass.getuser() == 'circleci'
+if IS_CIRCLECI:
+    print(">>>> Running in Circleci environcment.  Not using parallelized testing")
+else:
+    print(">>>> Parallelized testing is enabled for this run.")
 
 # Run a bunch of stuff in the background, such as compiling depenent apks for test and launching emulators
 # This allows tests to potentially run in parallel (if not dependent on output of these tasks), parallelizes
