@@ -25,23 +25,27 @@ def _start_queue():
         sdk=Path(support.find_sdk()),
         boot_timeout=10 * 60  # seconds
     )
+    ARGS = [
+        "-no-window",
+        "-no-audio",
+        "-wipe-data",
+        "-gpu", "off",
+        "-no-accel",
+        "-no-boot-anim",
+        "-skin", "320x640",
+        "-partition-size", "1024"
+    ]
     support.ensure_avd(str(CONFIG.sdk), AVD)
     if "CIRCLECI" in os.environ or TAG_MTO_DEVICE_ID in os.environ:
-        count = 2
+        count = 1
     else:
-        count = int(os.environ.get("MTO_EMULATOR_COUNT", "4"))
+        count = int(os.environ.get("MTO_EMULATOR_COUNT", "1"))
     if TAG_MTO_DEVICE_ID in os.environ:
         queue = EmulatorQueue(count)
     else:
-        queue = EmulatorQueue.start(count, AVD, CONFIG,
-                                    "-no-window",
-                                    "-no-audio",
-                                    "-wipe-data",
-                                    "-gpu", "off",
-                                    "-no-boot-anim",
-                                    "-skin", "320x640",
-                                    "-partition-size", "1024"
-                                    )
+        if "CIRCLECI" in os.environ:
+            ARGS.append("-no-accel")
+        queue = EmulatorQueue.start(count, AVD, CONFIG, *ARGS)
     return queue
 
 
@@ -79,7 +83,7 @@ def device(request):
         # force this into the underlying queue as it is a one-off path:
         TestEmulatorQueue.queue._q.put(Device(deviceid,
                                               str(TestEmulatorQueue.CONFIG.adb_path())))
-    emulator = TestEmulatorQueue._queue.reserve(timeout=5*30)
+    emulator = TestEmulatorQueue._queue.reserve(timeout=10*60)
 
     def finalizer():
         TestEmulatorQueue._queue.relinquish(emulator)

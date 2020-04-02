@@ -1,4 +1,6 @@
 import sys
+import time
+
 from contextlib import suppress
 
 import asyncio
@@ -130,10 +132,12 @@ class Emulator(Device):
                 if proc.returncode is not None:
                     stdout, _ = await proc.communicate()
                     raise Emulator.FailedBootError(port, stdout.decode('utf-8'))
+                start = time.time()
                 while not booted:
                     booted = device.get_system_property("sys.boot_completed", ) == "1"
                     await asyncio.sleep(1)
-                    print(f">>> {device.device_id} Booted?: {booted}")
+                    duration = time.time() - start
+                    print(f">>> {device.device_id} [{duration}] Booted?: {booted}")
 
             await asyncio.wait_for(wait_for_boot(), config.boot_timeout)
             return Emulator(device_id, config=config, launch_mcd=cmd, env=environ)

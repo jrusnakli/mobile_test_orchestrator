@@ -51,9 +51,11 @@ class TestEmulator:
         "-no-audio",
         "-partition-size", "1024"
     ]
+    if "CIRCLECI" in os.environ:
+        ARGS.append("-no-accel")
     EMULATOR_CONFIG = EmulatorBundleConfiguration(
         sdk=Path(find_sdk()),
-        boot_timeout=10*60  # seconds
+        boot_timeout=10 * 60  # seconds
     )
     AVD = "MTO_emulator"  # set up before tests execute
 
