@@ -25,6 +25,7 @@ def _start_queue():
         sdk=Path(support.find_sdk()),
         boot_timeout=10 * 60  # seconds
     )
+    support.ensure_avd(str(CONFIG.sdk))
     if "CIRCLECI" in os.environ or TAG_MTO_DEVICE_ID in os.environ:
         count = 1
     else:
