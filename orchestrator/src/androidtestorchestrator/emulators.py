@@ -52,7 +52,7 @@ class Emulator(Device):
                  config: EmulatorBundleConfiguration,
                  launch_mcd: List[str],
                  env: Dict[str, str],
-                 proc: suppress.Popen):
+                 proc: subprocess.Popen):
         """
         Launch an emulator and create this Device instance
         """
