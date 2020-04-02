@@ -27,7 +27,7 @@ def _start_queue():
     )
     support.ensure_avd(str(CONFIG.sdk), AVD)
     if "CIRCLECI" in os.environ or TAG_MTO_DEVICE_ID in os.environ:
-        count = 1
+        count = 2
     else:
         count = int(os.environ.get("MTO_EMULATOR_COUNT", "4"))
     if TAG_MTO_DEVICE_ID in os.environ:
