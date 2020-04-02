@@ -55,7 +55,7 @@ class TestEmulator:
         sdk=Path(find_sdk()),
         boot_timeout=10*60  # seconds
     )
-    AVD = "MTO_emulator.i386"  # set up before tests execute
+    AVD = "MTO_emulator"  # set up before tests execute
 
     def test_launch(self):
         async def launch():
