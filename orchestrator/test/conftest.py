@@ -14,7 +14,7 @@ from . import support
 from .support import uninstall_apk
 
 TAG_MTO_DEVICE_ID = "MTO_DEVICE_ID"
-IS_CIRCLECI = getpass.getuser() == 'circleci'
+IS_CIRCLECI = getpass.getuser() == 'circleci' or "CIRCLECI" in os.environ
 
 
 if IS_CIRCLECI:
