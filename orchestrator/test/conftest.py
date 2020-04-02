@@ -55,8 +55,8 @@ def _start_queue() -> Union[Emulator, EmulatorQueue]:
 
 @pytest_mproc.utils.global_session_context("device")  # only use if device fixture is needed
 class TestEmulatorQueue:
-    _queue: Union[Emulator, EmulatorQueue] = _start_queue()
     _app_queue, _test_app_queue = support.compile_all()
+    _queue: Union[Emulator, EmulatorQueue] = _start_queue()
     _app: Optional[str] = None
     _test_app: Optional[str] = None
 
