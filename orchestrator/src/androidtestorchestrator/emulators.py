@@ -95,6 +95,7 @@ class Emulator(Device):
         device = Device(device_id, str(config.adb_path()))
         with suppress(Exception):
             device.execute_remote_cmd("emu", "kill")  # attempt to kill any existing emulator at this port
+            await asyncio.sleep(2)
         emulator_cmd = config.sdk.joinpath("emulator").joinpath("emulator")
         if not emulator_cmd.is_file():
             raise Exception(f"Could not find emulator cmd to launch emulator @ {emulator_cmd}")
@@ -176,10 +177,14 @@ class EmulatorQueue:
         """
         emulators = []
 
+        async def launch_next(index: int, *args: Any, **kargs: Any) -> Emulator:
+            await asyncio.sleep(index*3)  # space out launches as this can help with avoiding instability
+            return await Emulator.launch(*args, **kargs)
+
         async def launch(count: int) -> int:
             emulator_launches: Union[Set[asyncio.Future[Emulator]],
                                      Set[Coroutine[Any, Any, Any]]] = set(
-                Emulator.launch(port, avd, config, *args) for port in Emulator.PORTS[:count])
+                launch_next(index, port, avd, config, *args) for index, port in enumerate(Emulator.PORTS[:count]))
             failed_count = 0
             pending = emulator_launches
             while pending:
@@ -213,7 +218,7 @@ class EmulatorQueue:
             emulator.kill()
         self._q.close()
         self._restart_q.close()
-        print(">>>> Exiting emaulator queue task")
+        print(">>>> Exiting emulator queue task")
 
     def __enter__(self) -> "EmulatorQueue":
         return self

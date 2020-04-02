@@ -1,4 +1,5 @@
 import asyncio
+import getpass
 import os
 import pytest_mproc
 from pathlib import Path
@@ -13,6 +14,7 @@ from . import support
 from .support import uninstall_apk
 
 TAG_MTO_DEVICE_ID = "MTO_DEVICE_ID"
+IS_CIRCLECI = getpass.getuser() == 'circleci'
 
 # Run a bunch of stuff in the background, such as compiling depenent apks for test and launching emulators
 # This allows tests to potentially run in parallel (if not dependent on output of these tasks), parallelizes
@@ -36,7 +38,7 @@ def _start_queue() -> Union[Emulator, EmulatorQueue]:
         "-partition-size", "1024"
     ]
     support.ensure_avd(str(CONFIG.sdk), AVD)
-    if "CIRCLECI" in os.environ or TAG_MTO_DEVICE_ID in os.environ:
+    if IS_CIRCLECI or TAG_MTO_DEVICE_ID in os.environ:
         ARGS.append("-no-accel")
         emulator = asyncio.get_event_loop().run_until_complete(Emulator.launch(Emulator.PORTS[0], AVD, CONFIG, *ARGS))
         return emulator
