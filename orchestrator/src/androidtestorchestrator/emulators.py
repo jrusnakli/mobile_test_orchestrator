@@ -70,10 +70,10 @@ class Emulator(Device):
         Restart this emulator and make it available for use again
         """
         async def wait_for_boot() -> None:
-            await asyncio.subprocess.create_subprocess_shell(" ".join(self._launch_cmd),
-                                                             stderr=subprocess.STDOUT,
-                                                             stdout=subprocess.PIPE,
-                                                             env=self._env)
+            self._proc = subprocess.Popen(self._launch_cmd,
+                                          stderr=subprocess.STDOUT,
+                                          stdout=subprocess.PIPE,
+                                          env=self._env)
             booted = False
             while self.get_state().strip() != 'device':
                 await asyncio.sleep(1)
@@ -121,11 +121,6 @@ class Emulator(Device):
                                 stderr=subprocess.STDOUT,
                                 stdout=subprocess.PIPE,
                                 env=environ)
-
-        # proc = await asyncio.subprocess.create_subprocess_shell(" ".join(cmd),
-        #                                                       stderr=subprocess.STDOUT,
-        #                                                        stdout=subprocess.PIPE,
-        #                                                        env=environ)
         try:
 
             async def wait_for_boot() -> None:
@@ -136,7 +131,7 @@ class Emulator(Device):
                 while device.get_state().strip() != 'device':
                     await asyncio.sleep(1)
                 if proc.poll() is not None:
-                    stdout, _ = await proc.communicate()
+                    stdout, _ = proc.communicate()
                     raise Emulator.FailedBootError(port, stdout.decode('utf-8'))
                 start = time.time()
                 while not booted:
