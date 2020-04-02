@@ -8,7 +8,7 @@ import subprocess
 from dataclasses import dataclass
 from multiprocessing import Queue, Process
 from pathlib import Path
-from typing import Optional, List, Dict, Any, Set
+from typing import Optional, List, Dict, Any, Set, Union, Coroutine
 
 from androidtestorchestrator.device import Device
 
@@ -174,12 +174,13 @@ class EmulatorQueue:
         emulators = []
 
         async def launch(count: int) -> int:
-            emulator_launches = [Emulator.launch(port, avd, config, *args)
-                                 for port in Emulator.PORTS[:count]]
+            emulator_launches: Union[Set[asyncio.Future[Emulator]],
+                                     Set[Coroutine[Any, Any, Any]]] = set(
+                Emulator.launch(port, avd, config, *args) for port in Emulator.PORTS[:count])
             failed_count = 0
-            pending: Set[asyncio.Future[Emulator]] = set()
+            pending = emulator_launches
             while pending:
-                completed, pending = await asyncio.wait(pending or emulator_launches, return_when=asyncio.FIRST_COMPLETED)
+                completed, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
                 for emulator_task in completed:
                     emulator = emulator_task.result()
                     if isinstance(emulator, Emulator):
