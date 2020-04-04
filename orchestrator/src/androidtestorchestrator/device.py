@@ -321,7 +321,7 @@ class Device(object):
         log.debug(f"Executing: {' '.join(cmd)}")
         proc = await asyncio.subprocess.create_subprocess_exec(*cmd,
                                                                stdout=asyncio.subprocess.PIPE,
-                                                               stderr=asyncio.subprocess.PIPE,
+                                                               stderr=asyncio.subprocess.STDOUT,
                                                                loop=loop or asyncio.events.get_event_loop(),
                                                                bufsize=0)  # noqa
 

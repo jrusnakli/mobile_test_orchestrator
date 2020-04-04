@@ -73,6 +73,8 @@ def gradle_build(*target_and_q: Tuple[str, Queue]):
         if process.returncode != 0:
             raise Exception(f"Failed to build apk: {cmd}")
         for target, q in target_and_q:
+            if q is None:
+                continue
             if target.endswith("assembleAndroidTest"):
                 apk_path = os.path.join(TEST_SUPPORT_APP_DIR, "app", "build", "outputs", "apk", "androidTest", "debug", "app-debug-androidTest.apk")
             else:  # assembleDebug
@@ -97,7 +99,8 @@ def compile_all() -> Tuple[str, str]:
     """
     support_app_q = Queue()
     support_test_app_q = Queue()
-    gradle_build(("assembleAndroidTest", support_test_app_q),
+    gradle_build(("assemble", None),
+                 ("assembleAndroidTest", support_test_app_q),
                  ("assembleDebug", support_app_q)
                  )
     return support_app_q, support_test_app_q

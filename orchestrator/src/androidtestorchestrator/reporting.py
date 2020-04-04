@@ -95,7 +95,8 @@ class TestRunListener(TestSuiteListener):
         """
 
     @abstractmethod
-    def test_run_ended(self, duration: float = -1.0, **kwargs: Optional[Any]) -> None:
+    def test_run_ended(self, duration: float = -1.0,
+                       **kwargs: Optional[Any]) -> None:
         """
         signals test suite has ended
         :param duration: device-reported elapsed time
@@ -149,6 +150,8 @@ class TestRunListener(TestSuiteListener):
         signal test has ended, presumably with success
         :param class_name: fully qualified class name of the test
         :param test_name: name of the test
+        :param instrumentation_output: if parser was so configured, will contain the lines of output from adb
+           instrument for the test that ended
         :param kwargs: additional data to store with this test
         """
 
