@@ -383,6 +383,33 @@ class TestApplication(Application):
                                                           "/".join([self._package_name, self._runner]),
                                                           loop=loop)
 
+    async def run_orchestrated(self, *options: str, loop: Optional[AbstractEventLoop] = None) -> AsyncContextManager[Any]:
+        """
+        Run an instrumentation test package via Google's test orchestrator that
+
+        :param options: arguments to pass to instrument command
+        :param loop: event loop to execute under, or None for default event loop
+
+        :returns: return coroutine wrapping an asyncio context manager for iterating over lines
+
+        :raises Device.CommandExecutionFailureException with non-zero return code information on non-zero exit status
+        """
+        packages = self.device.list_installed_packages()
+        if not {'android.support.test.services', 'android.support.test.orchestrator'} < set(packages):
+            raise Exception("Must install both test-services-<version>.apk and orchestrator-<version>.apk to run "
+                            + "under Google's Android Test Orchestrator")
+        if self._target_application.package_name not in self.device.list_installed_packages():
+            raise Exception("App under test, as designatee by this test app's manifest, is not installed!")
+        # surround each arg with quotes to preserve spaces in any arguments when sent to remote device:
+        options_text = " ".join(['"%s"' % arg if not arg.startswith('"') and not arg.startswith("-") else arg
+                                 for arg in options])
+        return await self.device.execute_remote_cmd_async(
+            "shell",
+            "CLASSPATH=$(pm path android.support.test.services) "
+            + "app_process / android.support.test.services.shellexecutor.ShellMain am instrument "
+            + f"-r -w -e -v -targetInstrumentation {'/'.join([self._package_name, self._runner])} {options_text} "
+            + "android.support.test.orchestrator/android.support.test.orchestrator.AndroidTestOrchestrator")
+
     @classmethod
     async def from_apk_async(cls: Type[_TTestApp], apk_path: str, device: Device, as_upgrade: bool = False
                              ) -> _TTestApp:

@@ -50,17 +50,15 @@ class Emulator(Device):
 
     def __init__(self, device_id: str,
                  config: EmulatorBundleConfiguration,
-                 launch_mcd: List[str],
-                 env: Dict[str, str],
-                 proc: subprocess.Popen):
+                 launch_cmd: List[str],
+                 env: Dict[str, str]):
         """
         Launch an emulator and create this Device instance
         """
         super().__init__(device_id, str(config.adb_path()))
-        self._launch_cmd = launch_mcd
+        self._launch_cmd = launch_cmd
         self._env = env
         self._config = config
-        self._proc: Optional[subprocess.Popen] = None
 
     def is_alive(self) -> bool:
         return self.get_state() == 'device'
@@ -141,7 +139,7 @@ class Emulator(Device):
                     print(f">>> {device.device_id} [{duration}] Booted?: {booted}")
 
             await asyncio.wait_for(wait_for_boot(), config.boot_timeout)
-            return Emulator(device_id, config=config, launch_mcd=cmd, env=environ, proc=proc)
+            return Emulator(device_id, config=config, launch_cmd=cmd, env=environ)
         except Exception as e:
             raise Emulator.FailedBootError(port, str(e)) from e
         finally:
