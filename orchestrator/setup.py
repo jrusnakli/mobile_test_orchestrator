@@ -10,6 +10,6 @@ setuptools.setup(
     entry_points={
         'console_scripts': []
     },
-    install_requires=['apk-bitminer'],
+    install_requires=['apk-bitminer>=1.1.0'],
 
 )
