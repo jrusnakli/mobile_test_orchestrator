@@ -83,13 +83,17 @@ class DevicePreparation:
         for ns, key in self._restoration_settings:
             with suppress(Exception):
                 self._device.set_device_setting(ns, key, self._restoration_settings[(ns, key)] or '\"\"')
+        self._restoration_settings = {}
         for prop in self._restoration_properties:
             with suppress(Exception):
                 self._device.set_system_property(prop, self._restoration_properties[prop] or '\"\"')
+        self._restoration_properties = {}
         for port in self._forwarded_ports:
             self._device.remove_port_forward(port)
+        self._forwarded_ports = []
         for port in self._reverse_forwarded_ports:
             self._device.remove_reverse_port_forward(port)
+        self._reverse_forwarded_ports = []
 
     def __enter__(self) -> "DevicePreparation":
         return self
@@ -97,7 +101,10 @@ class DevicePreparation:
     def __exit__(self, exc_type: Optional[Type[BaseException]],
                  exc_value: Optional[BaseException],
                  traceback: Optional[TracebackType]) -> None:
-        self.cleanup()
+        try:
+            self.cleanup()
+        except Exception:
+            log.exception("Failed to cleanup properly on device restoration")
 
 
 class EspressoTestPreparation:

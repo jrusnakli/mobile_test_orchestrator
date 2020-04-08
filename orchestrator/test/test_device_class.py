@@ -140,7 +140,7 @@ class TestAndroidDevice:
         host_datetime_delta = (datetime.datetime.utcnow() - device.get_device_datetime()).total_seconds()
         timediff = device.get_device_datetime() - dtime
         assert timediff.total_seconds() >= 0.99
-        assert host_datetime_delta - host_delta < 0.01
+        assert host_datetime_delta - host_delta < 0.05
 
     def test_grant_permissions(self, install_app, support_test_app: str):
         test_app = install_app(TestApplication, support_test_app)
@@ -158,8 +158,8 @@ class TestAndroidDevice:
             async with await device.execute_remote_cmd_async("some", "bad", "command") as proc:
                 async for _ in proc.output(unresponsive_timeout=10):
                     pass
-                assert proc.returncode is not None
-                assert proc.returncode != 0
+            assert proc.returncode is not None
+            assert proc.returncode != 0
         asyncio.get_event_loop().run_until_complete(execute())
 
     def test_get_locale(self, device: Device):

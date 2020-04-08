@@ -4,6 +4,7 @@ pytest
 pytest-html
 pytest-cov
 pytest-asyncio
+pytest_mproc
 mypy==0.720
 typed-ast
 flake8
