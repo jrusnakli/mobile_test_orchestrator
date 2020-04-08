@@ -170,18 +170,17 @@ class Application(RemoteDeviceBased):
             succeeded.append(p)
         return succeeded
 
-    def start(self, activity: Optional[str], *options: str, intent: Optional[str] = None) -> None:
+    def start(self, activity: Optional[str] = None, *options: str, intent: Optional[str] = None) -> None:
         """
         start an app on the device
 
-        :param activity: which Android Activity to invoke on start of app
+        :param activity: which Android Activity to invoke on start of app, or None for default (MainActivity)
         :param intent: which Intent to invoke, or None for default intent
         :param options: string list of options to pass on to the "am start" command on the remote device, or None
 
         """
         # embellish to fully qualified name as Android expects
-        # TODO: should it be running monkey if no activity is given?
-        activity = f"{self.package_name}/{activity}" if activity else f"{self.package_name}/.MainActivity"
+        activity = f"{self.package_name}/{activity}" if activity else f"{self.package_name}/{self.package_name}.MainActivity"
         if intent:
             options = ("-a", intent, *options)
         self.device.execute_remote_cmd("shell", "am", "start", "-n", activity, *options, capture_stdout=False)

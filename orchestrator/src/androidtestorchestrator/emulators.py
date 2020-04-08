@@ -243,9 +243,8 @@ class EmulatorQueue:
 
     def relinquish(self, emulator: Emulator) -> None:
         """
-        Relinquish
-        :param emulator:
-        :return:
+        Relinquish emulator back to the queue
+        :param emulator: emulator to relinquish
         """
         self._q.put(emulator)
 
