@@ -139,6 +139,7 @@ class EspressoTestPreparation:
         self._device = device
         if grant_all_user_permissions:
             self._test_app.grant_permissions()
+            self._app.grant_permissions()
 
     @property
     def test_app(self) -> TestApplication:
