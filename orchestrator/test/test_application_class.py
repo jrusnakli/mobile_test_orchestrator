@@ -118,9 +118,14 @@ class TestApplicationClass:
         app.stop(force=True)
         assert not self.pidof(app), "Failed to stop app"
 
-    def test_clear_data(self, install_app, support_app: str):  # noqa
-        app = install_app(Application, support_app)
-        app.clear_data()  # should not raise exception
+    def test_clear_data(self, install_app, support_test_app: str):  # noqa
+        app = install_app(Application, support_test_app)
+        app.grant_permissions()
+        assert app.granted_permissions == set(app.permissions)
+        app.clear_data()
+        assert app.granted_permissions == set(app.permissions)
+        app.clear_data(False)
+        assert not app.granted_permissions
 
     def test_version_invalid_package(self, device: Device):
         with pytest.raises(Exception):
