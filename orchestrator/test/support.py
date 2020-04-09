@@ -84,7 +84,8 @@ def gradle_build(*target_and_q: Tuple[str, Queue]):
             q.put(apk_path)
     except Exception:
         for _, q in target_and_q:
-            q.put(None)
+            if q:
+                q.put(None)
         # harsh exit to prevent tests from attempting to run that require apk that wasn't built
         raise
     else:

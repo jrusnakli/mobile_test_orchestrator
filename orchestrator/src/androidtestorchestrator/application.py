@@ -4,7 +4,7 @@ import time
 from asyncio import AbstractEventLoop
 
 from apk_bitminer.parsing import AXMLParser  # type: ignore
-from typing import List, TypeVar, Type, Optional, AsyncContextManager, Dict, Union, Any
+from typing import List, TypeVar, Type, Optional, AsyncContextManager, Dict, Union, Any, Set
 
 from .device import Device, RemoteDeviceBased
 
@@ -140,7 +140,7 @@ class Application(RemoteDeviceBased):
             if self.package_name in self.device.list_installed_packages():
                 log.error(f"Failed to uninstall app {self.package_name} [{str(e)}]")
 
-    def grant_permissions(self, permissions: Optional[List[str]] = None) -> List[str]:
+    def grant_permissions(self, permissions: Optional[List[str]] = None) -> Set[str]:
         """
         Grant permissions for a package on a device
 
@@ -152,15 +152,11 @@ class Application(RemoteDeviceBased):
         succeeded = []
         permissions = permissions or self.permissions
         # workaround for xiaomi:
-        if 'xiaomi' in self.device.model.lower():
-            # gives initial time for UI to appear, otherwise can bring up wrong window and block tests
-            time.sleep(self.SLEEP_GRANT_PERMISSION)
-        permissions_filtered = list(set([p.strip() for p in permissions if
-                                         p not in Device.NORMAL_PERMISSIONS]))
+        permissions_filtered = set(p.strip() for p in permissions if p in Device.DANGEROUS_PERMISSIONS)
         if not permissions_filtered:
             log.info("Permissions %s already requested or no 'dangerous' permissions requested, so nothing to do" %
                      permissions)
-            return []
+            return set()
         # note "block grants" do not work on all Android devices, so grant 'em one-by-one
         for p in permissions_filtered:
             try:
@@ -168,7 +164,7 @@ class Application(RemoteDeviceBased):
             except Exception as e:
                 log.error(f"Failed to grant permission {p} for package {self.package_name} [{str(e)}]")
             succeeded.append(p)
-        return succeeded
+        return set(succeeded)
 
     def start(self, activity: Optional[str] = None, *options: str, intent: Optional[str] = None) -> None:
         """
