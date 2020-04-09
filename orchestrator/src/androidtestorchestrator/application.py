@@ -170,7 +170,7 @@ class Application(RemoteDeviceBased):
                 self.device.execute_remote_cmd("shell", "pm", "grant", self.package_name, p, capture_stdout=False)
             except Exception as e:
                 log.error(f"Failed to grant permission {p} for package {self.package_name} [{str(e)}]")
-            self._granted_premissions.append(p)
+            self._granted_permissions.append(p)
         return set(self._granted_permissions)
 
     def regrant_permissions(self) -> Set[str]:
@@ -245,6 +245,7 @@ class Application(RemoteDeviceBased):
         clears app data for given package
         """
         self.device.execute_remote_cmd("shell", "pm", "clear", self.package_name, capture_stdout=False)
+        self._granted_permissions = []
         if regrant_permissions:
             self.regrant_permissions()
 
