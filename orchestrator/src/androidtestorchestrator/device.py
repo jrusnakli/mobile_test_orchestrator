@@ -638,9 +638,9 @@ class Device(object):
         if package not in packages:
             if package is not None:
                 try:
-                    if not os.path.exists(screenshot_dir):
-                        os.makedirs(screenshot_dir)
-                    self.take_screenshot(os.path.join(screenshot_dir, f"install_failure-{package}.png"))
+                    if screenshot_dir:
+                        os.makedirs(screenshot_dir, exist_ok=True)
+                        self.take_screenshot(os.path.join(screenshot_dir, f"install_failure-{package}.png"))
                 except Exception as e:
                     log.warning(f"Unable to take screenshot of installation failure: {e}")
                 log.error("Did not find installed package %s;  found: %s" % (package, packages))
@@ -698,17 +698,17 @@ class Device(object):
         # We try Android Studio's method of pushing to device and installing from there, but if push is
         # unsuccessful, we fallback to plain adb install
         try:
-            cmd = ("push", apk_path, remote_data_path)
-            self.execute_remote_cmd(*cmd, timeout=Device.TIMEOUT_LONG_ADB_CMD)
+            push_cmd = ("push", apk_path, remote_data_path)
+            self.execute_remote_cmd(*push_cmd, timeout=Device.TIMEOUT_LONG_ADB_CMD)
             push_successful = True
         except Exception:
-            log.warniing("Unable to push apk to install from device, will attempt direct install from local apk")
+            log.warning("Unable to push apk to install from device, will attempt direct install from local apk")
             push_successful = False
 
         try:
             # Execute the installation of the app, monitoring output for completion in order to invoke any extra
             # commands or detect insufficient storage issues
-            cmd = ["shell", "pm", "install"] if push_successful else ["install"]
+            cmd: List[str] = ["shell", "pm", "install"] if push_successful else ["install"]
             source = remote_data_path if push_successful else apk_path
             if as_upgrade:
                 cmd.append("-r")
@@ -734,8 +734,8 @@ class Device(object):
         finally:
             if push_successful:
                 with suppress(Exception):
-                    cmd = ("shell", "rm", remote_data_path)
-                    self.execute_remote_cmd(*cmd, timeout=self.TIMEOUT_ADB_CMD)
+                    rm_cmd = ("shell", "rm", remote_data_path)
+                    self.execute_remote_cmd(*rm_cmd, timeout=self.TIMEOUT_ADB_CMD)
 
     @asynccontextmanager
     async def lock(self) -> AsyncIterator["Device"]:
