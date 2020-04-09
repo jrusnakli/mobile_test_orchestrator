@@ -165,13 +165,15 @@ class EspressoTestPreparation:
         :return: time in milliseconds it took to complete
         """
         start = time.time()
-        for root, dir_, files in os.walk(root_path, topdown=True):
-            if not os.path.isdir(root_path):
-                raise IOError(f"Given path {root_path} to upload to device does exist or is not a directory")
-            ext_storage = self._device.external_storage_location
+        if not os.path.isdir(root_path):
+            raise IOError(f"Given path {root_path} to upload to device does not exist or is not a directory")
+        ext_storage = self._device.external_storage_location
+        for root, _, files in os.walk(root_path, topdown=True):
             basedir = os.path.relpath(root, root_path)
+            remote_location = "/".join([ext_storage, basedir]) + '/'
+            with suppress(Exception):
+                self._storage.make_dir(remote_location)
             for filename in files:
-                remote_location = "/".join([ext_storage, basedir])
                 self._data_files.append(os.path.join(remote_location, filename))
                 self._storage.push(os.path.join(root, filename), remote_location)
         milliseconds = (time.time() - start) * 1000
