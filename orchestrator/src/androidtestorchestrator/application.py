@@ -49,6 +49,7 @@ class Application(RemoteDeviceBased):
         if self._package_name is None:
             raise ValueError("manifest argument as dictionary must contain \"package_name\" as key")
         self._permissions: List[str] = manifest.permissions if isinstance(manifest, AXMLParser) else manifest.get("permissions", [])
+        self._granted_permissions: List[str] = []
 
     @property
     def package_name(self) -> str:
@@ -80,6 +81,13 @@ class Application(RemoteDeviceBased):
         if len(split_output) > 0:
             return split_output[0].strip()
         return None
+
+    @property
+    def granted_permissions(self) -> Set[str]:
+        """
+        :return: set of all permissions granted to the app
+        """
+        return set(self._granted_permissions)
 
     @classmethod
     async def from_apk_async(cls: Type[_TApp], apk_path: str, device: Device, as_upgrade: bool = False) -> _TApp:
@@ -147,9 +155,8 @@ class Application(RemoteDeviceBased):
         :param permissions: string list of Android permissions to be granted, or None to grant app's defined
            user permissions
 
-        :return: the list of permissions successfully granted
+        :return: the list of all permissions granted to the app
         """
-        succeeded = []
         permissions = permissions or self.permissions
         # workaround for xiaomi:
         permissions_filtered = set(p.strip() for p in permissions if p in Device.DANGEROUS_PERMISSIONS)
@@ -163,8 +170,16 @@ class Application(RemoteDeviceBased):
                 self.device.execute_remote_cmd("shell", "pm", "grant", self.package_name, p, capture_stdout=False)
             except Exception as e:
                 log.error(f"Failed to grant permission {p} for package {self.package_name} [{str(e)}]")
-            succeeded.append(p)
-        return set(succeeded)
+            self._granted_premissions.append(p)
+        return set(self._granted_permissions)
+
+    def regrant_permissions(self) -> Set[str]:
+        """
+        Regrant permissions (e.g. if an app's data was cleared) that were previously granted
+
+        :return: list of permissions that are currently granted to the app
+        """
+        return self.grant_permissions(self._granted_permissions)
 
     def start(self, activity: Optional[str] = None, *options: str, intent: Optional[str] = None) -> None:
         """
@@ -225,11 +240,13 @@ class Application(RemoteDeviceBased):
             raise Exception(
                 f"Detected app process is still running, despite background command succeeding. App closure failed.")
 
-    def clear_data(self) -> None:
+    def clear_data(self, regrant_permissions: bool = True) -> None:
         """
         clears app data for given package
         """
         self.device.execute_remote_cmd("shell", "pm", "clear", self.package_name, capture_stdout=False)
+        if regrant_permissions:
+            self.regrant_permissions()
 
     def in_foreground(self, ignore_silent_apps: bool = True) -> bool:
         """
