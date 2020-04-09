@@ -26,3 +26,9 @@ class TestEspressoTestPreparation:
                          local_path=os.path.join(test_dir))
             assert os.path.exists(os.path.join(test_dir, "tv-1.txt"))
             assert os.path.exists(os.path.join(test_dir, "tv-2.txt"))
+        test_dir2 = os.path.join(str(tmpdir), "no_tv_download")
+        os.makedirs(test_dir2)
+        storage.pull(remote_path="/".join([storage.external_storage_location, "test_vectors"]),
+                     local_path=os.path.join(test_dir))
+        assert os.path.exists(os.path.join(test_dir, "tv-1.txt"))
+        assert os.path.exists(os.path.join(test_dir, "tv-2.txt"))
