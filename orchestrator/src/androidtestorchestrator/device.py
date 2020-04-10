@@ -5,11 +5,24 @@ import os
 import re
 import subprocess
 import time
+
 from asyncio import AbstractEventLoop
 from contextlib import suppress, asynccontextmanager
 from types import TracebackType
-from typing import List, Tuple, Dict, Optional, AsyncContextManager, Union, Callable, IO, Any, AsyncIterator, Type, \
-    AnyStr
+from typing import (
+    Any,
+    AnyStr,
+    AsyncContextManager,
+    AsyncIterator,
+    Callable,
+    Dict,
+    IO,
+    List,
+    Optional,
+    Union,
+    Type,
+    Tuple,
+)
 
 from apk_bitminer.parsing import AXMLParser  # type: ignore
 
@@ -17,7 +30,27 @@ log = logging.getLogger("MTO")
 log.setLevel(logging.ERROR)
 
 
-class Device(object):
+class DeviceLock:
+
+    _locks: Dict[str, asyncio.Semaphore] = {}
+
+
+@asynccontextmanager
+async def _device_lock(device: "Device") -> AsyncIterator["Device"]:
+    """
+    lock this device while a command is being executed against it
+
+    Is static to vaoid possible pickling issues in parallelized execution
+    :param device: device to lock
+    :return: device
+    """
+    DeviceLock._locks.setdefault(device._device_id, asyncio.Semaphore())
+    DeviceLock._locks[device._device_id].acquire()
+    yield device
+    DeviceLock._locks[device._device_id].release()
+
+
+class Device:
     """
     Class for interacting with a device via Google's adb command. This is intended to be a direct bridge to the same
     functionality as adb, with minimized embellishments
@@ -132,7 +165,6 @@ class Device(object):
         self._ext_storage = Device.override_ext_storage.get(self.model)
         self._device_server_datetime_offset: Optional[datetime.timedelta] = None
         self._api_level: Optional[int] = None
-        self._lock: Optional[asyncio.Semaphore] = None
 
     @property
     def api_level(self) -> int:
@@ -714,7 +746,7 @@ class Device(object):
                 cmd.append("-r")
             cmd.append(source)
             # Do not allow more than one install at a time on a specific device, as this can be problematic
-            async with self.lock():
+            async with _device_lock(self):
                 async with await self.execute_remote_cmd_async(*cmd) as proc:
                     async for msg in proc.output(unresponsive_timeout=Device.TIMEOUT_LONG_ADB_CMD):
                         if self.ERROR_MSG_INSUFFICIENT_STORAGE in msg:
@@ -736,14 +768,6 @@ class Device(object):
                 with suppress(Exception):
                     rm_cmd = ("shell", "rm", remote_data_path)
                     self.execute_remote_cmd(*rm_cmd, timeout=self.TIMEOUT_ADB_CMD)
-
-    @asynccontextmanager
-    async def lock(self) -> AsyncIterator["Device"]:
-        if self._lock is None:
-            self._lock = asyncio.Semaphore()
-        await self._lock.acquire()
-        yield self
-        self._lock.release()
 
     # todo: why this is a property instead of a function?
     @property
