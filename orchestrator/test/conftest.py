@@ -106,12 +106,10 @@ def device(request):
     else:
         queue = TestEmulatorQueue._queue
         emulator = queue.reserve(timeout=10*60)
-
-        def finalizer():
+        try:
+            yield emulator
+        finally:
             queue.relinquish(emulator)
-
-        request.addfinalizer(finalizer)
-        return emulator
 
 
 # noinspection PyShadowingNames

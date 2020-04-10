@@ -5,11 +5,24 @@ import os
 import re
 import subprocess
 import time
+
 from asyncio import AbstractEventLoop
 from contextlib import suppress, asynccontextmanager
 from types import TracebackType
-from typing import List, Tuple, Dict, Optional, AsyncContextManager, Union, Callable, IO, Any, AsyncIterator, Type, \
-    AnyStr, Iterable, Awaitable
+from typing import (
+    Any,
+    AnyStr,
+    AsyncContextManager,
+    AsyncIterator,
+    Callable,
+    Dict,
+    IO,
+    List,
+    Optional,
+    Union,
+    Type,
+    Tuple,
+)
 
 from apk_bitminer.parsing import AXMLParser  # type: ignore
 
@@ -17,7 +30,27 @@ log = logging.getLogger("MTO")
 log.setLevel(logging.ERROR)
 
 
-class Device(object):
+class DeviceLock:
+
+    _locks: Dict[str, asyncio.Semaphore] = {}
+
+
+@asynccontextmanager
+async def _device_lock(device: "Device") -> AsyncIterator["Device"]:
+    """
+    lock this device while a command is being executed against it
+
+    Is static to vaoid possible pickling issues in parallelized execution
+    :param device: device to lock
+    :return: device
+    """
+    DeviceLock._locks.setdefault(device._device_id, asyncio.Semaphore())
+    DeviceLock._locks[device._device_id].acquire()
+    yield device
+    DeviceLock._locks[device._device_id].release()
+
+
+class Device:
     """
     Class for interacting with a device via Google's adb command. This is intended to be a direct bridge to the same
     functionality as adb, with minimized embellishments
@@ -27,9 +60,9 @@ class Device(object):
     # of these packages do not affect interaction with the app under test. With the exception of the Samsung
     # MtpApplication (pop-up we can't get rid of that asks the user to update their device), they are also not visible
     # to the user. We keep a list of them so we know which ones to disregard when trying to retrieve the actual
-    # to the user. We keep a list of them so we know which ones to disregard when trying to retrieve the actual
     # foreground application the user is interacting with.
     SILENT_RUNNING_PACKAGES = ["com.samsung.android.mtpapplication", "com.wssyncmldm", "com.bitbar.testdroid.monitor"]
+    SCREEN_UNLOCK_BLACKLIST = {"MI 4LTE"}
 
     class InsufficientStorageError(Exception):
         """
@@ -132,7 +165,6 @@ class Device(object):
         self._ext_storage = Device.override_ext_storage.get(self.model)
         self._device_server_datetime_offset: Optional[datetime.timedelta] = None
         self._api_level: Optional[int] = None
-        self._lock: Optional[asyncio.Semaphore] = None
 
     @property
     def api_level(self) -> int:
@@ -294,6 +326,7 @@ class Device(object):
                                 **kwargs)
 
     async def execute_remote_cmd_async(self, *args: str,
+                                       proc_completion_timeout: Optional[float] = 0.0,
                                        loop: Optional[AbstractEventLoop] = None
                                        ) -> AsyncContextManager[Any]:
         """
@@ -326,20 +359,20 @@ class Device(object):
             Wraps below async generator in context manager to ensure proper closure
             """
             async def __aenter__(self) -> "Process":
-                self._timedout = False
                 return self
 
             async def __aexit__(self, exc_type: Optional[Type[BaseException]], exc_val: Optional[BaseException],
                                 exc_tb: Optional[TracebackType]) -> None:
                 if proc.returncode is None:
                     log.info("Terminating process %d", proc.pid)
-                    try:
-                        await self.stop()
-                    except Exception:
-                        with suppress(Exception):
-                            await self.stop(force=True)
                     with suppress(Exception):
-                        await self.wait(timeout=1)  # attempt to wait for process true end
+                        await self.stop(timeout=3)
+                if proc.returncode is None:
+                    with suppress(Exception):
+                        try:
+                            await self.stop(timeout=3, force=True)
+                        except TimeoutError:
+                            log.error("Failed to kill subprocess while exiting its context")
 
             async def output(self,  unresponsive_timeout: Optional[float] = None) -> AsyncIterator[str]:
                 """
@@ -713,7 +746,7 @@ class Device(object):
                 cmd.append("-r")
             cmd.append(source)
             # Do not allow more than one install at a time on a specific device, as this can be problematic
-            async with self.lock():
+            async with _device_lock(self):
                 async with await self.execute_remote_cmd_async(*cmd) as proc:
                     async for msg in proc.output(unresponsive_timeout=Device.TIMEOUT_LONG_ADB_CMD):
                         if self.ERROR_MSG_INSUFFICIENT_STORAGE in msg:
@@ -735,14 +768,6 @@ class Device(object):
                 with suppress(Exception):
                     rm_cmd = ("shell", "rm", remote_data_path)
                     self.execute_remote_cmd(*rm_cmd, timeout=self.TIMEOUT_ADB_CMD)
-
-    @asynccontextmanager
-    async def lock(self) -> AsyncIterator["Device"]:
-        if self._lock is None:
-            self._lock = asyncio.Semaphore()
-        await self._lock.acquire()
-        yield self
-        self._lock.release()
 
     # todo: why this is a property instead of a function?
     @property
@@ -926,56 +951,6 @@ class Device(object):
             return self.execute_remote_cmd("get-state", capture_stdout=True, timeout=10).strip()
         except Exception:
             return "non-existent"
-
-
-class DeviceSet:
-
-    class DeviceError(Exception):
-
-        def __init__(self, device: Device, root: Exception):
-            self._root_exception = root
-            self._device = device
-
-    def __init__(self, devices: Iterable[Device]):
-        self._devices = list(devices)
-        self._blacklisted: List[Device] = []
-
-    @property
-    def devices(self) -> List[Device]:
-        return self._devices
-
-    def blacklist(self, device: Device) -> None:
-        if device in self._devices:
-            self._devices.remove(device)
-            self._blacklisted.append(device)
-
-    def apply(self, method: Callable[..., Any], *args: Any, **kwargs: Any) -> List[Any]:
-        results = []
-        for device in self._devices:
-            try:
-                results.append(method(device, *args, **kwargs))
-            except Exception as e:
-                results.append(DeviceSet.DeviceError(device, e))
-        return results
-
-    async def apply_concurrent(self,
-                               async_method: Callable[..., Awaitable[Any]],
-                               *args: Any,
-                               max_concurrent: Optional[int] = None,
-                               **kargs: Any
-                               ) -> List[Any]:
-        semaphore = asyncio.Semaphore(value=max_concurrent or len(self._devices))
-
-        async def limited_async_method(device: Device) -> Any:
-            await semaphore.acquire()
-            try:
-                return await async_method(device, *args, **kargs)
-            finally:
-                semaphore.release()
-
-        result: List[Any] = await asyncio.gather(*[limited_async_method(device) for device in self._devices],
-                                                 return_exceptions=True)
-        return result
 
 
 class RemoteDeviceBased(object):
