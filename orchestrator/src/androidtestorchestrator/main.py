@@ -93,13 +93,13 @@ class AndroidTestOrchestrator:
     ...     def test_assumption_failure(self, test_run_name: str, class_name: str, test_name: str, stack_trace: str) -> None:
     ...         print("Test assumption failed, %s skipped" % test_name)
     ...
-    ...     def test_run_started(self, test_run_name: str, count: int = 0) -> None:
+    ...     def test_suite_started(self, test_run_name: str, count: int = 0) -> None:
     ...         print("Test execution started: " + test_run_name)
     ...
-    ...     def test_run_ended(self, test_run_name: str, duration: float = -1.0, **kwargs) -> None:
+    ...     def test_suite_ended(self, test_run_name: str, duration: float = -1.0, **kwargs) -> None:
     ...         print("Test execution ended")
     ...
-    ...     def test_run_failed(self, test_run_name: str, error_message: str) -> None:
+    ...     def test_suite_failed(self, test_run_name: str, error_message: str) -> None:
     ...         print("Test execution failed with error message: %s" % error_message)
     ...
     ...
@@ -117,12 +117,14 @@ class AndroidTestOrchestrator:
     def __init__(self,
                  artifact_dir: str,
                  max_test_time: Optional[float] = None,
-                 max_test_suite_time: Optional[float] = None) -> None:
+                 max_test_suite_time: Optional[float] = None,
+                 run_under_orchestration: bool = False) -> None:
         """
         :param artifact_dir: directory where logs and screenshots are saved
         :param max_test_time: maximum allowed time for a single test to execute before timing out (or None)
         :param max_test_suite_time:maximum allowed time for a suite of tets (a package under and Android instrument
            command, for example) to execute; or None
+        :param run_under_orchestration: whether to run under Android Test Orchestrator or regular instument command
 
         :raises ValueError: if max_test_suite_time is smaller than max_test_time
         :raises FileExistsError: if artifact_dir point to a file and not a directory
@@ -144,6 +146,7 @@ class AndroidTestOrchestrator:
         self._tag_monitors: Dict[str, Tuple[str, LineParser]] = {}
         self._logcat_procs: Dict[Device, Any] = {}
         self._run_listeners: List[TestExecutionListener] = []
+        self._run_under_orchestration = run_under_orchestration
 
     def __enter__(self) -> "AndroidTestOrchestrator":
         return self
@@ -278,7 +281,7 @@ class AndroidTestOrchestrator:
             # log_capture is to listen to test status to mark beginning/end of each test run:
             try:
                 async for test_run in iterator:
-                    signal_listeners("test_run_started", test_run.name)
+                    signal_listeners("test_suite_started", test_run.name)
                     instrumentation_parser = InstrumentationOutputParser(test_run.name)
                     instrumentation_parser.add_execution_listeners(self._run_listeners)
                     # add timer that times timeout if any INDIVIDUAL test takes too long
@@ -292,15 +295,19 @@ class AndroidTestOrchestrator:
                         test_args = []
                         for key, value in test_run.test_parameters.items():
                             test_args += ["-e", key, value]
-                        async with await test_application.run(*test_args) as proc:
+                        if self._run_under_orchestration:
+                            run_future = test_application.run_orchestrated(*test_args)
+                        else:
+                            run_future = test_application.run(*test_args)
+                        async with await run_future as proc:
                             async for line in proc.output(unresponsive_timeout=self._test_timeout):
                                 instrumentation_parser.parse_line(line)
                             proc.wait(timeout=self._test_timeout)
                     except Exception as e:
-                        log.error("Test run failed \n%s", str(e))
-                        signal_listeners("test_run_failed", str(e))
+                        log.exception("Test run failed \n%s", str(e))
+                        signal_listeners("test_suite_failed", test_run.name, str(e))
                     finally:
-                        signal_listeners("test_run_ended", instrumentation_parser.execution_time)
+                        signal_listeners("test_suite_ended", test_run.name, duration=instrumentation_parser.execution_time)
                         for _, remote_path in test_run.uploadables:
                             try:
                                 device_storage.remove(remote_path, recursive=True)
@@ -385,7 +392,7 @@ class AndroidTestOrchestrator:
             await device_set.apply_concurrent(push)
 
         if global_uploadables:
-            asyncio.run(gather())
+            asyncio.get_event_loop().run_until_complete(gather())
 
         # execute the main attraction!
         background_tasks: List[asyncio.Task[Any]] = []
@@ -403,7 +410,7 @@ class AndroidTestOrchestrator:
                                    timeout=self._instrumentation_timeout)
 
         try:
-            asyncio.run(main(test_plan))  # execute plan until completed or until timeout is reached
+            asyncio.get_event_loop().run_until_complete(main(test_plan))  # execute plan until completed or until timeout is reached
         finally:
             for task in background_tasks:
                 with suppress(Exception):

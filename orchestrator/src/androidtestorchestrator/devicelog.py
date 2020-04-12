@@ -102,7 +102,7 @@ class DeviceLog(RemoteDeviceBased):
 
         :raises: asyncio.TimeoutError if timeout is not None and timeout is reached
         """
-        return await self.device.execute_remote_cmd_async("logcat", *options, loop=loop)
+        return await self.device.monitor_remote_cmd("logcat", *options, loop=loop)
 
     def capture_to_file(self, output_path: str) -> "LogCapture":
         """

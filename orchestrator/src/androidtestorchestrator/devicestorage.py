@@ -57,7 +57,7 @@ class DeviceStorage(RemoteDeviceBased):
         """
         if not os.path.isfile(local_path):
             raise FileNotFoundError("No such file found: %s" % local_path)
-        async with await self.device.execute_remote_cmd_async('push', f"{local_path}", f"{remote_path}") as proc:
+        async with await self.device.monitor_remote_cmd('push', f"{local_path}", f"{remote_path}") as proc:
             await proc.wait(timeout)
 
     def pull(self, remote_path: str, local_path: str, run_as: Optional[str] = None) -> None:
@@ -92,7 +92,7 @@ class DeviceStorage(RemoteDeviceBased):
         """
         if os.path.exists(local_path):
             log.warning("File %s already exists when pulling. Potential to overwrite files." % local_path)
-        async with await self.device.execute_remote_cmd_async('pull', '%s' % remote_path, '%s' % local_path) as proc:
+        async with await self.device.monitor_remote_cmd('pull', '%s' % remote_path, '%s' % local_path) as proc:
             await proc.wait(timeout)
 
     def make_dir(self, path: str, run_as: Optional[str] = None) -> None:

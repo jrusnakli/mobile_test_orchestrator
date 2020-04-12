@@ -24,7 +24,9 @@ RESOURCE_DIR = os.path.join(os.path.dirname(__file__), "resources")
 
 if TAG_MTO_DEVICE_ID not in os.environ:
     expected_device_info = {
-        "model": "Android SDK built for x86_64",
+        "model": [
+            "Android SDK built for x86_64",
+            "Android SDK built for x86",],
         "manufacturer": "unknown",
         "brand": "Android",
     }
@@ -118,7 +120,7 @@ class TestAndroidDevice:
         assert device.brand == expected_device_info["brand"]
 
     def test_model(self, device: Device):
-        assert device.model == expected_device_info["model"]
+        assert device.model in expected_device_info["model"]
 
     def test_manufacturer(self, device: Device):
         # the emulator used in test has no manufacturer
@@ -157,7 +159,7 @@ class TestAndroidDevice:
 
     def test_invalid_cmd_execution(self, device: Device):
         async def execute():
-            async with await device.execute_remote_cmd_async("some", "bad", "command") as proc:
+            async with await device.monitor_remote_cmd("some", "bad", "command") as proc:
                 async for _ in proc.output(unresponsive_timeout=10):
                     pass
             assert proc.returncode is not None
@@ -185,27 +187,6 @@ class TestAndroidDevice:
         app.start(activity=".MainActivity")
         assert not device.home_screen_active
         assert device.foreground_activity() == app.package_name
-
-    def test_return_home_succeeds(self, install_app, device: Device, support_app: str):
-        app = install_app(Application, support_app)
-        with patch('androidtestorchestrator.device.Device.home_screen_active',
-                   new_callable=PropertyMock) as mock_home_screen_active:
-            # Have to mock out call since inputting the KEYCODE_BACK event doesn't work for all devices/emulators
-            mock_home_screen_active.return_value = True
-            app.start(activity=".MainActivity")
-            assert device.foreground_activity() == app.package_name
-            device.return_home()
-            assert device.home_screen_active
-
-    def test_return_home_fails(self, install_app, device: Device, support_app: str):
-        app = install_app(Application, support_app)
-        app.start(activity=".MainActivity")
-        assert device.foreground_activity() == app.package_name
-        with pytest.raises(expected_exception=Exception) as excinfo:
-            # Nobody would ever really pass a negative number, but our test app has only one activity screen. So
-            # need to pass -1 to force the function to reach its back button key-press limit
-            device.return_home(keycode_back_limit=-1)
-        assert "Max number of back button presses" in str(excinfo.value)
 
     def test_verify_install_on_non_installed_app(self, device: Device, in_tmp_dir: Path):
         with pytest.raises(expected_exception=Exception) as excinfo:
@@ -239,7 +220,7 @@ class TestAndroidDevice:
     def test_invalid_cmd_execution_unresponsive(self, device: Device, support_app: str):
         async def execute():
             with pytest.raises(asyncio.TimeoutError):
-                async with await device.execute_remote_cmd_async("install", support_app) as proc:
+                async with await device.monitor_remote_cmd("install", support_app) as proc:
                     async for _ in proc.output(unresponsive_timeout=0.01):
                         pass
 

@@ -50,7 +50,7 @@ class UpgradeTestRunner(object):
 
         seen_apks: DefaultDict[Any, List[Any]] = defaultdict(list)
         test_run_name = self._test_run_name + "-setup"
-        self._upgrade_reporter.test_run_started(test_run_name)
+        self._upgrade_reporter.test_suite_started(test_run_name)
         try:
             for apk in self._upgrade_apks:
                 package, version = apk_info(apk)
@@ -69,7 +69,7 @@ class UpgradeTestRunner(object):
                     raise e
                 seen_apks[package].append(version)
         finally:
-            self._upgrade_reporter.test_run_ended(test_run_name)
+            self._upgrade_reporter.test_suite_ended(test_run_name)
 
     def execute(self) -> None:
         """
@@ -82,7 +82,7 @@ class UpgradeTestRunner(object):
                                                 self._upgrade_test.test_uninstall_upgrade,
                                                 self._upgrade_test.test_uninstall_base]
         test_name = "UpgradeTest"
-        self._upgrade_reporter.test_run_started(test_run_name=test_name)
+        self._upgrade_reporter.test_suite_started(test_run_name=test_name)
         for upgrade_apk in self._upgrade_apks:
             for i, test in enumerate(test_suite):
                 self._upgrade_reporter.test_started(test_run_name=self._test_run_name, class_name=test.__class__.__name__, test_name=test.__name__)
@@ -100,7 +100,7 @@ class UpgradeTestRunner(object):
                                                       class_name=test.__class__.__name__,
                                                       test_name=test.__name__)
         # TODO: What is the test_count useful for here? Need to look into this more
-        self._upgrade_reporter.test_run_ended(test_run_name=test_name)
+        self._upgrade_reporter.test_suite_ended(test_run_name=test_name)
 
     def teardown(self) -> None:
         """

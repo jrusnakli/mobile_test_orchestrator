@@ -12,13 +12,13 @@ from androidtestorchestrator.reporting import TestExecutionListener
 class TestInstrumentationOutputParser(object):
     class EmptyListener(TestExecutionListener):
 
-        def test_run_started(self, test_run_name: str, count: int = 0) -> None:
+        def test_suite_started(self, test_run_name: str, count: int = 0) -> None:
             pass
 
-        def test_run_ended(self, test_run_name: str, duration: float = -1.0, **kwargs: Optional[Any]) -> None:
+        def test_suite_ended(self, test_run_name: str, duration: float = -1.0, **kwargs: Optional[Any]) -> None:
             pass
 
-        def test_run_failed(self, test_run_name: str, error_message: str) -> None:
+        def test_suite_failed(self, test_run_name: str, error_message: str) -> None:
             pass
 
         def test_failed(self, test_run_name: str, class_name: str, test_name: str, stack_trace: str) -> None:
@@ -268,7 +268,7 @@ at android.app.Instrumentation$InstrumentationThread.run(Instrumentation.java:17
         assert parser._execution_listeners == listeners
 
     def test_non_int_status_code(self):
-        parser = InstrumentationOutputParser()
+        parser = InstrumentationOutputParser("test_run")
         test = parser._get_current_test()
         parser._parse_status_code("not_an_int")
         assert test.code == parser.CODE_ERROR

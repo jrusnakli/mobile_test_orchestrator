@@ -8,6 +8,7 @@ import time
 
 from asyncio import AbstractEventLoop
 from contextlib import suppress, asynccontextmanager
+from enum import Enum
 from types import TracebackType
 from typing import (
     Any,
@@ -22,7 +23,7 @@ from typing import (
     Union,
     Type,
     Tuple,
-)
+    Iterable, Awaitable)
 
 from apk_bitminer.parsing import AXMLParser  # type: ignore
 
@@ -45,7 +46,7 @@ async def _device_lock(device: "Device") -> AsyncIterator["Device"]:
     :return: device
     """
     DeviceLock._locks.setdefault(device._device_id, asyncio.Semaphore())
-    DeviceLock._locks[device._device_id].acquire()
+    await DeviceLock._locks[device._device_id].acquire()
     yield device
     DeviceLock._locks[device._device_id].release()
 
@@ -55,6 +56,12 @@ class Device:
     Class for interacting with a device via Google's adb command. This is intended to be a direct bridge to the same
     functionality as adb, with minimized embellishments
     """
+
+    class State(Enum):
+        OFFLINE: str = "offline"
+        ONLINE: str = "device"
+        UNKNOWN: str = "unknown"
+        NON_EXISTENT: str = "non-existent"
 
     # These packages may appear as running when looking at the activities in a device's activity stack. The running
     # of these packages do not affect interaction with the app under test. With the exception of the Samsung
@@ -325,9 +332,9 @@ class Device:
                                 stderr=subprocess.PIPE,
                                 **kwargs)
 
-    async def execute_remote_cmd_async(self, *args: str,
-                                       loop: Optional[AbstractEventLoop] = None
-                                       ) -> AsyncContextManager[Any]:
+    async def monitor_remote_cmd(self, *args: str,
+                                 loop: Optional[AbstractEventLoop] = None
+                                 ) -> AsyncContextManager[Any]:
         """
         Coroutine for executing a command on this remote device asynchronously, allowing the client to iterate over
         lines of output.
@@ -337,8 +344,8 @@ class Device:
 
         :return: AsyncGenerator iterating over lines of output from command
 
-        >>> async with await device.execute_remote_cmd_async("some_cmd", "with", "args", unresponsive_timeout=10) as stdout:
-        ...     async for line in stdout:
+        >>> async with await device.monitor_remote_cmd("some_cmd", "with", "args", unresponsive_timeout=10) as proc:
+        ...     async for line in proc.output():
         ...         process(line)
 
         """
@@ -743,7 +750,7 @@ class Device:
             cmd.append(source)
             # Do not allow more than one install at a time on a specific device, as this can be problematic
             async with _device_lock(self):
-                async with await self.execute_remote_cmd_async(*cmd) as proc:
+                async with await self.monitor_remote_cmd(*cmd) as proc:
                     async for msg in proc.output(unresponsive_timeout=Device.TIMEOUT_LONG_ADB_CMD):
                         if self.ERROR_MSG_INSUFFICIENT_STORAGE in msg:
                             raise self.InsufficientStorageError("Insufficient storage for install of %s" %
@@ -804,35 +811,6 @@ class Device:
         # is the launcher/home screen.
         foreground_activity = self.foreground_activity(ignore_silent_apps=True)
         return bool(foreground_activity and foreground_activity.lower() == "com.sec.android.app.launcher")
-
-    def return_home(self, keycode_back_limit: int = 10) -> None:
-        """
-        Return to home screen as though the user did so via one or many taps on the back button.
-
-        In this scenario, subsequent launches of the app will need to recreate the app view, but may
-        be able to take advantage of some saved state, and is considered a warm app launch.
-
-        NOTE: This function assumes the app is currently in the foreground. If not, it may still return to the home
-        screen, but the process of closing activities on the back stack will not occur.
-
-        :param keycode_back_limit: The maximum number of times to press the back button to attempt to get back to
-           the home screen
-        """
-        back_button_attempt = 0
-
-        while back_button_attempt <= keycode_back_limit:
-            back_button_attempt += 1
-            self.input("KEYCODE_BACK")
-            if self.home_screen_active:
-                return
-            # Sleep for a second to allow for complete activity destruction.
-            # TODO: ouch!! almost a 10 second overhead if we reach limit
-            time.sleep(1)
-
-        foreground_activity = self.foreground_activity(ignore_silent_apps=True)
-
-        raise Exception(f"Max number of back button presses ({keycode_back_limit}) to get to Home screen has "
-                        f"been reached. Found foreground activity {foreground_activity}. App closure failed.")
 
     def go_home(self) -> None:
         """
@@ -939,14 +917,23 @@ class Device:
         else:
             self.execute_remote_cmd("forward", "--remove-all")
 
-    def get_state(self) -> str:
+    def get_state(self) -> "Device.State":
         """
         :return: current state of emulaor ("device", "offline", "non-existent", ...)
         """
         try:
-            return self.execute_remote_cmd("get-state", capture_stdout=True, timeout=10).strip()
+            state = self.execute_remote_cmd("get-state", capture_stdout=True, timeout=10).strip()
+            mapping = {"device": Device.State.ONLINE,
+                       "offline": Device.State.OFFLINE}
+            return mapping.get(state, Device.State.UNKNOWN)
         except Exception:
-            return "non-existent"
+            return Device.State.NON_EXISTENT
+
+    def reboot(self, wait_until_online: bool = True) -> None:
+        self.execute_remote_cmd("reboot")
+        if wait_until_online:
+            while self.get_state() != Device.State.ONLINE:
+                time.sleep(1)
 
 
 class DeviceSet:

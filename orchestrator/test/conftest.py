@@ -60,7 +60,7 @@ def _start_queues() -> Tuple[Union[Emulator, EmulatorQueue], str, str]:
         app_queue, test_app_queue = support.compile_all()
         emulator = asyncio.get_event_loop().run_until_complete(Emulator.launch(Emulator.PORTS[0], AVD, CONFIG, *ARGS))
         return emulator, app_queue, test_app_queue
-    max_count = min(multiprocessing.cpu_count(), 6)
+    max_count = min(multiprocessing.cpu_count(), 2)
     count = int(os.environ.get("MTO_EMULATOR_COUNT", f"{max_count}"))
     queue = EmulatorQueue.start(count, AVD, CONFIG, *ARGS)
     app_queue, test_app_queue = support.compile_all()
@@ -98,14 +98,29 @@ class TestEmulatorQueue:
 
 
 @pytest.fixture()
-def device(request):
+def device():
     if isinstance(TestEmulatorQueue._queue, Emulator):
         emulator = TestEmulatorQueue._queue  # queue of 1 == an emulator
         assert emulator.get_state() == 'device'
         return emulator
     else:
         queue = TestEmulatorQueue._queue
-        emulator = queue.reserve(timeout=10*60)
+        emulator = queue.reserve(timeout=2*60)
+        try:
+            yield emulator
+        finally:
+            queue.relinquish(emulator)
+
+
+@pytest.fixture()
+def device2():
+    if isinstance(TestEmulatorQueue._queue, Emulator):
+        emulator = TestEmulatorQueue._queue  # queue of 1 == an emulator
+        assert emulator.get_state() == 'device'
+        return emulator
+    else:
+        queue = TestEmulatorQueue._queue
+        emulator = queue.reserve(timeout=2*60)
         try:
             yield emulator
         finally:
@@ -115,22 +130,35 @@ def device(request):
 # noinspection PyShadowingNames
 @pytest.fixture()
 def android_test_app(device,
-                     request,
                      support_app: str,
                      support_test_app: str):
     uninstall_apk(support_app, device)
     uninstall_apk(support_test_app, device)
     app_for_test = TestApplication.from_apk(support_test_app, device)
     support_app = Application.from_apk(support_app, device)
+    yield app_for_test
+    """
+    Leave the campground as clean as you found it:
+    """
+    app_for_test.uninstall()
+    support_app.uninstall()
 
-    def fin():
-        """
-        Leave the campground as clean as you found it:
-        """
-        app_for_test.uninstall()
-        support_app.uninstall()
-    request.addfinalizer(fin)
-    return app_for_test
+
+# noinspection PyShadowingNames
+@pytest.fixture()
+def android_test_app2(device2,
+                      support_app: str,
+                      support_test_app: str):
+    uninstall_apk(support_app, device2)
+    uninstall_apk(support_test_app, device2)
+    app_for_test = TestApplication.from_apk(support_test_app, device2)
+    support_app = Application.from_apk(support_app, device2)
+    yield app_for_test
+    """
+    Leave the campground as clean as you found it:
+    """
+    app_for_test.uninstall()
+    support_app.uninstall()
 
 
 @pytest.fixture()

@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import subprocess
 import time
@@ -188,13 +189,49 @@ class Application(RemoteDeviceBased):
         :param activity: which Android Activity to invoke on start of app, or None for default (MainActivity)
         :param intent: which Intent to invoke, or None for default intent
         :param options: string list of options to pass on to the "am start" command on the remote device, or None
-
         """
         # embellish to fully qualified name as Android expects
         activity = f"{self.package_name}/{activity}" if activity else f"{self.package_name}/{self.package_name}.MainActivity"
         if intent:
             options = ("-a", intent, *options)
+
         self.device.execute_remote_cmd("shell", "am", "start", "-n", activity, *options, capture_stdout=False)
+
+    async def launch(self, activity: Optional[str] = None, *options: str, intent: Optional[str] = None,
+                     timeout: Optional[int] = None) -> None:
+        """
+        start the app, monitoring logcat output until it indicates app has either Displayed or crashed
+
+        :param activity: which Android Activity to invoke on start of app, or None for default (MainActivity)
+        :param intent: which Intent to invoke, or None for default intent
+        :param options: string list of options to pass on to the "am start" command on the remote device, or None
+        :param timeout: if not none, timeout if no detection of startup after at least this many seconds
+
+        :raises: Exception if app crashes during start and fails to display
+        """
+        async def launch():
+            async with await self.device.monitor_remote_cmd(
+                    "logcat", "-s", "ActivityManager:I", "ActivityTaskManager:I", "AndroidRuntime:E",
+                    "-T", "1") as logcat_proc:
+                # catch the logcat stream first befor launching, just to be sure
+                count = 0
+                async for _ in logcat_proc.output(unresponsive_timeout=timeout):
+                    count += 1
+                    if count == 2:
+                        break
+                detected_fatal_exception = False
+                self.start(activity=activity, intent=intent, *options)
+                async for line in logcat_proc.output(unresponsive_timeout=timeout):
+                    if "FATAL EXCEPTION" in line:
+                        detected_fatal_exception = True
+                    if detected_fatal_exception and "Process" in line and self.package_name in line:
+                        raise Exception("App crashed on startup")
+                    if "Displayed" in line and self.package_name in line:
+                        break
+        if timeout is not None:
+            await asyncio.wait_for(launch(), timeout=timeout)
+        else:
+            await launch()
 
     def monkey(self, count: int = 1) -> None:
         """
@@ -392,9 +429,9 @@ class TestApplication(Application):
             raise Exception("App under test, as designatee by this test app's manifest, is not installed!")
         # surround each arg with quotes to preserve spaces in any arguments when sent to remote device:
         options = tuple('"%s"' % arg if not arg.startswith('"') and not arg.startswith("-") else arg for arg in options)
-        return await self.device.execute_remote_cmd_async("shell", "am", "instrument", "-w", *options, "-r",
+        return await self.device.monitor_remote_cmd("shell", "am", "instrument", "-w", *options, "-r",
                                                           "/".join([self._package_name, self._runner]),
-                                                          loop=loop)
+                                                    loop=loop)
 
     async def run_orchestrated(self, *options: str, loop: Optional[AbstractEventLoop] = None) -> AsyncContextManager[Any]:
         """
@@ -416,7 +453,7 @@ class TestApplication(Application):
         # surround each arg with quotes to preserve spaces in any arguments when sent to remote device:
         options_text = " ".join(['"%s"' % arg if not arg.startswith('"') and not arg.startswith("-") else arg
                                  for arg in options])
-        return await self.device.execute_remote_cmd_async(
+        return await self.device.monitor_remote_cmd(
             "shell",
             "CLASSPATH=$(pm path android.support.test.services) "
             + "app_process / android.support.test.services.shellexecutor.ShellMain am instrument "

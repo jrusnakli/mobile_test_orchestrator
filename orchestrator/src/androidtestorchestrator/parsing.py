@@ -134,8 +134,7 @@ class InstrumentationOutputParser(LineParser):
         def __repr__(self) -> str:
             return self.__class__.__name__ + str(self.__dict__)
 
-    def __init__(self, test_run_name: str, test_run_listener: Optional[TestExecutionListener] = None) -> None:
-    def __init__(self, test_run_listener: Optional[TestRunListener] = None,
+    def __init__(self, test_run_name: str, test_run_listener: Optional[TestExecutionListener] = None,
                  include_instrumentation_output: bool = False) -> None:
         super().__init__()
         self._test_run_name = test_run_name
@@ -379,25 +378,21 @@ class InstrumentationOutputParser(LineParser):
             for reporter in self._execution_listeners:
                 reporter.test_ended(self._test_run_name, test_class, test_name)
         else:
-            log.warning("Unknown status code %s. Stacktrace: %s", test.code, test.stack_trace)
-            for reporter in self._execution_listeners:
-                reporter.test_failed(self._test_run_name, test_class, test_name,
-                                     stack_trace=f"<<internal errro:unknown status code {test.code}")
-                reporter.test_ended(self._test_run_name, test_class, test_name)
-            for reporter in self._reporters:
-                reporter.test_failed(test_class, test_name, test.stack_trace or self.MISSING_STACK_TRACE)
-        else:
             if test.code == self.CODE_SKIPPED:
-                for reporter in self._reporters:
+                for reporter in self._execution_listeners:
                     reporter.test_started(test_class, test_name)
                     reporter.test_ignored(test_class, test_name)
             elif test.code == self.CODE_ASSUMPTION_VIOLATION:
-                for reporter in self._reporters:
+                for reporter in self._execution_listeners:
                     reporter.test_assumption_failure(test_class, test_name, test.stack_trace or self.MISSING_STACK_TRACE)
-            elif test.code != self.CODE_PASS:
+            else:
                 log.warning("Unknown status code %s. Stacktrace: %s", test.code, test.stack_trace)
-            for reporter in self._reporters:
-                reporter.test_ended(test_class, test_name, instrumentation_output=self._instrumentation_text)
+                for reporter in self._execution_listeners:
+                    reporter.test_failed(self._test_run_name, test_class, test_name,
+                                         stack_trace=f"<<internal errro:unknown status code {test.code}")
+                    reporter.test_ended(self._test_run_name, test_class, test_name)
+            for reporter in self._execution_listeners:
+                reporter.test_ended(self._test_run_name, test_class, test_name, instrumentation_output=self._instrumentation_text)
         self._instrumentation_text = ""
 
     def _report_test_run_failed(self, error_message: str) -> None:

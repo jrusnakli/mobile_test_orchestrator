@@ -16,12 +16,12 @@ class TestEspressoTestPreparation:
             pass
         with open(os.path.join(tv_dir, "tv-2.txt"), 'w'):
             pass
-        with EspressoTestPreparation(device=device,
+        with EspressoTestPreparation(devices=device,
                                      path_to_apk=support_app,
                                      path_to_test_apk=support_test_app,
                                      grant_all_user_permissions=False) as test_prep:
-            assert test_prep.target_app is not None
-            assert test_prep.test_app is not None
+            assert test_prep.target_apps
+            assert test_prep.test_apps
             test_prep.upload_test_vectors(root)
             storage = DeviceStorage(device)
             test_dir = os.path.join(str(tmpdir), "test_download")
@@ -38,7 +38,7 @@ class TestEspressoTestPreparation:
 
     def test_upload_test_vectors_no_such_files(self, device, support_app, support_test_app,):
         with pytest.raises(IOError):
-            with EspressoTestPreparation(device=device,
+            with EspressoTestPreparation(devices=device,
                                          path_to_apk=support_app,
                                          path_to_test_apk=support_test_app,
                                          grant_all_user_permissions=False) as test_prep:
@@ -48,22 +48,25 @@ class TestEspressoTestPreparation:
         def mock_uninstall(*args, **kargs):
             raise Exception("For test purposes")
 
-        def mock_log_error1(self, msg: str):
-            assert msg.startswith("Failed to remove remote file")
+        def mock_log_error1(self, msg: str, *args):
 
-        def mock_log_error2(self, msg: str):
-            assert msg.startswith("Failed to uninstall")
+            if self.name == "testprep":
+                assert msg.startswith("Failed to remove remote file")
+
+        def mock_log_error2(self, msg: str, *args):
+            if self.name == "testprep":
+                assert msg.startswith("Failed to uninstall")
 
         monkeypatch.setattr("androidtestorchestrator.application.Application.uninstall", mock_uninstall)
         monkeypatch.setattr("logging.Logger.log", mock_log_error2)
-        with EspressoTestPreparation(device=device,
+        with EspressoTestPreparation(devices=device,
                                      path_to_apk=support_app,
                                      path_to_test_apk=support_test_app,
                                      grant_all_user_permissions=False) as test_prep:
             test_prep.cleanup()  # exception should be swallowed
 
         monkeypatch.setattr("logging.Logger.log", mock_log_error1)
-        with EspressoTestPreparation(device=device,
+        with EspressoTestPreparation(devices=device,
                                      path_to_apk=support_app,
                                      path_to_test_apk=support_test_app,
                                      grant_all_user_permissions=False) as test_prep:
