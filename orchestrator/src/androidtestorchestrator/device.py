@@ -20,8 +20,8 @@ from typing import (
     List,
     Optional,
     Union,
-    Type,
     Tuple,
+    Type,
 )
 
 from apk_bitminer.parsing import AXMLParser  # type: ignore

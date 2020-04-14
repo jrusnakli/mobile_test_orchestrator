@@ -102,7 +102,7 @@ def device(request):
     if isinstance(TestEmulatorQueue._queue, Emulator):
         emulator = TestEmulatorQueue._queue  # queue of 1 == an emulator
         assert emulator.get_state() == 'device'
-        return emulator
+        yield emulator
     else:
         queue = TestEmulatorQueue._queue
         emulator = queue.reserve(timeout=10*60)
