@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 
@@ -40,8 +41,9 @@ class TestAndroidTestOrchestrator(object):
             """
             self.lines.append(line)
 
-    def test_add_logcat_tag_monitor(self, device: Device, tmpdir: str):
-        with AndroidTestOrchestrator(artifact_dir=str(tmpdir),) as orchestrator:
+    @pytest.mark.asyncio
+    async def test_add_logcat_tag_monitor(self, device: Device, tmpdir: str):
+        async with AndroidTestOrchestrator(artifact_dir=str(tmpdir),) as orchestrator:
             handler = TestAndroidTestOrchestrator.TagListener()
             orchestrator.add_logcat_monitor("TestTag", handler)
             assert orchestrator._tag_monitors.get('TestTag') == ('*', handler)
@@ -57,7 +59,8 @@ class TestAndroidTestOrchestrator(object):
         with pytest.raises(ValueError):
             orchestrator.add_logcat_monitor("TestTag", handler)  # duplicate tag/priority
 
-    def test_execute_test_suite(self, device: Device, android_test_app: TestApplication, tmpdir):
+    @pytest.mark.asyncio
+    async def test_execute_test_suite(self, device: Device, android_test_app: TestApplication, tmpdir):
         test_suite_count = 0
         expected_test_suite = None
         uninstall_apk(android_test_app, device)
@@ -119,14 +122,15 @@ class TestAndroidTestOrchestrator(object):
                              test_parameters={"class": "com.linkedin.mtotestapp.InstrumentedTestSomeFailures"}))
 
         listener = TestExpectations()
-        with AndroidTestOrchestrator(artifact_dir=str(tmpdir)) as orchestrator:
+        async with AndroidTestOrchestrator(artifact_dir=str(tmpdir)) as orchestrator:
             orchestrator.add_test_listener(listener)
-            orchestrator.execute_test_plan(test_plan=test_generator(),
-                                           test_application=android_test_app)
+            await orchestrator.execute_test_plan(test_plan=test_generator(),
+                                                 test_application=android_test_app)
         assert listener.test_count == 7
 
+    @pytest.mark.asyncio
     @pytest.mark.skipif(os.environ.get("CIRCLECI") is not None, reason="Circleci cannot handle more than one emulator")
-    def test_execute_test_suite_multidevice(self, device: Device, device2: Device,
+    async def test_execute_test_suite_multidevice(self, device: Device, device2: Device,
                                             android_test_app: TestApplication,
                                             android_test_app2: TestApplication,
                                             tmpdir):
@@ -194,91 +198,45 @@ class TestAndroidTestOrchestrator(object):
             yield (TestSuite(name='test_suite3',
                              test_parameters={"class": "com.linkedin.mtotestapp.InstrumentedTestSomeFailures"}))
 
-        with AndroidTestOrchestrator(artifact_dir=str(tmpdir)) as orchestrator:
+        async with AndroidTestOrchestrator(artifact_dir=str(tmpdir)) as orchestrator:
             orchestrator.add_test_listener(TestExpectations())
-            orchestrator.execute_test_plan_distributed(test_plan=test_generator(),
-                                                       test_appl_instances=[android_test_app, android_test_app2])
+            await orchestrator.execute_test_plan_distributed(test_plan=test_generator(),
+                                                             test_appl_instances=[android_test_app, android_test_app2])
+
         assert test_count == 5
 
-    def test_add_background_task(self,
-                                 device: Device,
-                                 support_app: str,
-                                 support_test_app: str,
-                                 tmpdir: str):
-        # ensure applications are not already installed as precursor to running tests
-        with suppress(Exception):
-            Application(device, {'package_name': support_app}).uninstall()
-        with suppress(Exception):
-            Application(device, {'package_name': support_test_app}).uninstall()
-
-        def test_generator():
-            yield (TestSuite(name='test_suite1',
-                             test_parameters={"class": "com.linkedin.mtotestapp.InstrumentedTestAllSuccess#useAppContext"}))
-
-        was_called = False
-
-        async def some_task(orchestrator: AndroidTestOrchestrator):
-            """
-            For testing that user-defined background task was indeed executed
-            """
-            nonlocal was_called
-            was_called = True
-
-            with pytest.raises(Exception):
-                orchestrator.add_logcat_monitor("BogusTag", None)
-
-        test_vectors = os.path.join(str(tmpdir), "test_vectors")
-        os.makedirs(test_vectors)
-        with open(os.path.join(test_vectors, "file"), 'w') as f:
-            f.write("TEST VECTOR DATA")
-
-        with AndroidTestOrchestrator(artifact_dir=str(tmpdir)) as orchestrator, \
-                EspressoTestPreparation(devices=device,
-                                        path_to_apk=support_app,
-                                        path_to_test_apk=support_test_app,
-                                        grant_all_user_permissions=True) as test_prep, \
-                DevicePreparation(device) as device_prep:
-            device_prep.verify_network_connection("localhost", 4)
-            device_prep.port_forward(5748, 5749)
-            forwarded_ports = device.execute_remote_cmd("forward", "--list")
-            assert "5748" in forwarded_ports and "5749" in forwarded_ports
-            device_prep.reverse_port_forward(5432, 5431)
-            reverse_forwarded_ports = device.execute_remote_cmd("reverse", "--list")
-            assert "5432" in reverse_forwarded_ports and "5431" in reverse_forwarded_ports
-            test_prep.upload_test_vectors(test_vectors)
-            orchestrator.add_background_task(some_task(orchestrator))
-            orchestrator.execute_test_plan_distributed(test_plan=test_generator(),
-                                                       test_appl_instances=test_prep.test_apps)
-        assert was_called, "Failed to call user-define background task"
-
-    def test_invalid_test_timesout(self, device: Device, tmpdir):
+    @pytest.mark.asyncio
+    async def test_invalid_test_timesout(self, device: Device, tmpdir):
         with pytest.raises(ValueError):
             # individual test time greater than overall timeout for suite
-            with AndroidTestOrchestrator(artifact_dir=str(tmpdir),
-                                         max_test_suite_time=1, max_test_time=10):
+            async with AndroidTestOrchestrator(artifact_dir=str(tmpdir),
+                                               max_test_suite_time=1, max_test_time=10):
                 pass
 
-    def test_nonexistent_artifact_dir(self):
+    @pytest.mark.asyncio
+    async def test_nonexistent_artifact_dir(self):
         with pytest.raises(FileNotFoundError):
             # individual test time greater than overall timeout for suite
             with AndroidTestOrchestrator(artifact_dir="/no/such/dir"):
                 pass
 
-    def test_invalid_artifact_dir_is_file(self):
+    @pytest.mark.asyncio
+    async def test_invalid_artifact_dir_is_file(self):
         with pytest.raises(FileExistsError):
             # individual test time greater than overall timeout for suite
-            with AndroidTestOrchestrator(artifact_dir=__file__):
+            async with AndroidTestOrchestrator(artifact_dir=__file__):
                 pass
 
-    def test_foreign_apk_install(self, device: Device, support_app: str, support_test_app: str):
-        with EspressoTestPreparation(devices=device, path_to_test_apk=support_test_app, path_to_apk=support_app ) as prep, \
+    @pytest.mark.asyncio
+    async def test_foreign_apk_install(self, device: Device, support_app: str, support_test_app: str):
+        async with EspressoTestPreparation(devices=device, path_to_test_apk=support_test_app, path_to_apk=support_app ) as prep, \
              DevicePreparation(devices=device) as device_prep:
             now = device.get_device_setting("system", "dim_screen")
             new = {"1": "0", "0": "1"}[now]
             for test_app in prep.test_apps:
                 test_app.uninstall()
                 assert test_app.package_name not in device.list_installed_packages()
-            apps = prep.setup_foreign_apps(paths_to_foreign_apks=[support_test_app])
+            apps = await prep.setup_foreign_apps(paths_to_foreign_apks=[support_test_app])
             assert len(apps) == 1
             assert apps[0].package_name in device.list_installed_packages()
             device.set_system_property("debug.mock2", "\"\"\"\"")
@@ -288,7 +246,8 @@ class TestAndroidTestOrchestrator(object):
             assert device.get_system_property("debug.mock2") == "5555"
             assert device.get_device_setting("system", "dim_screen") == new
 
-    def test_execute_test_suite_orchestrated(self, device: Device, support_app: str,
+    @pytest.mark.asyncio
+    async def test_execute_test_suite_orchestrated(self, device: Device, support_app: str,
                                              support_test_app: str, tmpdir):
         uninstall_apk(support_app, device)
         uninstall_apk(support_test_app, device)
@@ -373,10 +332,11 @@ class TestAndroidTestOrchestrator(object):
             yield (TestSuite(name='test_suite1',
                              test_parameters={"class": "com.linkedin.mtotestapp.InstrumentedTestAllSuccess"}))
 
-        with EspressoTestPreparation(device, path_to_apk=support_app, path_to_test_apk=support_test_app) as test_prep, \
+        async with EspressoTestPreparation(device, path_to_apk=support_app, path_to_test_apk=support_test_app) as test_prep, \
                 AndroidTestOrchestrator(artifact_dir=str(tmpdir), run_under_orchestration=True) as orchestrator:
-            test_prep.setup_foreign_apps([test_services_apk, android_orchestrator_apk])
+            await test_prep.setup_foreign_apps([test_services_apk, android_orchestrator_apk])
             orchestrator.add_test_listener(TestExpectations())
-            orchestrator.execute_test_plan_distributed(test_plan=test_generator(),
-                                                       test_appl_instances=test_prep.test_apps)
+            await orchestrator.execute_test_plan_distributed(test_plan=test_generator(),
+                                                             test_appl_instances=test_prep.test_apps)
+
         assert test_count == 4

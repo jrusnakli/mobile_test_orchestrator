@@ -10,7 +10,7 @@ import subprocess
 from dataclasses import dataclass
 from multiprocessing import Queue, Process
 from pathlib import Path
-from typing import Optional, List, Dict, Any, Set, Union, Coroutine
+from typing import Optional, List, Dict, Any, Set, Union, Coroutine, AsyncIterator
 
 from androidtestorchestrator.device import Device
 
@@ -157,25 +157,28 @@ class Emulator(Device):
 
 class EmulatorQueue:
 
-    def __init__(self, count: int):
+    def __init__(self, queue: Queue):
         """
         :param count: how many emulators to launch and put in the queue
         """
-        if count > len(Emulator.PORTS):
-            raise Exception(f"Can have at most {count} emulators at one time")
-        self._count = count
-        self._q: Queue["Emulator"] = Queue(count)
+        self._q = queue
         self._restart_q: Queue[Optional["Emulator"]] = Queue()
         self._process: Optional[Process] = None
 
-    async def start_async(self, avd: str, config: EmulatorBundleConfiguration, *args: str) -> None:
+    @staticmethod
+    async def create_async(count: int, avd: str, config: EmulatorBundleConfiguration, *args: str) -> \
+            AsyncIterator["EmulatorQueue"]:
         """
-        Aynchronous start of an emaulator
+        Aynchronous start of an emulator
 
-        :param avd: namd of avd to launch
+        :param count: how many emulators in queue
+        :param avd: name of avd to launch
         :param config: emulator bundle config
         :param args: additional arguments to pass to the emaultor launch command
         """
+        if count > len(Emulator.PORTS):
+            raise Exception(f"Can have at most {count} emulators at one time")
+        queue = Queue(count)
         emulators = []
 
         async def launch_next(index: int, *args: Any, **kargs: Any) -> Emulator:
@@ -193,7 +196,7 @@ class EmulatorQueue:
                 for emulator_task in completed:
                     emulator = emulator_task.result()
                     if isinstance(emulator, Emulator):
-                        self._q.put(emulator)
+                        queue.put(emulator)
                         emulators.append(emulator)
                     elif isinstance(emulator, Emulator.FailedBootError):
                         failed_count += 1
@@ -201,7 +204,7 @@ class EmulatorQueue:
                         raise exc
             return failed_count
 
-        failed = await launch(self._count)
+        failed = await launch(count)
         if failed != 0 and emulators:
             # retry the failed count of emulators
             failed = await launch(failed)
@@ -209,13 +212,21 @@ class EmulatorQueue:
             for em in emulators:
                 em.kill()
             raise Exception("Failed to boot all emulators")
+        emulatorq = EmulatorQueue(queue)
+        emulatorq._process = Process(target=asyncio.get_event_loop().run_until_complete,
+                                     args=(emulatorq.start(), ))
+
+        return emulatorq
+
+    async def start(self):
         while True:
             emulator: Optional[Emulator] = self._restart_q.get()
             if emulator is not None:
                 await emulator.restart()
             else:
                 break  # None signal end
-        for emulator in emulators:
+        while True:
+            emulator = self._q.get()
             emulator.kill()
         self._q.close()
         self._restart_q.close()
@@ -261,7 +272,7 @@ class EmulatorQueue:
         return emulator
 
     @classmethod
-    def start(cls, count: int, avd: str, config: EmulatorBundleConfiguration, *args: str) -> "EmulatorQueue":
+    def create(cls, count: int, avd: str, config: EmulatorBundleConfiguration, *args: str) -> "EmulatorQueue":
         """
         Start the given number of emulators with the given avd and bundle configuration.
         Launches emulators in the background and returns quickly.  The retrieve command will
@@ -275,10 +286,4 @@ class EmulatorQueue:
 
         :return: the queue for retrieving/relinquishing emulators
         """
-        def entry_point(avd: str, config: EmulatorBundleConfiguration, queue: EmulatorQueue) -> None:
-            asyncio.get_event_loop().run_until_complete(queue.start_async(avd, config, *args))
-
-        queue = EmulatorQueue(count)
-        queue._process = Process(target=entry_point, args=(avd, config, queue))
-        queue._process.start()
-        return queue
+        return asyncio.get_event_loop().run_until_complete(cls.create_async(count, avd, config, *args))

@@ -67,9 +67,9 @@ class Device:
     # of these packages do not affect interaction with the app under test. With the exception of the Samsung
     # MtpApplication (pop-up we can't get rid of that asks the user to update their device), they are also not visible
     # to the user. We keep a list of them so we know which ones to disregard when trying to retrieve the actual
+    # to the user. We keep a list of them so we know which ones to disregard when trying to retrieve the actual
     # foreground application the user is interacting with.
     SILENT_RUNNING_PACKAGES = ["com.samsung.android.mtpapplication", "com.wssyncmldm", "com.bitbar.testdroid.monitor"]
-    SCREEN_UNLOCK_BLACKLIST = {"MI 4LTE"}
 
     class InsufficientStorageError(Exception):
         """

@@ -7,7 +7,6 @@ from androidtestorchestrator.multiproc.bundle import Bundle
 class TestBundle:
 
     def test_bundle_create(self, tmpdir, support_app, support_test_app):
-        return
         temp_dir = Path(str(tmpdir))
         shiv_path = temp_dir.joinpath("test.pyz")
         with Bundle(shiv_path) as bundle:

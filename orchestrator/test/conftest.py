@@ -62,7 +62,7 @@ def _start_queues() -> Tuple[Union[Emulator, EmulatorQueue], str, str]:
         return emulator, app_queue, test_app_queue
     max_count = min(multiprocessing.cpu_count(), 2)
     count = int(os.environ.get("MTO_EMULATOR_COUNT", f"{max_count}"))
-    queue = EmulatorQueue.start(count, AVD, CONFIG, *ARGS)
+    queue = EmulatorQueue.create(count, AVD, CONFIG, *ARGS)
     app_queue, test_app_queue = support.compile_all()
     return queue, app_queue, test_app_queue
 
@@ -102,7 +102,7 @@ def device():
     if isinstance(TestEmulatorQueue._queue, Emulator):
         emulator = TestEmulatorQueue._queue  # queue of 1 == an emulator
         assert emulator.get_state() == 'device'
-        return emulator
+        yield emulator
     else:
         queue = TestEmulatorQueue._queue
         emulator = queue.reserve(timeout=2*60)
@@ -115,9 +115,7 @@ def device():
 @pytest.fixture()
 def device2():
     if isinstance(TestEmulatorQueue._queue, Emulator):
-        emulator = TestEmulatorQueue._queue  # queue of 1 == an emulator
-        assert emulator.get_state() == 'device'
-        return emulator
+        raise Exception("This machine only support a single emulator;  multiple emulator testing is not possible")
     else:
         queue = TestEmulatorQueue._queue
         emulator = queue.reserve(timeout=2*60)

@@ -4,7 +4,7 @@ import logging
 import time
 from contextlib import suppress
 
-from typing import Dict, List, Optional, Type, Tuple, Union, Sequence
+from typing import Dict, List, Optional, Type, Tuple, Union
 from types import TracebackType
 from androidtestorchestrator.device import Device, DeviceSet
 from androidtestorchestrator.devicestorage import DeviceStorage
@@ -50,7 +50,7 @@ class DevicePreparation:
                 for index, result in enumerate(results):
                     self._restoration_properties[index][property] = result
 
-    def verify_network_connection(self, domain: str, count: int = 10, acceptable_loss: int = 3) -> None:
+    async def verify_network_connection(self, domain: str, count: int = 10, acceptable_loss: int = 3) -> None:
         """
         Verify connection to given domain is active.
         :param domain: address to test connection to
@@ -61,13 +61,7 @@ class DevicePreparation:
             lost_packet_count = device.check_network_connection(domain, count)
             return device, lost_packet_count
 
-        async def gather() -> List[Tuple[Device, int]]:
-            return await self._devices.apply_concurrent(run)
-
-        async def timer() -> List[Tuple[Device, int]]:
-            return await asyncio.wait_for(gather(), timeout=60)
-
-        results = asyncio.get_event_loop().run_until_complete(timer())
+        results = await self._devices.apply_concurrent(run)
         if all([lost_packets > 0 for (_, lost_packets) in results]):
             raise IOError(
                 f"Connection to {domain} failed")
@@ -124,10 +118,10 @@ class DevicePreparation:
                     log.error(f"Failed to remove reverse port forwarding for device {device.device_id}:"
                               + f"on port {port}: {str(e)}")
 
-    def __enter__(self) -> "DevicePreparation":
+    async def __aenter__(self) -> "DevicePreparation":
         return self
 
-    def __exit__(self, exc_type: Optional[Type[BaseException]],
+    async def __aexit__(self, exc_type: Optional[Type[BaseException]],
                  exc_value: Optional[BaseException],
                  traceback: Optional[TracebackType]) -> None:
         try:
@@ -163,14 +157,30 @@ class EspressoTestPreparation:
         """
         self._devices = DeviceSet([devices]) if isinstance(devices, Device) else devices
         self._data_files_paths: List[str] = []
+        self._path_to_apk = path_to_apk
+        self._path_to_test_apk = path_to_test_apk
+        self._target_apps: List[Application] = []
+        self._test_apps: List[TestApplication] = []
+        self._grant_all_user_permissions = grant_all_user_permissions
+        self._installed = []
+        self._storage = [DeviceStorage(device) for device in self._devices.devices]
 
+    @property
+    def test_apps(self) -> List[TestApplication]:
+        return self._test_apps
+
+    @property
+    def target_apps(self) -> List[Application]:
+        return self._target_apps
+
+    async def __aenter__(self) -> "EspressoTestPreparation":
         async def install_apks(device: Device) -> Optional[Tuple[Application, TestApplication]]:
-            target_app = None
-            test_app = None
+            target_app: Application = None
+            test_app: TestApplication = None
             try:
                 # install one app to a device at a time, so serial on installs here:
-                target_app = await Application.from_apk_async(path_to_apk, device=device)
-                test_app = await TestApplication.from_apk_async(path_to_test_apk, device=device)
+                target_app = await Application.from_apk_async(self._path_to_apk, device=device)
+                test_app = await TestApplication.from_apk_async(self._path_to_test_apk, device=device)
                 return target_app, test_app
             except Exception:
                 if target_app:
@@ -182,11 +192,9 @@ class EspressoTestPreparation:
                 self._devices.blacklist(device)
                 return None
 
-        async def gather_apks() -> List[Application]:
-            return await asyncio.wait_for(self._devices.apply_concurrent(install_apks, max_concurrent=3),
-                                          timeout=5*60)
+        app_pairs = await asyncio.wait_for(self._devices.apply_concurrent(install_apks, max_concurrent=3),
+                                           timeout=5*60)
 
-        app_pairs = asyncio.get_event_loop().run_until_complete(gather_apks())
         self._target_apps = [pair[0] for pair in app_pairs if pair is not None]
         self._test_apps = [pair[1] for pair in app_pairs if pair is not None]
         if not self._test_apps:
@@ -194,31 +202,18 @@ class EspressoTestPreparation:
         if not self._target_apps:
             raise Exception("Failed to install app on all devices.  Giving up")
 
-        self._storage = [DeviceStorage(device) for device in self._devices.devices]
-        if grant_all_user_permissions:
-            for test_app in self._test_apps:
-                test_app.grant_permissions()
-            for target_app in self._target_apps:
-                target_app.grant_permissions()
+        if self._grant_all_user_permissions:
+            for app in self._test_apps + self._target_apps:
+                app.grant_permissions()
         self._installed = []
-
-    @property
-    def test_apps(self) -> List[TestApplication]:
-        return self._test_apps
-
-    @property
-    def target_apps(self) -> List[Application]:
-        return self._target_apps
-
-    def __enter__(self) -> "EspressoTestPreparation":
         return self
 
-    def __exit__(self, exc_type: Optional[Type[BaseException]],
+    async def __aexit__(self, exc_type: Optional[Type[BaseException]],
                  exc_value: Optional[BaseException],
                  traceback: Optional[TracebackType]) -> None:
         self.cleanup()
 
-    def upload_test_vectors(self, root_path: str) -> float:
+    async def upload_test_vectors(self, root_path: str) -> float:
         """
         Upload test vectors to external storage on device for use by tests
 
@@ -245,14 +240,12 @@ class EspressoTestPreparation:
                     await storage.push_async(os.path.join(root, filename), remote_location, timeout=5*60)
                     self._data_files_paths.append(remote_location)
 
-        async def gather() -> None:
-            await self._devices.apply_concurrent(upload)
+        await self._devices.apply_concurrent(upload)
 
-        asyncio.get_event_loop().run_until_complete(gather())
         milliseconds = (time.time() - start) * 1000
         return milliseconds
 
-    def setup_foreign_apps(self, paths_to_foreign_apks: List[str]) -> List[Application]:
+    async def setup_foreign_apps(self, paths_to_foreign_apks: List[str]) -> List[Application]:
         """
         Install other apps (outside of test app and app under test) in support of testing.
         A device will be blacklisted and unused in this set of devices if is fails to install
@@ -279,10 +272,7 @@ class EspressoTestPreparation:
                 self._installed += [app for app in apps if app is not None]
             return installed
 
-        async def timer() -> List[Application]:
-            return await asyncio.wait_for(gather(), timeout=5*60*len(paths_to_foreign_apks))
-
-        return asyncio.get_event_loop().run_until_complete(timer())
+        return await asyncio.wait_for(gather(), timeout=5*60*len(paths_to_foreign_apks))
 
     def cleanup(self) -> None:
         """
