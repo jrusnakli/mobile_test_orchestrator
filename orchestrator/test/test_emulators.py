@@ -9,7 +9,7 @@ import os
 import pytest
 
 from pathlib import Path
-from androidtestorchestrator.emulators import EmulatorBundleConfiguration, Emulator, EmulatorQueue
+from androidtestorchestrator.emulators import EmulatorBundleConfiguration, Emulator, AsyncEmulatorQueue
 
 log = logging.getLogger("MTO")
 log.setLevel(logging.INFO)
@@ -65,12 +65,12 @@ class TestEmulator:
     def test_launch(self):
         async def launch():
             emulator = await Emulator.launch(5584, self.AVD, self.EMULATOR_CONFIG, *self.ARGS)
-            assert emulator.is_alive()
+            assert emulator.is_alive
             emulator.kill()
-            if emulator.is_alive():
+            if emulator.is_alive:
                 # adb command to kill emulator is asynchronous, so may have to wait
                 await asyncio.sleep(5)
-            assert not emulator.is_alive()
+            assert not emulator.is_alive
         asyncio.get_event_loop().run_until_complete(launch())
 
     def test_launch_bad_port(self):
@@ -83,21 +83,36 @@ class TestEmulator:
 
 class TestEmulatorQueue:
 
+    @pytest.mark.asyncio
     @pytest.mark.skipif("STANDALONE_Q_TEST" not in os.environ,
-                        reason="Can only run this standalone, as testing itself is using an EmulatorQueue")
-    def test_start_queue(self):
-        with EmulatorQueue.start(2, TestEmulator.AVD, TestEmulator.EMULATOR_CONFIG, *self.ARGS) as queue:
-            emulator1 = queue.reserve(timeout=10*60)
-            emulator2 = queue.reserve(timeout=10*60)
-            with pytest.raises(Empty):
-                queue.reserve(timeout=5)
+                        reason="Can only run this standalone, as testing in the mainstream brings up emulators already")
+    async def test_start_queue(self):
+        async with AsyncEmulatorQueue.create(2, TestEmulator.AVD, TestEmulator.EMULATOR_CONFIG, *self.ARGS) as queue:
+            async with queue.reserve(timeout=10*60) as emulator1:
+                # stagger the async-with's so that emulator2 is releinquished by itself
+                async with queue.reserve(timeout=10*60) as emulator2:
+                    assert emulator1 is not None
+                    assert emulator2 is not None
 
-            assert emulator1 is not None
-            assert emulator2 is not None
-            queue.relinquish(emulator1)
-            emulator_next = queue.reserve(timeout=5)
-            assert emulator_next == emulator1  # only one left and avaialble
-            with pytest.raises(Empty):
-                queue.reserve(timeout=5)
-            queue.relinquish(emulator_next)
-            queue.relinquish(emulator2)
+                    with pytest.raises(Empty):
+                        queue.reserve(timeout=1)
+
+                # emulator 2 is now available again
+                emulator_next = queue.reserve(timeout=5)
+                assert emulator_next == emulator2  # only one left and avaialble
+                with pytest.raises(Empty):
+                    queue.reserve(timeout=1)
+
+
+class TestLeasedEmulator:
+
+    @pytest.mark.asyncio
+    async def test_lease(self, device):
+        default_config = EmulatorBundleConfiguration(avd_dir=None, sdk=Path(os.environ.get("ANDROID_SDK_ROOT")))
+        leased_emulator = AsyncEmulatorQueue.LeasedEmulator(device.device_id, config=default_config)
+        await leased_emulator.set_timer(expiry=1)
+        await asyncio.sleep(3)
+        with pytest.raises(AsyncEmulatorQueue.LeaseExpired):
+            # access to any attribute should throw an exception
+            leased_emulator.model
+        assert leased_emulator.device_id == device.device_id  # device_id should be accessible always

@@ -67,6 +67,7 @@ class TestApplicationClass:
                 if "permission" in line:
                     perms.append(line.strip())
         assert permission in perms
+        assert permission in test_app.grant_permissions()
 
     # noinspection PyBroadException
     @staticmethod
@@ -110,17 +111,15 @@ class TestApplicationClass:
         pidoutput = app.device.execute_remote_cmd("shell", "pidof", "-s", app.package_name, fail_on_error_code=lambda x: x < 0)
         assert not self.pidof(app), f"pidof indicated app is not stopped as expected; output of pidof is: {pidoutput}"
 
-    def test_launch(self, install_app, support_app: str):  # noqa
+    @pytest.mark.asyncio
+    async def test_launch(self, install_app, support_app: str):  # noqa
         app: Application = install_app(Application, support_app)
 
-        async def launch():
-            await app.launch(".MainActivity", timeout=100)
-
-        asyncio.get_event_loop().run_until_complete(launch())
+        await app.launch(".MainActivity", timeout=100)
         assert app.in_foreground()
         app.stop()
         # TODO: add tests for timeout and to override logcat to product crash message (or add intent to test app
-        # that deliberately crashes)0
+        # that deliberately crashes)
 
     def test_monkey(self, device: Device, support_app):  # noqa
         app = asyncio.get_event_loop().run_until_complete(Application.from_apk_async(support_app, device))

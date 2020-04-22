@@ -1,21 +1,24 @@
+import asyncio
+import logging
+import os
+import subprocess
 import sys
 import time
 
-from contextlib import suppress
-
-import asyncio
-import os
-import subprocess
-
+from contextlib import suppress, asynccontextmanager
 from dataclasses import dataclass
-from multiprocessing import Queue, Process
+from asyncio import Queue
 from pathlib import Path
-from typing import Optional, List, Dict, Any, Set, Union, Coroutine, AsyncIterator
+from typing import Optional, List, Dict, Any, Set, Union, Coroutine
 
-from androidtestorchestrator.device import Device
+from .device import Device, AsyncDeviceQueue
 
 
 __all__ = ["EmulatorBundleConfiguration", "Emulator"]
+
+
+log = logging.getLogger(__name__)
+log.setLevel(logging.WARNING)
 
 
 @dataclass
@@ -30,7 +33,7 @@ class EmulatorBundleConfiguration:
     kernel: Optional[Path] = None
     """location of RAM disk or None for default"""
     ramdisk: Optional[Path] = None
-    """which working directory to this before startup (or None to use cwd)"""
+    """which working directory to ro run from (or None to use cwd)"""
     working_dir: Optional[Path] = None
     """timeout if boot does not happen after this many seconds"""
     boot_timeout: int = 5*60
@@ -40,6 +43,9 @@ class EmulatorBundleConfiguration:
 
 
 class Emulator(Device):
+    """
+    Class of Device that is specifically an emulator
+    """
 
     PORTS = list(range(5554, 5585, 2))
 
@@ -47,35 +53,81 @@ class Emulator(Device):
 
         def __init__(self, port: int, stdout: str):
             super().__init__(f"Failed to start emulator on port {port}:\n{stdout}")
+            self._port = port
 
-    def __init__(self, device_id: str,
+        @property
+        def port(self):
+            return self._port
+        
+    def __init__(self,
+                 device_id: str,
+                 port: int,
                  config: EmulatorBundleConfiguration,
-                 launch_cmd: List[str],
-                 env: Dict[str, str]):
+                 launch_cmd: Optional[List[str]] = None,
+                 env: Optional[Dict[str, str]] = None):
         """
         Launch an emulator and create this Device instance
+
+        :param device_id: str id of the device
+        :param port: port of the emulator
+        :param config: config under which emulator was launched
+        :param launch_cmd: command used to launch the emulator (for attempting restarts if necessary)
+        :param env: copy of os.environ plus any user defined modifications, used at time emlator was launched
         """
         super().__init__(device_id, str(config.adb_path()))
         self._launch_cmd = launch_cmd
         self._env = env
         self._config = config
+        self._port = port
 
-    def is_alive(self) -> bool:
-        return self.get_state() == Device.State.ONLINE
+    @property
+    def port(self) -> int:
+        return self._port
 
-    async def restart(self) -> None:
+    def restart(self) -> None:
         """
         Restart this emulator and make it available for use again
         """
+        if self._launch_cmd is None:
+            raise Exception("This emulator was started externally; cannot restart")
+        subprocess.Popen(self._launch_cmd,
+                         stderr=subprocess.STDOUT,
+                         stdout=subprocess.PIPE,
+                         env=self._env)
+        booted = False
+        seconds = 0
+        # wait to come online
+        while self.get_state() != Device.State.ONLINE:
+            time.sleep(1)
+            seconds += 1
+            if seconds > self._config.boot_timeout:
+                raise TimeoutError("Timeout waiting for emulator to come online")
+        # wait for coplete boot once online
+        while not booted:
+            booted = self.get_system_property("sys.boot_completed") == "1"
+            time.sleep(1)
+            seconds += 1
+            if seconds > self._config.boot_timeout:
+                raise TimeoutError("Timeout waiting for emulator to boot")
+
+    async def restart_async(self) -> None:
+        """
+        Restart this emulator and make it available for use again
+        """
+        if self._launch_cmd is None:
+            raise Exception("This emulator was started externally; cannot restart")
+
         async def wait_for_boot() -> None:
             subprocess.Popen(self._launch_cmd,
                              stderr=subprocess.STDOUT,
                              stdout=subprocess.PIPE,
                              env=self._env)
             booted = False
+            # wait to come online
             while self.get_state() != Device.State.ONLINE:
-                await asyncio.sleep(1)
+                time.sleep(1)
 
+            # wait for complete boot once online
             while not booted:
                 booted = self.get_system_property("sys.boot_completed") == "1"
                 await asyncio.sleep(1)
@@ -87,6 +139,9 @@ class Emulator(Device):
         """
         Launch an emulator on the given port, with named avd and configuration
 
+        :param port: port on which emulator should be launched
+        :param avd: which avd
+        :param config: configuration for launching emulator
         :param args:  add'l arguments to pass to emulator command
         """
         if port not in cls.PORTS:
@@ -98,9 +153,9 @@ class Emulator(Device):
             await asyncio.sleep(2)
         emulator_cmd = config.sdk.joinpath("emulator").joinpath("emulator")
         if not emulator_cmd.is_file():
-            raise Exception(f"Could not find emulator cmd to launch emulator @ {emulator_cmd}")
+            raise FileNotFoundError(f"Could not find emulator cmd to launch emulator @ {emulator_cmd}")
         if not config.adb_path().is_file():
-            raise Exception(f"Could not find adb cmd @ {config.adb_path()}")
+            raise FileNotFoundError(f"Could not find adb cmd @ {config.adb_path()}")
         cmd = [str(emulator_cmd), "-avd", avd, "-port", str(port), "-read-only"]
         if sys.platform.lower() == 'win32':
             cmd[0] += ".bat"
@@ -136,10 +191,10 @@ class Emulator(Device):
                     booted = device.get_system_property("sys.boot_completed", ) == "1"
                     await asyncio.sleep(1)
                     duration = time.time() - start
-                    print(f">>> {device.device_id} [{duration}] Booted?: {booted}")
+                    print(f">>> [{duration}]  {device.device_id} Booted?: {booted}")
 
             await asyncio.wait_for(wait_for_boot(), config.boot_timeout)
-            return Emulator(device_id, config=config, launch_cmd=cmd, env=environ)
+            return cls(device_id, port=port, config=config, launch_cmd=cmd, env=environ)
         except Exception as e:
             raise Emulator.FailedBootError(port, str(e)) from e
         finally:
@@ -149,141 +204,186 @@ class Emulator(Device):
 
     def kill(self) -> None:
         """
-        Kill this emulator (underlying Process)
+        Kill this emulator
         """
-        print(f">>>>> Killing emulator {self.device_id}")
+        log.info(f">>>>> Killing emulator {self.device_id}")
         self.execute_remote_cmd("emu", "kill")
 
 
-class EmulatorQueue:
+class AsyncEmulatorQueue(AsyncDeviceQueue):
+    """
+    A class used to by clients wishing to be served emulators.  Clients reserve and emulator, and when
+    finished, relinquish it back into the queue.
 
-    def __init__(self, queue: Queue):
-        """
-        :param count: how many emulators to launch and put in the queue
-        """
-        self._q = queue
-        self._restart_q: Queue[Optional["Emulator"]] = Queue()
-        self._process: Optional[Process] = None
+    It is recommended to use one of the class factory methods ("create" or "discover") to create an
+    emulator queue.
+    """
 
-    @staticmethod
-    async def create_async(count: int, avd: str, config: EmulatorBundleConfiguration, *args: str) -> \
-            AsyncIterator["EmulatorQueue"]:
+    MAX_BOOT_RETRIES = 2
+
+    class LeaseExpired(Exception):
+
+        def __init__(self, device: Device):
+            super().__init__(f"Lease expired for {device.device_id}")
+
+    class LeasedEmulator(Emulator):
+
+        def __init__(self, device_id: str, config: EmulatorBundleConfiguration):
+            port = int(device_id.split("emulator-")[1])
+            # must come first to avoid issues with __getattribute__ override
+            self._timed_out = False
+            super().__init__(device_id, port=port, config=config)
+            self._task: asyncio.Task = None
+
+        async def set_timer(self, expiry: int):
+            """
+            set lease expiration
+
+            :param expiry: number of seconds until expiration of lease (from now)
+            """
+            if self._task is not None:
+                raise Exception("Renewal of already existing lease is not allowed")
+
+            async def timeout():
+                await asyncio.sleep(expiry)
+                self._timed_out = True
+
+            self._task = asyncio.create_task(timeout())
+
+        def __getattribute__(self, item: str):
+            # Playing with fire a little here -- make sure you know what you are doing if you update this method
+            if item == '_device_id' or item == 'device_id':
+                # always allow this one to go through (one is a property reflecting the other)
+                return object.__getattribute__(self, item)
+            if object.__getattribute__(self, "_timed_out"):
+                raise AsyncEmulatorQueue.LeaseExpired(self)
+            return object.__getattribute__(self, item)
+
+    def __init__(self, queue: Queue, max_lease_time: Optional[int] = None):
         """
-        Aynchronous start of an emulator
+        :param queue: queue used to serve emulators
+        :param max_lease_time: optional maximum amount of time client can hold a "lease" on this emulator, with
+           any attempts to execute commands against the device raising a "LeaseExpired" exception after this time.
+           NOTE: this only applies when create method is used to create the queue.
+        """
+        super().__init__(queue)
+        self._max_lease_time = max_lease_time
+
+    async def _launch(self, count: int, avd: str, config: EmulatorBundleConfiguration, *args: str):
+        """
+        Launch given number of emulators and populate provided queue
+
+        :param count: number of emulators to launch
+        :param avd: which avd
+        :param config: configuration information for launching emulator
+        :param args: additional user args to launch command
+
+        """
+        async def launch_next(index: int, port: int) -> Emulator:
+            await asyncio.sleep(index * 3)  # space out launches as this can help with avoiding instability
+            leased_emulator = await self.LeasedEmulator.launch(port, avd, config, *args)
+            if self._max_lease_time:
+                leased_emulator.set_timer(expiry=self._max_lease_time)
+            return leased_emulator
+
+        ports = Emulator.PORTS[:count]
+        failed_port_counts: Dict[int, int] = {}  # port to # of times failed to launch
+        emulator_launches: Union[Set[asyncio.Future], Set[Coroutine[Any, Any, Any]]] = set(
+            launch_next(index, port) for index, port in enumerate(ports)
+        )
+        pending = emulator_launches
+        emulators: List[Emulator] = []
+        while pending or failed_port_counts:
+            completed, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
+            for emulator_task in completed:
+                result = emulator_task.result()
+                if isinstance(result, Emulator):
+                    emulator = result
+                    emulators.append(emulator)
+                    yield emulator
+                    failed_port_counts.pop(emulator.port, None)
+                elif isinstance(result, Emulator.FailedBootError):
+                    exc = result
+                    failed_port_counts.setdefault(exc.port, 0)
+                    failed_port_counts[exc.port] += 1
+                    if failed_port_counts[exc.port] >= AsyncEmulatorQueue.MAX_BOOT_RETRIES:
+                        log.error(f"Failed to launch emulator on port {exc.port} after " +
+                                  f"{AsyncEmulatorQueue.MAX_BOOT_RETRIES} attempts")
+                else:
+                    exc = result
+                    for em in emulators:
+                        with suppress(Exception):
+                            em.kill()
+                    log.exception("Unknown exception booting emulator. Aborting: %s", str(exc))
+
+        if len(failed_port_counts) == len(ports):
+            raise Exception(">>>>> Failed to boot any emulator! Aborting")
+
+    @classmethod
+    @asynccontextmanager
+    async def create(cls, count: int, avd: str, config: EmulatorBundleConfiguration, *args: str,
+                     max_lease_time: Optional[int] = None,
+                     wait_for_startup: Optional[int] = None) -> "AsyncEmulatorQueue":
+        """
+        Create an emulator queue by lanuching them explicitly.  Returns quickly unless specified otherwise,
+        launching the emulators in the background
 
         :param count: how many emulators in queue
         :param avd: name of avd to launch
         :param config: emulator bundle config
-        :param args: additional arguments to pass to the emaultor launch command
+        :param args: additional arguments to pass to the emulator launch command
+        :param max_lease_time: see constructor
+        :param wait_for_startup: if positive non-zero, wait at most this many seconds for emulators to be started
+            before returning,
+        
+        :return: new EmulatorQueue populated with requested emulators
+        :raises: TimeoutError if timeout specified and not started in time
         """
         if count > len(Emulator.PORTS):
             raise Exception(f"Can have at most {count} emulators at one time")
         queue = Queue(count)
-        emulators = []
+        emulators: List[Emulator] = []
+        emulator_q = cls(queue, max_lease_time=max_lease_time)
 
-        async def launch_next(index: int, *args: Any, **kargs: Any) -> Emulator:
-            await asyncio.sleep(index*3)  # space out launches as this can help with avoiding instability
-            return await Emulator.launch(*args, **kargs)
+        async def populate_q():
+            async for emulator in emulator_q._launch(count, avd, config, *args):
+                emulators.append(emulator)
+                await queue.put(emulator)
 
-        async def launch(count: int) -> int:
-            emulator_launches: Union[Set[asyncio.Future[Emulator]],
-                                     Set[Coroutine[Any, Any, Any]]] = set(
-                launch_next(index, port, avd, config, *args) for index, port in enumerate(Emulator.PORTS[:count]))
-            failed_count = 0
-            pending = emulator_launches
-            while pending:
-                completed, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
-                for emulator_task in completed:
-                    emulator = emulator_task.result()
-                    if isinstance(emulator, Emulator):
-                        queue.put(emulator)
-                        emulators.append(emulator)
-                    elif isinstance(emulator, Emulator.FailedBootError):
-                        failed_count += 1
-                        exc = emulator
-                        raise exc
-            return failed_count
-
-        failed = await launch(count)
-        if failed != 0 and emulators:
-            # retry the failed count of emulators
-            failed = await launch(failed)
-        if failed != 0:
+        task = asyncio.create_task(populate_q())
+        if wait_for_startup:
+            await task
+        try:
+            yield emulator_q
+        finally:
+            if not task.done():
+                with suppress(Exception):
+                    task.cancel()
             for em in emulators:
-                em.kill()
-            raise Exception("Failed to boot all emulators")
-        emulatorq = EmulatorQueue(queue)
-        emulatorq._process = Process(target=asyncio.get_event_loop().run_until_complete,
-                                     args=(emulatorq.start(), ))
-
-        return emulatorq
-
-    async def start(self):
-        while True:
-            emulator: Optional[Emulator] = self._restart_q.get()
-            if emulator is not None:
-                await emulator.restart()
-            else:
-                break  # None signal end
-        while True:
-            emulator = self._q.get()
-            emulator.kill()
-        self._q.close()
-        self._restart_q.close()
-        print(">>>> Exiting emulator queue task")
-
-    def __enter__(self) -> "EmulatorQueue":
-        return self
-
-    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
-        with suppress(Exception):
-            self.stop()
-
-    def stop(self) -> None:
-        """
-        Stop the background process monitoring emulators and stop each emaultor
-        """
-        if self._process:
-            self._restart_q.put(None)  # signals end
-            self._process.join(timeout=10)
-        with suppress(Exception):
-            self._q.close()
-            self._restart_q.close()
-
-    def relinquish(self, emulator: Emulator) -> None:
-        """
-        Relinquish emulator back to the queue
-        :param emulator: emulator to relinquish
-        """
-        self._q.put(emulator)
-
-    def reserve(self, timeout: Optional[float] = None) -> Emulator:
-        """
-        reserve an emulator, blocking until the next one is available if necessary
-
-        :param timeout: maximum time to wait, in seconds
-
-        :return: the requested emulator
-        """
-        emulator: Emulator = self._q.get(timeout=timeout)
-        while not emulator.is_alive():
-            self._restart_q.put(emulator)
-            self._q.get(timeout=timeout)
-        return emulator
+                with suppress(Exception):
+                    em.kill()
 
     @classmethod
-    def create(cls, count: int, avd: str, config: EmulatorBundleConfiguration, *args: str) -> "EmulatorQueue":
+    async def discover(cls, max_lease_time: Optional[int] = None,
+                       config: Optional[EmulatorBundleConfiguration] = None) -> "AsyncEmulatorQueue":
         """
-        Start the given number of emulators with the given avd and bundle configuration.
-        Launches emulators in the background and returns quickly.  The retrieve command will
-        block on a Queue until the first emulator is booted and available from the background
-        process launching the emulators.
+        Discover all online devices and create a DeviceQueue with them
 
-        :param count: number of emulators to start
-        :param avd: name of avd to start
-        :param config: emulator configuration bundle
-        :param args: Additional arguments that will be passed when launching each emulator
+        :param max_lease_time: see constructor
+        :param config: Definition of emulator configuration (for access to root sdk), or None to use env vars
 
-        :return: the queue for retrieving/relinquishing emulators
+        :return: Created DeviceQueue instance containing all online devices
         """
-        return asyncio.get_event_loop().run_until_complete(cls.create_async(count, avd, config, *args))
+        queue = Queue(20)
+        emulator_ids = cls._list_devices(filt=lambda x: x.startswith('emulator-'))
+        if not emulator_ids:
+            raise Exception("No emulators discovered.")
+        avd_home = os.environ.get("ANDROID_AVD_HOME")
+        default_config = EmulatorBundleConfiguration(avd_dir=Path(avd_home) if avd_home else None,
+                                                     sdk=Path(os.environ.get("ANDROID_SDK_ROOT")))
+        for emulator_id in emulator_ids:
+            leased_emulator = cls.LeasedEmulator(emulator_id, config=config or default_config)
+            await queue.put(leased_emulator)
+            if max_lease_time is not None:
+                leased_emulator.set_timer(expiry=max_lease_time)
+        return cls(queue)

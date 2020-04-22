@@ -48,17 +48,17 @@ else:
 # noinspection PyShadowingNames
 class TestAndroidDevice:
 
-    def test_take_screenshot(self, device: Device, tmpdir):
-        path = os.path.join(str(tmpdir), "test_screenshot.png")
-        device.take_screenshot(os.path.join(str(tmpdir), path))
+    def test_take_screenshot(self, device: Device, temp_dir):
+        path = os.path.join(str(temp_dir), "test_screenshot.png")
+        device.take_screenshot(os.path.join(str(temp_dir), path))
         assert os.path.isfile(path)
         assert os.stat(path).st_size != 0
 
-    def test_take_screenshot_file_already_exists(self, device: Device, tmpdir):
-        path = os.path.join(str(tmpdir), "created_test_screenshot.png")
+    def test_take_screenshot_file_already_exists(self, device: Device, temp_dir):
+        path = os.path.join(str(temp_dir), "created_test_screenshot.png")
         open(path, 'w+b')  # create the file
         with pytest.raises(FileExistsError):
-            device.take_screenshot(os.path.join(str(tmpdir), path))
+            device.take_screenshot(os.path.join(str(temp_dir), path))
 
     def test_device_name(self, device: Device):  # noqa
         name = device.device_name
@@ -157,21 +157,21 @@ class TestAndroidDevice:
         app.clear_data()
         app.stop()
 
-    def test_invalid_cmd_execution(self, device: Device):
-        async def execute():
-            async with await device.monitor_remote_cmd("some", "bad", "command") as proc:
-                async for _ in proc.output(unresponsive_timeout=10):
-                    pass
-            assert proc.returncode is not None
-            assert proc.returncode != 0
-        asyncio.get_event_loop().run_until_complete(execute())
+    @pytest.mark.asyncio
+    async def test_invalid_cmd_execution(self, device: Device):
+        async with await device.monitor_remote_cmd("some", "bad", "command") as proc:
+            async for _ in proc.output(unresponsive_timeout=10):
+                pass
+        assert proc.returncode is not None
+        assert proc.returncode != 0
 
     def test_get_locale(self, device: Device):
         locale = device.get_locale()
         assert locale == "en_US"
 
-    def test_check_network_connect(self, device: Device):
-        assert device.check_network_connection("localhost", count=3) == 0
+    @pytest.mark.asyncio
+    async def test_check_network_connect(self, device: Device):
+        assert await device.check_network_connection("localhost", count=3) == 0
 
     def test_get_device_properties(self, device: Device):
         device_properties = device.get_device_properties()

@@ -5,7 +5,7 @@ import os
 import subprocess
 import sys
 from contextlib import suppress
-from queue import Queue
+from multiprocessing import Queue
 from typing import Tuple
 
 from apk_bitminer.parsing import AXMLParser

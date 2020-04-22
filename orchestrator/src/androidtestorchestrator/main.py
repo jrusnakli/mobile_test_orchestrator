@@ -5,11 +5,11 @@ import logging
 import os
 from dataclasses import dataclass, field
 from types import TracebackType
-from typing import Any, AsyncIterator, Dict, Iterator, List, Optional, Tuple, Type, Union
+from typing import AsyncIterator, Dict, Iterator, List, Optional, Tuple, Type, Union, Coroutine
 
+from .testprep import EspressoTestSetup
 from .application import TestApplication
-from .device import Device
-from .devicelog import DeviceLog, LogcatTagDemuxer
+from .device import Device, AsyncDeviceQueue
 from .parsing import LineParser
 from .reporting import TestExecutionListener
 from .worker import Worker
@@ -92,17 +92,19 @@ class AndroidTestOrchestrator:
     ...     orchestrator.add_test_listener(Listener())
     ...     orchestrator.execute_test_plan(test_application, test_plan)
     ...     # or
-    ...     await orchestrator.execute_test_suite(test_suite)
+    ...     await orchestrator.execute_single_test_suite(test_suite)
 
     """
 
     def __init__(self,
                  artifact_dir: str,
+                 max_device_count: Optional[int] = None,
                  max_test_time: Optional[float] = None,
                  max_test_suite_time: Optional[float] = None,
                  run_under_orchestration: bool = False) -> None:
         """
         :param artifact_dir: directory where logs and screenshots are saved
+        :param max_device_count: max number of devices to utilize, or None for unbounded
         :param max_test_time: maximum allowed time for a single test to execute before timing out (or None)
         :param max_test_suite_time: maximum allowed time for a suite to execut; or None
         :param run_under_orchestration: whether to run under Android Test Orchestrator or regular instument command
@@ -119,11 +121,11 @@ class AndroidTestOrchestrator:
             raise FileExistsError("'%s' exists and is not a directory" % artifact_dir)
 
         self._artifact_dir = artifact_dir
+        self._max_device_count = max_device_count
         self._instrumentation_timeout = max_test_suite_time
         self._test_timeout = max_test_time
         self._timer = None
         self._tag_monitors: Dict[str, Tuple[str, LineParser]] = {}
-        self._logcat_procs: Dict[Device, Any] = {}
         self._run_listeners: List[TestExecutionListener] = []
         self._run_under_orchestration = run_under_orchestration
         self._in_execution = False
@@ -138,10 +140,7 @@ class AndroidTestOrchestrator:
         """
         cleanup
         """
-        # leave the campground as clean as you left it:
-        for proc in self._logcat_procs.values():
-            await asyncio.wait_for(proc.stop(), timeout=10)
-        self._logcat_procs = {}
+        pass  # nothing do for now
 
     def add_test_listener(self, listener: TestExecutionListener) -> None:
         """
@@ -172,125 +171,112 @@ class AndroidTestOrchestrator:
             raise ValueError("A handler for tag '%s' and priority '%s' already added" % (tag, priority))
         self._tag_monitors[tag] = (priority, handler)
 
-    # TASK-2: parsing of instrument output for test execution status
-    async def _execute_plan(self,
-                            test_plan: AsyncIterator[TestSuite],
-                            test_applications: List[TestApplication]) -> None:
+    async def run(self,
+                  test_setup: EspressoTestSetup,
+                  device: Device,
+                  test_plan: Union[Iterator[TestSuite], AsyncIterator[TestSuite]],
+                  completion_callback: Optional[Coroutine[None, None, None]] = None) -> None:
+        """
+        Run a collection test suites against a single device, pulling each test suite from an externally supplied iterator
+
+        :param test_setup: information to prepare device for test execution
+        :param device: device to run against
+        :param test_plan: iterator of test suites to pull from
+        :param completion_callback: coroutine to be awaited upon completion, or None
+        """
+        # monitor requested logcat tags
+        worker = Worker(device=device,
+                        tests=test_plan,
+                        test_setup=test_setup,
+                        artifact_dir=self._artifact_dir,
+                        listeners=self._run_listeners)
+        await worker.run(
+            completion_callback=completion_callback,
+            under_orchestration=self._run_under_orchestration,
+            test_timeout=self._test_timeout,
+            monitor_tags=self._tag_monitors
+        )
+
+    async def run_single_test_suite(self,
+                                    test_setup: EspressoTestSetup,
+                                    device: Device,
+                                    test_suite: TestSuite,
+                                    completion_callback: Optional[Coroutine[None, None, None]] = None) -> None:
+        """
+        Convenience method to execute a single test suite against a single device
+
+        :param test_setup: information to prepare device for test execution
+        :param device: which device to run against
+        :param test_suite: the test suite to run
+        :param completion_callback: coroutine to be awaited upon completion, or None
+        """
+        await self.run(test_setup=test_setup, device=device, test_plan=iter([test_suite]),
+                       completion_callback=completion_callback)
+
+    async def execute_test_plan(self,
+                                test_setup: EspressoTestSetup,
+                                devices: AsyncDeviceQueue,
+                                test_plan: Union[Iterator[TestSuite], AsyncIterator[TestSuite]]) -> None:
         """
         Execute the given test plan, distributing test exeuction across the given test application instances
 
+        :param test_setup: used to set up the test apk, target apk and such
+        :param devices: queue to reserve devices to run on
         :param test_plan: plan of test runs to execute
-        :param test_applications: test application instances (each on a unique device) to execute test runs against
         """
-        workers = [Worker(test_plan, test_app, artifact_dir=self._artifact_dir, listeners=self._run_listeners)
-                   for test_app in test_applications]
+        have_tests_to_process = True
+        # see comment on acquire() below
+        sem = asyncio.Semaphore(0)
 
-        async def main_execution() -> None:
-            """
-            Launch worker coroutines to distribute the testing, and process any requested logcat tags as we go
-            """
-            # distributed testing:
-            results = await asyncio.gather(
-                *[worker.run(test_timeout=self._test_timeout,
-                             under_orchestration=self._run_under_orchestration) for worker in workers],
-                *[self._process_logcat_tags(test_app.device) for test_app in test_applications],
-                return_exceptions=True)
+        async def worker_completion():
+            nonlocal have_tests_to_process
+            have_tests_to_process = False
 
-            all_test_errors = [result for result in results[:len(test_applications)] if result is not None]
-            all_logcat_errors = [result for result in results[len(test_applications):] if result is not None]
-            if all_test_errors:
-                text = '\n'.join([str(result) for result in all_test_errors])
-                raise Exception(f"Failed to execute all tests properly {text};" +
-                                "only first traceback shown") from all_test_errors[0]
-            elif all_logcat_errors:
-                text = '\n'.join([str(result) for result in all_logcat_errors])
-                # worker thread had exception, so raise this as the most critical
-                raise Exception(f"Failed to capture logact for all tests {text};" +
-                                "only first traceback shown") from all_logcat_errors[0]
-        await asyncio.wait_for(main_execution(), timeout=self._instrumentation_timeout)
+        async def run_loop():
+            worker_tasks = []
+            while have_tests_to_process and (self._max_device_count is None or len(worker_tasks) < self._max_device_count):
+                # call worker to start processing and running tests from the test plan
+                # (completes when all tests ar exhausted)
 
-    # TASK-3: monitor logcat for given tags in _tag_monitors
-    async def _process_logcat_tags(self, device: Device) -> None:
+                async def do_work():
+                    async with devices.reserve() as device:
+                        sem.release()
+                        if not have_tests_to_process:
+                            return
+                        await self.run(
+                            device=device,
+                            test_setup=test_setup,
+                            test_plan=test_plan,
+                            completion_callback=worker_completion()
+                        )
+                if have_tests_to_process:
+                    task = asyncio.get_event_loop().create_task(do_work())
+                    worker_tasks.append(task)
+                    # synchronize, to ensure we don't spin our wheels and that we wait for the device to first
+                    # be reserved.  This is a little quirky, but it also allows the provision of having a simpler
+                    # and safer API on the AsyncDeviceQueue that ensures reserved devices are always relinquished
+                    # upon completion
+                    await sem.acquire()
+            results, pending = await asyncio.wait(worker_tasks, return_when=asyncio.FIRST_EXCEPTION)
+            for task in pending:
+                task.cancel()
+            [r.result() for r in results]  # will raise any exception caught during task execution
+        await asyncio.wait_for(run_loop(), timeout=self._instrumentation_timeout)
+        log.info("Test execution completed")
+
+    async def execute_single_test_suite(self,
+                                        test_setup: EspressoTestSetup,
+                                        devices: AsyncDeviceQueue,
+                                        test_suite: TestSuite) -> None:
         """
-        Process requested tags from logcat
+        Convenience method to execute a single test suite
 
-        :param device: remote device to process tags from
-        """
-        if not self._tag_monitors:
-            return
-        try:
-            logcat_demuxer = LogcatTagDemuxer(self._tag_monitors)
-            device_log = DeviceLog(device)
-            keys = ['%s:%s' % (k, v[0]) for k, v in self._tag_monitors.items()]
-            async with await device_log.logcat("-v", "brief", "-s", *keys) as proc:
-                self._logcat_procs[device] = proc
-                async for line in proc.output():
-                    logcat_demuxer.parse_line(line)
-                # proc is stopped by test execution coroutine
-
-        except Exception as e:
-            log.error("Exception on logcat processing, aborting: \n%s" % str(e))
-
-    async def execute_test_plan(self,
-                                test_application: TestApplication,
-                                test_plan: Union[AsyncIterator[TestSuite], Iterator[TestSuite]]) -> None:
-        """
-        Execute a test plan (a collection of test suites) against a given test application running on a single device
-
-        :param test_application: list of distributed TestApplication instances available against which tests will be run
-        :param test_plan: iterator or async iterator of TestSuite's to be run under"adb instrument"
-
-        :raises: asyncio.TimeoutError if test or test suite times out based on this orchestrator's configuration
-        """
-
-        await self.execute_test_plan_distributed([test_application], test_plan)
-
-    async def execute_test_plan_distributed(self,
-                                            test_appl_instances: List[TestApplication],
-                                            test_plan: Union[AsyncIterator[TestSuite], Iterator[TestSuite]]) -> None:
-        """
-        Acts the same as `execute_test_plan` method, except across multiple test application instances distributed
-        across multiple devices
-        """
-        try:
-            self._in_execution = True
-            if not isinstance(test_plan, AsyncIterator):
-                async def _async_iter(test_plan: Iterator[TestSuite]) -> AsyncIterator[TestSuite]:
-                    for item in test_plan:
-                        yield item
-                test_plan = _async_iter(test_plan)
-
-            await asyncio.wait_for(self._execute_plan(test_plan=test_plan,
-                                                      test_applications=test_appl_instances),
-                                   timeout=self._instrumentation_timeout)
-
-        finally:
-            self._in_execution = False
-
-    async def execute_test_suite(self,
-                                 test_application: TestApplication,
-                                 test_suite: TestSuite) -> None:
-        """
-        Execute a suite of tests as given by the argument list, and report test results
-
-        :param test_application: single TestApplication against which tests will be executed
+        :param test_setup: test configuration used to prep device for test execution
+        :param devices: DeviceQueue to pull devices from for test execution
         :param test_suite: `TestSuite` to execute on remote device
 
         :raises asyncio.TimeoutError if test or test suite times out
         """
-        await self.execute_test_plan(test_application,
+        await self.execute_test_plan(test_setup,
+                                     devices,
                                      test_plan=iter([test_suite]))
-
-    async def execute_test_suite_distributed(self,
-                                             test_appl_instances: Union[TestApplication, List[TestApplication]],
-                                             test_suite: TestSuite) -> None:
-        """
-        Execute a suite of tests as given by the argument list, and report test results
-
-        :param test_appl_instances: list of TestApplication's on a distributed set of devices, against which
-           tests will be run
-        :param test_suite: `TestSuite` to execute on remote device
-
-        :raises asyncio.TimeoutError if test or test suite times out
-        """
-        await self.execute_test_plan_distributed(test_appl_instances, test_plan=iter([test_suite]))

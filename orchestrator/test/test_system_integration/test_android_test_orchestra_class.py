@@ -1,19 +1,16 @@
-import asyncio
 import logging
 import os
 
-from contextlib import suppress
 from typing import Any, Optional
 
 import pytest
+import pytest_mproc
 
 from androidtestorchestrator.main import AndroidTestOrchestrator, TestSuite
-from androidtestorchestrator.application import Application, TestApplication
-from androidtestorchestrator.device import Device
+from androidtestorchestrator.device import Device, AsyncDeviceQueue
 from androidtestorchestrator.parsing import LineParser
 from androidtestorchestrator.reporting import TestExecutionListener
-from androidtestorchestrator.testprep import EspressoTestPreparation, DevicePreparation
-from ..support import uninstall_apk
+from androidtestorchestrator.testprep import EspressoTestSetup
 
 
 log = logging.getLogger(__name__)
@@ -42,7 +39,7 @@ class TestAndroidTestOrchestrator(object):
             self.lines.append(line)
 
     @pytest.mark.asyncio
-    async def test_add_logcat_tag_monitor(self, device: Device, tmpdir: str):
+    async def test_add_logcat_tag_monitor(self, tmpdir: str):
         async with AndroidTestOrchestrator(artifact_dir=str(tmpdir),) as orchestrator:
             handler = TestAndroidTestOrchestrator.TagListener()
             orchestrator.add_logcat_monitor("TestTag", handler)
@@ -58,152 +55,6 @@ class TestAndroidTestOrchestrator(object):
         orchestrator.add_logcat_monitor("TestTag", handler)
         with pytest.raises(ValueError):
             orchestrator.add_logcat_monitor("TestTag", handler)  # duplicate tag/priority
-
-    @pytest.mark.asyncio
-    async def test_execute_test_suite(self, device: Device, android_test_app: TestApplication, tmpdir):
-        test_suite_count = 0
-        expected_test_suite = None
-        uninstall_apk(android_test_app, device)
-
-        class TestExpectations(TestExecutionListener):
-
-            def __init__(self):
-                self.expected_test_class = {
-                    'test_suite1': "com.linkedin.mtotestapp.InstrumentedTestAllSuccess",
-                    'test_suite2': "com.linkedin.mtotestapp.InstrumentedTestAllSuccess",
-                    'test_suite3': "com.linkedin.mtotestapp.InstrumentedTestSomeFailures"
-                }
-                self.test_count = 0
-
-            def test_suite_failed(self, test_run_name: str, error_message: str):
-                nonlocal expected_test_suite
-                assert test_run_name == expected_test_suite
-                assert False, "did not expect test process to error; \n%s" % error_message
-
-            def test_assumption_failure(self, test_run_name: str, class_name: str, test_name: str, stack_trace: str):
-                assert False, "did not expect test assumption failure"
-
-            def test_suite_ended(self, test_run_name: str, duration: float = -1.0, **kwargs: Optional[Any]) -> None:
-                nonlocal expected_test_suite
-                assert test_run_name == expected_test_suite
-                self.test_count += 1
-                assert test_run_name in self.expected_test_class.keys()
-
-            def test_started(self, test_run_name: str, class_name: str, test_name: str):
-                assert test_run_name in self.expected_test_class.keys()
-
-            def test_ended(self, test_run_name: str, class_name: str, test_name: str, **kwargs):
-                self.test_count += 1
-                assert test_run_name in self.expected_test_class.keys()
-                assert test_name in ["useAppContext", "testSuccess", "testFail"]
-                assert class_name in self.expected_test_class.values()
-
-            def test_failed(self, test_run_name: str, class_name: str, test_name: str, stack_trace: str):
-                assert class_name == 'com.linkedin.mtotestapp.InstrumentedTestSomeFailures'
-                assert test_name == "testFail"  # this test case is designed to be failed
-
-            def test_ignored(self, test_run_name: str, class_name: str, test_name: str):
-                assert False, "no skipped tests should be present"
-
-            def test_suite_started(self, test_run_name: str, count: int = 0):
-                nonlocal test_suite_count
-                nonlocal expected_test_suite
-                print("Started test suite %s" % test_run_name)
-                test_suite_count += 1
-                expected_test_suite = "test_suite%d" % test_suite_count
-                assert test_run_name == expected_test_suite
-
-        def test_generator():
-            yield (TestSuite(name='test_suite1',
-                             test_parameters={"class": "com.linkedin.mtotestapp.InstrumentedTestAllSuccess#useAppContext"}))
-            yield (TestSuite(name='test_suite2',
-                             test_parameters={"class": "com.linkedin.mtotestapp.InstrumentedTestAllSuccess#testSuccess"}))
-            yield (TestSuite(name='test_suite3',
-                             test_parameters={"class": "com.linkedin.mtotestapp.InstrumentedTestSomeFailures"}))
-
-        listener = TestExpectations()
-        async with AndroidTestOrchestrator(artifact_dir=str(tmpdir)) as orchestrator:
-            orchestrator.add_test_listener(listener)
-            await orchestrator.execute_test_plan(test_plan=test_generator(),
-                                                 test_application=android_test_app)
-        assert listener.test_count == 7
-
-    @pytest.mark.asyncio
-    @pytest.mark.skipif(os.environ.get("CIRCLECI") is not None, reason="Circleci cannot handle more than one emulator")
-    async def test_execute_test_suite_multidevice(self, device: Device, device2: Device,
-                                            android_test_app: TestApplication,
-                                            android_test_app2: TestApplication,
-                                            tmpdir):
-        test_count = 0
-        test_suite_count = 0
-        expected_test_suite = None
-        uninstall_apk(android_test_app, device)
-        uninstall_apk(android_test_app2, device2)
-
-        class TestExpectations(TestExecutionListener):
-
-            def __init__(self):
-                super().__init__()
-                self.expected_test_class = {
-                    'test_suite1': "com.linkedin.mtotestapp.InstrumentedTestAllSuccess",
-                    'test_suite2': "com.linkedin.mtotestapp.InstrumentedTestAllSuccess",
-                    'test_suite3': "com.linkedin.mtotestapp.InstrumentedTestSomeFailures"
-                }
-
-            def test_suite_failed(self, test_run_name: str, error_message: str):
-                assert False, "did not expect test process to error; \n%s" % error_message
-
-            def test_assumption_failure(self, test_run_name: str, class_name: str, test_name: str, stack_trace: str):
-                assert False, "did not expect test assumption failure"
-
-            def test_suite_ended(self, test_run_name: str, duration: float = -1.0, **kwargs: Optional[Any]) -> None:
-                pass
-
-            def test_started(self, test_run_name: str, class_name: str, test_name: str):
-                log.info("Started test %s %s", class_name, test_name)
-
-            def test_ended(self, test_run_name: str, class_name: str, test_name: str, **kwargs):
-                nonlocal test_count
-                test_count += 1
-                assert test_name in ["useAppContext",
-                                     "testSuccess",
-                                     "testFail"
-                                     ]
-                assert test_run_name in ["test_suite1", "test_suite2", "test_suite3"]
-                assert class_name in self.expected_test_class.values()
-
-            def test_failed(self, test_run_name: str, class_name: str, test_name: str, stack_trace: str):
-                nonlocal test_count
-                assert class_name in self.expected_test_class.values()
-                assert test_name == "testFail"  # this test case is designed to be failed
-
-            def test_ignored(self, test_run_name: str, class_name: str, test_name: str):
-                nonlocal test_count
-                assert False, "no skipped tests should be present"
-
-            def test_suite_started(self, test_run_name: str, count: int = 0):
-                nonlocal test_count, test_suite_count
-                nonlocal expected_test_suite
-                print("Started test suite %s" % test_run_name)
-                test_suite_count += 1
-                expected_test_suite = "test_suite%d" % test_suite_count
-                assert test_run_name == expected_test_suite
-
-        def test_generator():
-            yield (TestSuite(name='test_suite1',
-                             test_parameters={"class": "com.linkedin.mtotestapp.InstrumentedTestAllSuccess#useAppContext"}))
-            yield (TestSuite(name='test_suite2',
-                             test_parameters={"class": "com.linkedin.mtotestapp.InstrumentedTestAllSuccess"},
-                             clean_data_on_start=True))
-            yield (TestSuite(name='test_suite3',
-                             test_parameters={"class": "com.linkedin.mtotestapp.InstrumentedTestSomeFailures"}))
-
-        async with AndroidTestOrchestrator(artifact_dir=str(tmpdir)) as orchestrator:
-            orchestrator.add_test_listener(TestExpectations())
-            await orchestrator.execute_test_plan_distributed(test_plan=test_generator(),
-                                                             test_appl_instances=[android_test_app, android_test_app2])
-
-        assert test_count == 5
 
     @pytest.mark.asyncio
     async def test_invalid_test_timesout(self, device: Device, tmpdir):
@@ -227,35 +78,81 @@ class TestAndroidTestOrchestrator(object):
             async with AndroidTestOrchestrator(artifact_dir=__file__):
                 pass
 
+    @pytest_mproc.group("device_q")
     @pytest.mark.asyncio
-    async def test_foreign_apk_install(self, device: Device, support_app: str, support_test_app: str):
-        async with EspressoTestPreparation(devices=device, path_to_test_apk=support_test_app, path_to_apk=support_app ) as prep, \
-             DevicePreparation(devices=device) as device_prep:
-            now = device.get_device_setting("system", "dim_screen")
-            new = {"1": "0", "0": "1"}[now]
-            for test_app in prep.test_apps:
-                test_app.uninstall()
-                assert test_app.package_name not in device.list_installed_packages()
-            apps = await prep.setup_foreign_apps(paths_to_foreign_apks=[support_test_app])
-            assert len(apps) == 1
-            assert apps[0].package_name in device.list_installed_packages()
-            device.set_system_property("debug.mock2", "\"\"\"\"")
-            device_prep.configure_devices(settings={'system:dim_screen': new},
-                                          properties={"debug.mock2": "5555"})
+    async def test_execute_test_suite(self,
+                                      devices: AsyncDeviceQueue,
+                                      support_app: str,
+                                      support_test_app: str,
+                                      tmpdir):
 
-            assert device.get_system_property("debug.mock2") == "5555"
-            assert device.get_device_setting("system", "dim_screen") == new
+        class TestExpectations(TestExecutionListener):
 
+            def __init__(self):
+                self.expected_test_class = {
+                    'test_suite1': "com.linkedin.mtotestapp.InstrumentedTestAllSuccess",
+                    'test_suite2': "com.linkedin.mtotestapp.InstrumentedTestAllSuccess",
+                    'test_suite3': "com.linkedin.mtotestapp.InstrumentedTestSomeFailures"
+                }
+                self.test_count = 0
+                self.test_suites = []
+
+            def test_suite_failed(self, test_run_name: str, error_message: str):
+                assert test_run_name in self.expected_test_class.keys()
+                assert False, "did not expect test process to error; \n%s" % error_message
+
+            def test_assumption_failure(self, test_run_name: str, class_name: str, test_name: str, stack_trace: str):
+                assert False, "did not expect test assumption failure"
+
+            def test_suite_ended(self, test_run_name: str, duration: float = -1.0, **kwargs: Optional[Any]) -> None:
+                self.test_suites.append(test_run_name)
+                assert test_run_name in self.expected_test_class.keys()
+
+            def test_started(self, test_run_name: str, class_name: str, test_name: str):
+                assert test_run_name in self.expected_test_class.keys()
+
+            def test_ended(self, test_run_name: str, class_name: str, test_name: str, **kwargs):
+                self.test_count += 1
+                assert test_run_name in self.expected_test_class.keys()
+                assert test_name in ["useAppContext", "testSuccess", "testFail"]
+                assert class_name in self.expected_test_class.values()
+
+            def test_failed(self, test_run_name: str, class_name: str, test_name: str, stack_trace: str):
+                assert class_name == 'com.linkedin.mtotestapp.InstrumentedTestSomeFailures'
+                assert test_name == "testFail"  # this test case is designed to be failed
+
+            def test_ignored(self, test_run_name: str, class_name: str, test_name: str):
+                assert False, "no skipped tests should be present"
+
+            def test_suite_started(self, test_run_name: str, count: int = 0):
+                print("Started test suite %s" % test_run_name)
+                assert test_run_name in self.expected_test_class.keys()
+
+        def test_generator():
+            yield (TestSuite(name='test_suite1',
+                             test_parameters={"class": "com.linkedin.mtotestapp.InstrumentedTestAllSuccess#useAppContext"}))
+            yield (TestSuite(name='test_suite2',
+                             test_parameters={"class": "com.linkedin.mtotestapp.InstrumentedTestAllSuccess#testSuccess"}))
+            yield (TestSuite(name='test_suite3',
+                             test_parameters={"class": "com.linkedin.mtotestapp.InstrumentedTestSomeFailures"}))
+
+        listener = TestExpectations()
+        bundle = EspressoTestSetup(path_to_apk=support_app, path_to_test_apk=support_test_app)
+        async with AndroidTestOrchestrator(artifact_dir=str(tmpdir)) as orchestrator:
+            orchestrator.add_test_listener(listener)
+            await orchestrator.execute_test_plan(test_plan=test_generator(),
+                                                 test_setup=bundle,
+                                                 devices=devices)
+        assert listener.test_count == 4
+        assert set(listener.expected_test_class.keys()) == set(listener.test_suites)
+
+    @pytest_mproc.group("device_q")
     @pytest.mark.asyncio
-    async def test_execute_test_suite_orchestrated(self, device: Device, support_app: str,
-                                             support_test_app: str, tmpdir):
-        uninstall_apk(support_app, device)
-        uninstall_apk(support_test_app, device)
-
+    async def test_execute_test_suite_orchestrated(self, devices: AsyncDeviceQueue, support_app: str,
+                                                   support_test_app: str, tmpdir):
         test_count = 0
         test_suite_count = 0
         expected_test_suite = None
-        current_test_suite = None
 
         gradle_cache_dir = os.environ.get("GRADLE_USER_HOME", os.path.join(os.path.expanduser('~'), '.gradle'))
         gradle_apk_root_dir = os.path.join(gradle_cache_dir, 'caches', 'modules-2', 'files-2.1')
@@ -294,7 +191,7 @@ class TestAndroidTestOrchestrator(object):
                 pass
 
             def test_ended(self, test_suite_name: str, class_name: str, test_name: str, **kwargs):
-                nonlocal test_count, current_test_suite
+                nonlocal test_count
                 test_count += 1
                 assert test_name in ["useAppContext",
                                      "testSuccess",
@@ -306,7 +203,7 @@ class TestAndroidTestOrchestrator(object):
                 ]
 
             def test_failed(self, test_suite_name: str, class_name: str, test_name: str, stack_trace: str):
-                nonlocal test_count, current_test_suite
+                nonlocal test_count
                 assert class_name in [
                     "com.linkedin.mtotestapp.InstrumentedTestAllSuccess",
                     "com.linkedin.mtotestapp.InstrumentedTestSomeFailures"
@@ -320,8 +217,6 @@ class TestAndroidTestOrchestrator(object):
             def test_suite_started(self, test_run_name: str, count: int = 0):
                 nonlocal test_count, test_suite_count
                 nonlocal expected_test_suite
-                nonlocal current_test_suite
-                current_test_suite = test_run_name
                 print("Started test suite %s" % test_run_name)
                 test_count = 0  # reset
                 test_suite_count += 1
@@ -332,11 +227,12 @@ class TestAndroidTestOrchestrator(object):
             yield (TestSuite(name='test_suite1',
                              test_parameters={"class": "com.linkedin.mtotestapp.InstrumentedTestAllSuccess"}))
 
-        async with EspressoTestPreparation(device, path_to_apk=support_app, path_to_test_apk=support_test_app) as test_prep, \
-                AndroidTestOrchestrator(artifact_dir=str(tmpdir), run_under_orchestration=True) as orchestrator:
-            await test_prep.setup_foreign_apps([test_services_apk, android_orchestrator_apk])
+        bundle =EspressoTestSetup(path_to_apk=support_app, path_to_test_apk=support_test_app)
+        bundle.add_foreign_apks([test_services_apk, android_orchestrator_apk])
+        async with AndroidTestOrchestrator(artifact_dir=str(tmpdir), run_under_orchestration=True) as orchestrator:
             orchestrator.add_test_listener(TestExpectations())
-            await orchestrator.execute_test_plan_distributed(test_plan=test_generator(),
-                                                             test_appl_instances=test_prep.test_apps)
+            await orchestrator.execute_test_plan(test_plan=test_generator(),
+                                                 test_setup=bundle,
+                                                 devices=devices)
 
         assert test_count == 4
