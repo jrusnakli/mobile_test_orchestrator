@@ -16,7 +16,7 @@ class TestDeviceQueue:
 
         async def get_count(count: int = 0):
             # have to recurse to prevent each async with from relinquishing the device back:
-            if device_queue.empty():
+            if device_queue._q.empty():
                 return count
             async with device_queue.reserve():
                 return await get_count(count+1)

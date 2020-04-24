@@ -138,7 +138,7 @@ class TestAndroidTestOrchestrator(object):
                              test_parameters={"class": "com.linkedin.mtotestapp.InstrumentedTestSomeFailures"}))
 
         listener = TestExpectations()
-        test_setup = EspressoTestSetup(path_to_apk=support_app, path_to_test_apk=support_test_app)
+        test_setup = EspressoTestSetup.Builder(path_to_apk=support_app, path_to_test_apk=support_test_app).resolve()
         async with AndroidTestOrchestrator(artifact_dir=str(tmpdir)) as orchestrator:
             orchestrator.add_test_listener(listener)
             await orchestrator.execute_test_plan(test_plan=test_generator(),

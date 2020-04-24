@@ -99,7 +99,7 @@ class TestDeviceStorage:
             output = device.execute_remote_cmd("shell", "ls", "-d", new_remote_dir, capture_stdout=True)
             # expect "no such directory" error leading to exception, but just in case:
             assert new_remote_dir not in output or "No such file" in output
-        except Device.CommandExecutionFailureException as e:
+        except Device.CommandExecutionFailure as e:
             assert "no such" in str(e).lower()
 
         storage.make_dir(new_remote_dir)

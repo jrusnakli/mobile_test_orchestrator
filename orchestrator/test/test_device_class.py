@@ -185,7 +185,7 @@ class TestAndroidDevice:
         assert device.home_screen_active
         # Start up an app and test home screen is no longer active, and foreground app is correct
         app.start(activity=".MainActivity")
-        assert not device.home_screen_active
+        assert not device.home_screen_active()
         assert device.foreground_activity() == app.package_name
 
     def test_verify_install_on_non_installed_app(self, device: Device, in_tmp_dir: Path):

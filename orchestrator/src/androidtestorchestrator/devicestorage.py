@@ -42,7 +42,7 @@ class DeviceStorage(DeviceBased):
         :param remote_path: path to place file on the remote device
 
         :raises FileNotFoundError: if provide local path does not exist and is a file
-        :raises `Device.CommandExecutionFailureException`: if command to push file failed
+        :raises `Device.CommandExecutionFailure`: if command to push file failed
         """
         # NOTE: pushing to an app's data directory is not possible and leads to
         # a permission-denied response even when using "run-as"
@@ -59,7 +59,7 @@ class DeviceStorage(DeviceBased):
         :param timeout: timeout in seconds before raising TimeoutError, or None for no expiry
 
         :raises FileNotFoundError: if provide local path does not exist and is a file
-        :raises `Device.CommandExecutionFailureException`: if command to push file failed
+        :raises `Device.CommandExecutionFailure`: if command to push file failed
         """
         if not os.path.isfile(local_path):
             raise FileNotFoundError("No such file found: %s" % local_path)
@@ -75,7 +75,7 @@ class DeviceStorage(DeviceBased):
         :param run_as: user to run command under on remote device, or None
 
         :raises FileExistsError: if the locat path already exists
-        :raises `Device.CommandExecutionFailureException`: if command to pull file failed
+        :raises `Device.CommandExecutionFailure`: if command to pull file failed
         """
         if os.path.exists(local_path):
             log.warning("File %s already exists when pulling. Potential to overwrite files.", local_path)
@@ -94,14 +94,14 @@ class DeviceStorage(DeviceBased):
         :param timeout: timeout in seconds before raising TimeoutError, or None for no expiry
 
         :raises FileExistsError: if the locat path already exists
-        :raises `Device.CommandExecutionFailureException`: if command to pull file failed
+        :raises `Device.CommandExecutionFailure`: if command to pull file failed
         """
         if os.path.exists(local_path):
             log.warning("File %s already exists when pulling. Potential to overwrite files." % local_path)
         async with await self.device.monitor_remote_cmd('pull', '%s' % remote_path, '%s' % local_path) as proc:
             await proc.wait(timeout)
         if proc.returncode != 0:
-            raise Device.CommandExecutionFailureException(f"Failed to pull {remote_path} from device")
+            raise Device.CommandExecutionFailure(f"Failed to pull {remote_path} from device")
 
     def make_dir(self, path: str, run_as: Optional[str] = None) -> None:
         """
@@ -110,7 +110,7 @@ class DeviceStorage(DeviceBased):
         :param path: path to create
         :param run_as: user to run command under on remote device, or None
 
-        :raises `Device.CommandExecutionFailureException`: on failure to create directory
+        :raises `Device.CommandExecutionFailure`: on failure to create directory
         """
         if run_as:
             self.device.execute_remote_cmd("shell", "run-as", run_as, "mkdir", "-p", path, capture_stdout=False)
@@ -122,11 +122,11 @@ class DeviceStorage(DeviceBased):
         remove a file or directory from remote device
 
         :param path: path to remove
-        :param recursive: if True and path is directory, recursively remove all contents otherwise, othrewise raise
-            Exception if directory is not empty
+        :param recursive: if True and path is directory, recursively remove all contents otherwise will raise
+           `Device.CommandExecutionFailure` exception
         :param run_as: user to run command under on remote device, or None
 
-        :raises `Device.CommandExecutionFailureException`: on failure to remote specified path
+        :raises `Device.CommandExecutionFailure`: on failure to remove specified path
         """
         if run_as:
             cmd = ["shell", "run-as", run_as, "rm"]

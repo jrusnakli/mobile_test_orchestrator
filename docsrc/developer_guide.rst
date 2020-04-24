@@ -1,6 +1,6 @@
 .. _developer_guide:
 
-Welcome to AndroidTestOrchestrator's Developer Guide!
+Welcome to MobileTestOrchestrator's Developer Guide!
 =====================================================
 .. contents:: Table of Contents
 
@@ -109,9 +109,6 @@ The basic elements of the architecture are in a handful packages: *device*, *app
 
 Core Device Classes
 ###################
-
-The core class is *Device* that contains API for querying settings and properties of a device, methods for
-executing raw commands on the device via adb, and setting properties and such on the device:
 
 .. automodule:: androidtestorchestrator.device
    :members: Device, DeviceBased

@@ -58,7 +58,7 @@ class TestDeviceLog:
         try:
             time.sleep(5)  # give enough time for testapp to receive the intent and emmit log to logcat
             device_log.clear()
-        except Device.CommandExecutionFailureException as e:
+        except Device.CommandExecutionFailure as e:
             if retries > 0 and "Failed to clear" in str(e):
                 retries -= 1
             else:

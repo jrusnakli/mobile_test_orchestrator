@@ -20,10 +20,10 @@ class TestEspressoTestPreparation:
             pass
 
         async def run():
-            bundle = EspressoTestSetup(path_to_apk=support_app,
-                                       path_to_test_apk=support_test_app,
-                                       grant_all_user_permissions=False)
-            bundle.upload_test_vectors(root)
+            bundle = EspressoTestSetup.Builder(
+                path_to_apk=support_app,
+                path_to_test_apk=support_test_app,
+                grant_all_user_permissions=False).upload_test_vectors(root).resolve()
             async with bundle.apply(device) as test_app:
                 assert test_app
                 storage = DeviceStorage(device)

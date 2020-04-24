@@ -1,6 +1,6 @@
 """
-This package contains the core elements for device interaction: to query aspects of the device, c
-hange or get settings and properties, and core API for raw execution of commands on the device (via adb), etc.
+This package contains the core elements for device interaction: to query aspects of the device,
+change or get settings and properties, and core API for raw execution of commands on the device (via adb), etc.
 """
 
 import asyncio
@@ -156,7 +156,7 @@ class Device:
         Raised on insufficient storage on device (e.g. in install)
         """
 
-    class CommandExecutionFailureException(Exception):
+    class CommandExecutionFailure(Exception):
 
         def __init__(self, return_code: int, msg: str):
             super().__init__(msg)
@@ -223,22 +223,6 @@ class Device:
         "android.permission.WRITE_EXTERNAL_STORAGE",
     ]
 
-    WRITE_EXTERNAL_STORAGE_PERMISSION = "android.permission.WRITE_EXTERNAL_STORAGE"
-
-    @classmethod
-    def set_default_adb_timeout(cls, timeout: int) -> None:
-        """
-        :param timeout: timeout in seconds
-        """
-        cls.TIMEOUT_ADB_CMD = timeout
-
-    @classmethod
-    def set_default_long_adb_timeout(cls, timeout: int) -> None:
-        """
-        :param timeout: timeout in seconds
-        """
-        cls.TIMEOUT_LONG_ADB_CMD = timeout
-
     def __init__(self, device_id: str, adb_path: Optional[str] = None):
         """
         :param adb_path: path to the adb command on the host
@@ -263,13 +247,6 @@ class Device:
         self._device_server_datetime_offset: Optional[datetime.timedelta] = None
         self._api_level: Optional[int] = None
 
-    @classmethod
-    def adb_path(cls):
-        if "ANDROID_SDK_ROOT" not in os.environ:
-            raise Exception("Unable to find path to 'adb'; ANDROID_SDK_ROOT environment variable must be set")
-        adb = 'adb.exe' if sys.platform == 'win32' else 'adb'
-        return os.path.join(os.environ.get("ANDROID_SDK_ROOT"), "platform-tools", adb)
-
     @property
     def api_level(self) -> int:
         """
@@ -277,16 +254,13 @@ class Device:
         """
         if self._api_level:
             return self._api_level
-
         device_api_level = self.get_system_property("ro.build.version.sdk")
-
         if device_api_level:
             self._api_level = int(device_api_level)
         else:
             # assume default setting of 28 :-(
             log.warning("Unable to determine api level, assuming 28")
             self._api_level = 28
-
         return self._api_level
 
     @property
@@ -375,13 +349,43 @@ class Device:
             self._name = self.manufacturer + " " + self.model
         return self._name
 
+    @property
+    def external_storage_location(self) -> str:
+        """
+        :return: location on remote device of external storage
+        """
+        if not self._ext_storage:
+            output = self.execute_remote_cmd("shell", "echo", "$EXTERNAL_STORAGE")
+            for msg in output.splitlines():
+                if msg:
+                    self._ext_storage = msg.strip()
+                    break
+        return self._ext_storage or "/sdcard"
+
+    ######################
+    # command execution on device
+    #######################
+
+    # PyCharm detects erroneously that parens below are not required when they are
+    # noinspection PyRedundantParentheses
+    def _formulate_adb_cmd(self, *args: str) -> Tuple[str, ...]:
+        """
+        :param args: args to the adb command
+
+        :return: the adb command that executes the given arguments on the remote device from this host
+        """
+        if self.device_id:
+            return (self._adb_path, "-s", self.device_id, *args)
+        else:
+            return (self._adb_path, *args)
+
     def execute_remote_cmd(self, *args: str,
                            timeout: Optional[float] = None,
                            capture_stdout: bool = True,
                            stdout_redirect: Union[None, int, IO[AnyStr]] = subprocess.DEVNULL,
                            fail_on_presence_of_stderr: bool = False,
                            fail_on_error_code: Callable[[int], bool] = lambda x: x != 0) -> Optional[str]:
-        # TODO: remove capture_stdout argument
+        # TODO: remove capture_stdout argument and clean up this API
         """
         Execute a command on this device (via adb)
 
@@ -396,19 +400,19 @@ class Device:
 
         :return: None if no stdout output requested, otherwise a string containing the stdout output of the command
 
-        :raises: CommandExecutionFailureException: if command fails to execute on remote device
+        :raises: CommandExecutionFailure: if command fails to execute on remote device
         :raises: asyncio.TimeoutError if command fails to execute in time
         """
         timeout = timeout or Device.TIMEOUT_ADB_CMD
-        log.debug(f"Executing remote command: {self.formulate_adb_cmd(*args)}")
+        log.debug(f"Executing remote command: {self._formulate_adb_cmd(*args)}")
         completed = subprocess.run(
-            self.formulate_adb_cmd(*args), timeout=timeout, bufsize=0,
+            self._formulate_adb_cmd(*args), timeout=timeout, bufsize=0,
             stderr=subprocess.PIPE,
             stdout=subprocess.PIPE if capture_stdout and stdout_redirect == subprocess.DEVNULL else stdout_redirect,
             encoding='utf-8', errors='ignore'
         )
         if fail_on_error_code(completed.returncode) or (fail_on_presence_of_stderr and completed.stderr):
-            raise self.CommandExecutionFailureException(
+            raise self.CommandExecutionFailure(
                 completed.returncode,
                 f"Failed to execute '{' '.join(args)}' on device {self.device_id} [{completed.stderr}]")
         ret: Optional[str] = completed.stdout
@@ -456,7 +460,7 @@ class Device:
         # This is a lower level routine that clients of mdl-integration should not directly call. Other classes will
         # provide a cleaner and more direct API (e.g. TestApplication.run and DeviceLog.logcat will call this function
         # to do the heavy lifting, but they provide a clean external-facing interface to perform those functions).
-        cmd = self.formulate_adb_cmd(*args)
+        cmd = self._formulate_adb_cmd(*args)
         log.debug(f"Executing: {' '.join(cmd)}")
         proc = await asyncio.subprocess.create_subprocess_exec(*cmd,
                                                                stdout=asyncio.subprocess.PIPE,
@@ -464,6 +468,10 @@ class Device:
                                                                loop=loop or asyncio.events.get_event_loop(),
                                                                bufsize=0)  # noqa
         return self.Process(proc)
+
+    ###################
+    # Setting and getting device settings/properties
+    ##################
 
     def set_device_setting(self, namespace: str, key: str, value: str) -> Optional[str]:
         """
@@ -600,18 +608,78 @@ class Device:
         """
         return self.list("instrumentation")
 
-    @property
-    def external_storage_location(self) -> str:
+    def home_screen_active(self) -> bool:
         """
-        :return: location on remote device of external storage
+        :return: True if the home screen is currently in the foreground. Note that system pop-ups will result in this
+        function returning False.
+
+        :raises Exception: if unable to make determination
         """
-        if not self._ext_storage:
-            output = self.execute_remote_cmd("shell", "echo", "$EXTERNAL_STORAGE")
-            for msg in output.splitlines():
-                if msg:
-                    self._ext_storage = msg.strip()
+        found_potential_stack_match = False
+        stdout = self.execute_remote_cmd("shell", "dumpsys", "activity", "activities", capture_stdout=True,
+                                         timeout=Device.TIMEOUT_ADB_CMD)
+        # Find lines that look like this:
+        #   Stack #0:
+        # or
+        #   Stack #0: type=home mode=fullscreen
+        app_stack_pattern = re.compile(r'^Stack #(\d*):')
+        stdout_lines = stdout.splitlines()
+        for line in stdout_lines:
+            matches = app_stack_pattern.match(line.strip())
+            if matches:
+                if matches.group(1) == "0":
+                    return True
+                else:
+                    found_potential_stack_match = True
                     break
-        return self._ext_storage or "/sdcard"
+
+        # Went through entire activities stack, but no line matched expected format for displaying activity
+        if not found_potential_stack_match:
+            raise Exception(
+                f"Could not determine if home screen is in foreground because no lines matched expected "
+                f"format of \"dumpsys activity activities\" pattern. Please check that the format did not change:\n"
+                f"{stdout_lines}")
+
+        # Format of activities was fine, but detected home screen was not in foreground. But it is possible this is a
+        # Samsung device with silent packages in foreground. Need to check if that's the case, and app after them
+        # is the launcher/home screen.
+        foreground_activity = self.foreground_activity(ignore_silent_apps=True)
+        return bool(foreground_activity and foreground_activity.lower() == "com.sec.android.app.launcher")
+
+    def get_version(self, package: str) -> Optional[str]:
+        """
+        Get version of given package
+
+        :param package: package of inquiry
+
+        :return: version of given package or None if no such package
+        """
+        version = None
+        try:
+            output = self.execute_remote_cmd("shell", "dumpsys", "package", package)
+            for line in output.splitlines():
+                if line and "versionName" in line and '=' in line:
+                    version = line.split('=')[1].strip()
+                    break
+        except Exception as e:
+            log.error(f"Unable to get version for package {package} [{str(e)}]")
+        return version
+
+    def get_state(self) -> "Device.State":
+        """
+        :return: current state of emulaor ("device", "offline", "non-existent", ...)
+        """
+        try:
+            state = self.execute_remote_cmd("get-state", capture_stdout=True, timeout=10).strip()
+            mapping = {"device": Device.State.ONLINE,
+                       "offline": Device.State.OFFLINE}
+            return mapping.get(state, Device.State.UNKNOWN)
+        except Exception:
+            return Device.State.NON_EXISTENT
+
+    ###############
+    # Screenshot
+    ###############
 
     def take_screenshot(self, local_screenshot_path: str, timeout: Optional[int] = None) -> None:
         """
@@ -627,19 +695,6 @@ class Device:
             self.execute_remote_cmd("shell", "screencap", "-p", capture_stdout=False,
                                     stdout_redirect=f.fileno(),
                                     timeout=timeout or Device.TIMEOUT_SCREEN_CAPTURE)
-
-    # PyCharm detects erroneously that parens below are not required when they are
-    # noinspection PyRedundantParentheses
-    def formulate_adb_cmd(self, *args: str) -> Tuple[str, ...]:
-        """
-        :param args: args to the adb command
-
-        :return: the adb command that executes the given arguments on the remote device from this host
-        """
-        if self.device_id:
-            return (self._adb_path, "-s", self.device_id, *args)
-        else:
-            return (self._adb_path, *args)
 
     def input(self, subject: str, source: Optional[str] = None) -> None:
         """
@@ -671,24 +726,9 @@ class Device:
             log.error("ping is hanging and not yielding any results. Returning error code.")
             raise
 
-    def get_version(self, package: str) -> Optional[str]:
-        """
-        Get version of given package
-
-        :param package: package of inquiry
-
-        :return: version of given package or None if no such package
-        """
-        version = None
-        try:
-            output = self.execute_remote_cmd("shell", "dumpsys", "package", package)
-            for line in output.splitlines():
-                if line and "versionName" in line and '=' in line:
-                    version = line.split('=')[1].strip()
-                    break
-        except Exception as e:
-            log.error(f"Unable to get version for package {package} [{str(e)}]")
-        return version
+    #################
+    # Raw install API
+    #################
 
     def _verify_install(self, appl_path: str, package: str, screenshot_dir: Optional[str] = None) -> None:
         """
@@ -724,7 +764,9 @@ class Device:
 
     def install_synchronous(self, apk_path: str, as_upgrade: bool) -> None:
         """
-        install the given bundle, blocking until complete
+        Install the given bundle, blocking until complete
+        Preference should be to use `Application.from_apk_async` method.
+
         :param apk_path: local path to the apk to be installed
         :param as_upgrade: install as upgrade or not
         """
@@ -742,6 +784,7 @@ class Device:
         """
         Install given apk asynchronously, monitoring output for messages containing any of the given conditions,
         executing a callback if given when any such condition is met.
+        Preference should be to use `Application.from_apk_async` method.
 
         :param apk_path: bundle to install
         :param as_upgrade: whether as upgrade or not
@@ -807,51 +850,9 @@ class Device:
                     rm_cmd = ("shell", "rm", remote_data_path)
                     self.execute_remote_cmd(*rm_cmd, timeout=self.TIMEOUT_ADB_CMD)
 
-    # todo: why this is a property instead of a function?
-    @property
-    def home_screen_active(self) -> bool:
-        """
-        :return: True if the home screen is currently in the foreground. Note that system pop-ups will result in this
-        function returning False.
-
-        :raises Exception: if unable to make determination
-        """
-        found_potential_stack_match = False
-        stdout = self.execute_remote_cmd("shell", "dumpsys", "activity", "activities", capture_stdout=True,
-                                         timeout=Device.TIMEOUT_ADB_CMD)
-        # Find lines that look like this:
-        #   Stack #0:
-        # or
-        #   Stack #0: type=home mode=fullscreen
-        app_stack_pattern = re.compile(r'^Stack #(\d*):')
-        stdout_lines = stdout.splitlines()
-        for line in stdout_lines:
-            matches = app_stack_pattern.match(line.strip())
-            if matches:
-                if matches.group(1) == "0":
-                    return True
-                else:
-                    found_potential_stack_match = True
-                    break
-
-        # Went through entire activities stack, but no line matched expected format for displaying activity
-        if not found_potential_stack_match:
-            raise Exception(
-                f"Could not determine if home screen is in foreground because no lines matched expected "
-                f"format of \"dumpsys activity activities\" pattern. Please check that the format did not change:\n"
-                f"{stdout_lines}")
-
-        # Format of activities was fine, but detected home screen was not in foreground. But it is possible this is a
-        # Samsung device with silent packages in foreground. Need to check if that's the case, and app after them
-        # is the launcher/home screen.
-        foreground_activity = self.foreground_activity(ignore_silent_apps=True)
-        return bool(foreground_activity and foreground_activity.lower() == "com.sec.android.app.launcher")
-
-    def go_home(self) -> None:
-        """
-        Equivalent to hitting home button to go to home screen
-        """
-        self.input("KEYCODE_HOME")
+    ####################
+    # Navigation related
+    ####################
 
     def _activity_stack_top(self, filter: Callable[[str], bool] = lambda x: True) -> Optional[str]:
         """
@@ -881,6 +882,31 @@ class Device:
         ignored = self.SILENT_RUNNING_PACKAGES if ignore_silent_apps else []
         return self._activity_stack_top(filter=lambda x: x.lower() not in ignored)
 
+    def get_activity_stack(self) -> List[str]:
+        output = self.execute_remote_cmd("shell", "dumpsys", "activity", "activities", timeout=10)
+        activity_list = []
+        # Find lines that look like this:
+        #  * TaskRecord{133fbae #1340 I=com.google.android.apps.nexuslauncher/.NexusLauncherActivity U=0 StackId=0 sz=1}
+        # or
+        #  * TaskRecord{94c8098 #1791 A=com.android.chrome U=0 StackId=454 sz=1}
+        app_record_pattern = re.compile(r'^\* TaskRecord\{[a-f0-9-]* #\d* [AI]=(com\.[a-zA-Z0-9.]*)[ /].*')
+        for line in output.splitlines():
+            matches = app_record_pattern.match(line.strip())
+            if matches:
+                app_package = matches.group(1)
+                activity_list.append(app_package)
+        return activity_list
+
+    def go_home(self) -> None:
+        """
+        Equivalent to hitting home button to go to home screen
+        """
+        self.input("KEYCODE_HOME")
+
+    ################
+    # Screen related
+    ################
+
     def is_screen_on(self) -> bool:
         """
         :return: whether device's screen is on
@@ -897,20 +923,9 @@ class Device:
         """
         self.execute_remote_cmd("shell", "input", "keyevent", "KEYCODE_POWER", timeout=10)
 
-    def get_activity_stack(self) -> List[str]:
-        output = self.execute_remote_cmd("shell", "dumpsys", "activity", "activities", timeout=10)
-        activity_list = []
-        # Find lines that look like this:
-        #  * TaskRecord{133fbae #1340 I=com.google.android.apps.nexuslauncher/.NexusLauncherActivity U=0 StackId=0 sz=1}
-        # or
-        #  * TaskRecord{94c8098 #1791 A=com.android.chrome U=0 StackId=454 sz=1}
-        app_record_pattern = re.compile(r'^\* TaskRecord\{[a-f0-9-]* #\d* [AI]=(com\.[a-zA-Z0-9.]*)[ /].*')
-        for line in output.splitlines():
-            matches = app_record_pattern.match(line.strip())
-            if matches:
-                app_package = matches.group(1)
-                activity_list.append(app_package)
-        return activity_list
+    ###############
+    # host-to-device port configurations
+    ###############
 
     def reverse_port_forward(self, device_port: int, local_port: int) -> None:
         """
@@ -952,23 +967,40 @@ class Device:
         else:
             self.execute_remote_cmd("forward", "--remove-all")
 
-    def get_state(self) -> "Device.State":
-        """
-        :return: current state of emulaor ("device", "offline", "non-existent", ...)
-        """
-        try:
-            state = self.execute_remote_cmd("get-state", capture_stdout=True, timeout=10).strip()
-            mapping = {"device": Device.State.ONLINE,
-                       "offline": Device.State.OFFLINE}
-            return mapping.get(state, Device.State.UNKNOWN)
-        except Exception:
-            return Device.State.NON_EXISTENT
+    ################
+    # device control
+    ################
 
     def reboot(self, wait_until_online: bool = True) -> None:
         self.execute_remote_cmd("reboot")
         if wait_until_online:
             while self.get_state() != Device.State.ONLINE:
                 time.sleep(1)
+
+    ##################
+    # class properties
+    ##################
+
+    @classmethod
+    def adb_path(cls):
+        if "ANDROID_SDK_ROOT" not in os.environ:
+            raise Exception("Unable to find path to 'adb'; ANDROID_SDK_ROOT environment variable must be set")
+        adb = 'adb.exe' if sys.platform == 'win32' else 'adb'
+        return os.path.join(os.environ.get("ANDROID_SDK_ROOT"), "platform-tools", adb)
+
+    @classmethod
+    def set_default_adb_timeout(cls, timeout: int) -> None:
+        """
+        :param timeout: timeout in seconds
+        """
+        cls.TIMEOUT_ADB_CMD = timeout
+
+    @classmethod
+    def set_default_long_adb_timeout(cls, timeout: int) -> None:
+        """
+        :param timeout: timeout in seconds
+        """
+        cls.TIMEOUT_LONG_ADB_CMD = timeout
 
 
 class DeviceBased(object):
@@ -977,12 +1009,11 @@ class DeviceBased(object):
     with an underlying single device.  Prevents duplication by
     providing the association to the device and a property to
     get access to the associated device.
+
+    :param device: which device is associated with this instance
     """
 
     def __init__(self, device: Device) -> None:
-        """
-        :param device: which device is associated with this instance
-        """
         self._device = device
 
     @property

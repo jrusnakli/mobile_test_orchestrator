@@ -1,14 +1,67 @@
 import asyncio
+import multiprocessing
 import os
+import queue
 import subprocess
-from abc import ABC
+from abc import ABC, abstractmethod
 from asyncio import Queue
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
-from typing import AsyncGenerator, Callable, Optional, Dict, Union, Set, Coroutine, Any, List
+from typing import AsyncGenerator, Callable, Optional, Dict, Union, Set, Coroutine, Any, List, TypeVar
 
 from androidtestorchestrator.device import Device
 from androidtestorchestrator.emulators import Emulator, EmulatorBundleConfiguration, log
+
+
+class AbstractAsyncQueue(ABC):
+
+    @abstractmethod
+    async def get(self) -> Any:
+        """
+        :return: item from queue
+        """
+
+    @abstractmethod
+    async def put(self, item) -> None:
+        """
+        Put an item in the queue
+        :param item: item to place in the queue
+        """
+
+
+Q = TypeVar('Q', "queue.Queue", "multiprocessing.Queue")
+
+
+class AsyncQueueAdapter(AbstractAsyncQueue):
+    """
+    Adapt a non-async queue to be asynchronous (via polling)
+
+    :param queue: underlying non-async queue to draw from/push to
+    :param polling_interval" time interval to asyncio.sleep in between get_nowait calls to underlying non-async queue
+    """
+
+    def __init__(self, q: Q, polling_interval: int = 0.5):
+        self._polling_interval = polling_interval
+        self._queue = q
+
+    async def get(self):
+        item = None
+        while not item:
+            try:
+                return self._queue.get_nowait()
+            except queue.Empty:
+                await asyncio.sleep(self._polling_interval)
+
+    async def put(self, item: Any):
+        while True:
+            try:
+                self._queue.put_nowait(item)
+                break
+            except queue.Full:
+                await asyncio.sleep(self._polling_interval)
+
+
+AsyncQ = TypeVar('AsyncQ', AbstractAsyncQueue, asyncio.Queue, covariant=False)
 
 
 class BaseDeviceQueue(ABC):
@@ -16,14 +69,11 @@ class BaseDeviceQueue(ABC):
     Abstract base class for all device queues.
     """
 
-    def __init__(self, queue: Queue):
+    def __init__(self, queue: AsyncQ):
         """
         :param queue: queue to server Device's from.
         """
         self._q = queue
-
-    def empty(self) -> bool:
-        return self._q.empty()
 
     @staticmethod
     def _list_devices(filt: Callable[[str], bool]):
@@ -63,7 +113,7 @@ class AsyncDeviceQueue(BaseDeviceQueue):
     whether devices are Emulator's or Device's).
     """
 
-    def __init__(self, queue: Queue):
+    def __init__(self, queue: AsyncQ):
         """
         :param queue: queue to server Device's from.
         """
@@ -79,6 +129,16 @@ class AsyncDeviceQueue(BaseDeviceQueue):
             yield device
         finally:
             await self._q.put(device)
+
+    def from_external(self, queue: multiprocessing.Queue) -> "AsyncDeviceQueue":
+        """
+        Return an AsyncDeviceQueue instance from the given multiprocessing Queue (i.e., with devices provided
+        from an external process, which must be running on the same host)
+
+        :param queue: non-async Queue to draw devices from
+        :return: an AsynDeviceQueue that draws from the given (non-async) queue
+        """
+        return AsyncEmulatorQueue(AsyncQueueAdapter(queue))
 
 
 class AsyncEmulatorQueue(AsyncDeviceQueue):
@@ -132,7 +192,7 @@ class AsyncEmulatorQueue(AsyncDeviceQueue):
                 raise AsyncEmulatorQueue.LeaseExpired(self)
             return object.__getattribute__(self, item)
 
-    def __init__(self, queue: Queue, max_lease_time: Optional[int] = None):
+    def __init__(self, queue: AsyncQ, max_lease_time: Optional[int] = None):
         """
         :param queue: queue used to serve emulators
         :param max_lease_time: optional maximum amount of time client can hold a "lease" on this emulator, with

@@ -28,13 +28,12 @@ class DeviceLog(DeviceBased):
         """
         Context manager to capture continuous logcat output from an Android device to a file.
         On exit, will terminat the logcat process, closing the file
+
+        :param device: device whose log we want to monitor
+        :param output_path: file path where logcat output is to be captured
         """
 
         def __init__(self, device: Device, output_path: str):
-            """
-            :param device: device whose log we want to monitor
-            :param output_path: file path where logcat output is to be captured
-            """
             super(DeviceLog.LogCapture, self).__init__(device)
             self._proc: Optional[Popen] = None
             if os.path.exists(output_path):
@@ -124,5 +123,6 @@ class DeviceLog(DeviceBased):
         ...     # do_something()
         ...     log_capture.mark_end("some_task")
         ... # file closed, logcat process terminated
+
         """
         return self.LogCapture(self.device, output_path=output_path)
