@@ -1,3 +1,8 @@
+"""
+This package contains the core elements for device interaction: to query aspects of the device, c
+hange or get settings and properties, and core API for raw execution of commands on the device (via adb), etc.
+"""
+
 import asyncio
 import datetime
 import logging
@@ -6,9 +11,8 @@ import re
 import subprocess
 import sys
 import time
-from abc import ABC
 
-from asyncio import AbstractEventLoop, Queue
+from asyncio import AbstractEventLoop
 from contextlib import suppress, asynccontextmanager
 from enum import Enum
 from types import TracebackType
@@ -24,13 +28,15 @@ from typing import (
     Optional,
     Union,
     Type,
-    Tuple,
-    AsyncGenerator)
+    Tuple)
 
 from apk_bitminer.parsing import AXMLParser  # type: ignore
 
 log = logging.getLogger("MTO")
 log.setLevel(logging.WARNING)
+
+
+__all__ = ["Device", "DeviceBased"]
 
 
 class DeviceLock:
@@ -59,18 +65,27 @@ async def _device_lock(device: "Device") -> AsyncIterator["Device"]:
 class Device:
     """
     Class for interacting with a device via Google's adb command. This is intended to be a direct bridge to the same
-    functionality as adb, with minimized embellishments
+    functionality as adb, with minimized embellishments, but providing a clean Python API.
     """
 
     class State(Enum):
+        """
+        An enumeration of possible device states
+        """
+
+        """Device is detected but offline"""
         OFFLINE: str = "offline"
+        """Device is online and active"""
         ONLINE: str = "device"
+        """State of device is unknown"""
         UNKNOWN: str = "unknown"
+        """Device is not detected"""
         NON_EXISTENT: str = "non-existent"
 
     class Process:
         """
-        Wraps below async generator in context manager to ensure proper closure
+        Provides a basic interface to an underlying asyncio.Subprocess, providing access to an async generator
+        for iterating over lines of output asynchronously
         """
         def __init__(self, process: asyncio.subprocess.Process):
             self._proc = process
@@ -97,6 +112,7 @@ class Device:
         async def output(self,  unresponsive_timeout: Optional[float] = None) -> AsyncIterator[str]:
             """
             Async iterator over lines of output from process
+
             :param unresponsive_timeout: raise TimeoutException if not None and time to receive next line exceeds
                this given time span
             """
@@ -110,6 +126,7 @@ class Device:
         async def stop(self, force: bool = False, timeout: Optional[float] = None) -> None:
             """
             Signal process to terminate, and wait for process to end
+
             :param force: whether to kill (harsh) or simply terminate
             :param timeout: raise TimeoutException if process fails to truly terminate in timeout seconds
             """
@@ -122,6 +139,7 @@ class Device:
         async def wait(self, timeout: Optional[float] = None) -> None:
             """
             Wait for process to end
+
             :param timeout: raise TimeoutException if waiting beyond this many seconds
             """
             if timeout is None:
@@ -133,6 +151,22 @@ class Device:
         def returncode(self) -> Optional[int]:
             return self._proc.returncode
 
+    class InsufficientStorageError(Exception):
+        """
+        Raised on insufficient storage on device (e.g. in install)
+        """
+
+    class CommandExecutionFailureException(Exception):
+
+        def __init__(self, return_code: int, msg: str):
+            super().__init__(msg)
+            self._return_code = return_code
+
+        @property
+        def return_code(self) -> int:
+            return self._return_code
+
+    ERROR_MSG_INSUFFICIENT_STORAGE = "INSTALL_FAILED_INSUFFICIENT_STORAGE"
     # These packages may appear as running when looking at the activities in a device's activity stack. The running
     # of these packages do not affect interaction with the app under test. With the exception of the Samsung
     # MtpApplication (pop-up we can't get rid of that asks the user to update their device), they are also not visible
@@ -141,12 +175,6 @@ class Device:
     # foreground application the user is interacting with.
     SILENT_RUNNING_PACKAGES = ["com.samsung.android.mtpapplication", "com.wssyncmldm", "com.bitbar.testdroid.monitor"]
 
-    class InsufficientStorageError(Exception):
-        """
-        Raised on insufficient storage on device (e.g. in install)
-        """
-
-    ERROR_MSG_INSUFFICIENT_STORAGE = "INSTALL_FAILED_INSUFFICIENT_STORAGE"
 
     override_ext_storage = {
         # TODO: is this still needed (in lieu of updates to OS SW):
@@ -196,16 +224,6 @@ class Device:
     ]
 
     WRITE_EXTERNAL_STORAGE_PERMISSION = "android.permission.WRITE_EXTERNAL_STORAGE"
-
-    class CommandExecutionFailureException(Exception):
-
-        def __init__(self, return_code: int, msg: str):
-            super().__init__(msg)
-            self._return_code = return_code
-
-        @property
-        def return_code(self) -> int:
-            return self._return_code
 
     @classmethod
     def set_default_adb_timeout(cls, timeout: int) -> None:
@@ -378,8 +396,8 @@ class Device:
 
         :return: None if no stdout output requested, otherwise a string containing the stdout output of the command
 
-        :raises CommandExecutionFailureException: if command fails to execute on remote device
-        :raises asynio.TimeoutError if command fails to execute in time
+        :raises: CommandExecutionFailureException: if command fails to execute on remote device
+        :raises: asyncio.TimeoutError if command fails to execute in time
         """
         timeout = timeout or Device.TIMEOUT_ADB_CMD
         log.debug(f"Executing remote command: {self.formulate_adb_cmd(*args)}")
@@ -953,9 +971,12 @@ class Device:
                 time.sleep(1)
 
 
-class RemoteDeviceBased(object):
+class DeviceBased(object):
     """
-    Classes that are based on the context of a remote device
+    Convenience base class for subclasses that  are associated
+    with an underlying single device.  Prevents duplication by
+    providing the association to the device and a property to
+    get access to the associated device.
     """
 
     def __init__(self, device: Device) -> None:
@@ -970,69 +991,3 @@ class RemoteDeviceBased(object):
         :return: the device associated with this instance
         """
         return self._device
-
-
-class BaseDeviceQueue(ABC):
-
-    def __init__(self, queue: Queue):
-        """
-        :param queue: queue to server Device's from.
-        """
-        self._q = queue
-
-    def empty(self) -> bool:
-        return self._q.empty()
-
-    @staticmethod
-    def _list_devices(filt: Callable[[str], bool]):
-        cmd = [Device.adb_path(), "devices"]
-        completed = subprocess.run(" ".join(cmd), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, shell=True)
-        device_ids = []
-        for line in completed.stdout.splitlines():
-            line = line.decode('utf-8').strip()
-            if line.strip().endswith("device"):
-                device_id = line.split()[0]
-                if filt(device_id):
-                    device_ids.append(device_id)
-        return device_ids
-
-    @classmethod
-    async def discover(cls, filt: Callable[[str], bool] = lambda x: True) -> "BaseDeviceQueue":
-        """
-        Discover all online devices and create a DeviceQueue with them
-
-        :param filt: only include devices filtered by device id through this given filter, if provided
-
-        :return: Created DeviceQueue instance containing all online devices
-        """
-        queue = Queue(20)
-        device_ids = cls._list_devices(filt)
-        if not device_ids:
-            raise Exception("No device were discovered based on any filter critera. " +
-                            f"output of 'adb devices' was: {completed.stdout}")
-        for device_id in device_ids:
-            await queue.put(Device(device_id))
-        return cls(queue)
-
-
-class AsyncDeviceQueue(BaseDeviceQueue):
-
-    def __init__(self, queue: Queue):
-        """
-        :param queue: queue to server Device's from.
-        """
-        super().__init__(queue)
-
-    @asynccontextmanager
-    async def reserve(self) -> AsyncGenerator[Device, None]:
-        """
-        :return: a reserved Device
-        """
-        emulator = await self._q.get()
-        try:
-            yield emulator
-        finally:
-            await self._q.put(emulator)
-
-    def empty(self):
-        return self._q.empty()

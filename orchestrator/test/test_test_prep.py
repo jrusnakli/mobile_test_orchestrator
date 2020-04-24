@@ -45,21 +45,21 @@ class TestEspressoTestPreparation:
 
     def test_upload_test_vectors_no_such_files(self, device, support_app, support_test_app,):
         with pytest.raises(IOError):
-            bundle = EspressoTestSetup(path_to_apk=support_app,
-                                       path_to_test_apk=support_test_app,
-                                       grant_all_user_permissions=False)
+            bundle = EspressoTestSetup.Builder(path_to_apk=support_app,
+                                               path_to_test_apk=support_test_app,
+                                               grant_all_user_permissions=False)
 
-            bundle.upload_test_vectors("/no/such/path")
+            bundle.upload_test_vectors("/no/such/path").resolve()
 
     @pytest.mark.asyncio
     async def test_foreign_apk_install(self, device: Device, support_app: str, support_test_app: str):
-        prep = EspressoTestSetup(path_to_test_apk=support_test_app, path_to_apk=support_app)
-        prep.add_foreign_apks([support_test_app])
         device.set_system_property("debug.mock2", "\"\"\"\"")
         now = device.get_device_setting("system", "dim_screen")
         new = {"1": "0", "0": "1"}[now]
-        prep.configure_settings(settings={'system:dim_screen': new},
-                                properties={"debug.mock2": "5555"})
+        prep = EspressoTestSetup.Builder(path_to_test_apk=support_test_app, path_to_apk=support_app).\
+            add_foreign_apks([support_test_app]).\
+            configure_settings(settings={'system:dim_screen': new},
+                               properties={"debug.mock2": "5555"}).resolve()
 
         async with prep.apply(device) as test_app:
             test_app.uninstall()

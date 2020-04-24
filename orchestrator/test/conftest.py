@@ -17,7 +17,8 @@ from typing import Optional, Tuple, List
 
 from androidtestorchestrator.application import Application, TestApplication, ServiceApplication
 from androidtestorchestrator.device import Device
-from androidtestorchestrator.emulators import EmulatorBundleConfiguration, AsyncEmulatorQueue, Emulator
+from androidtestorchestrator.emulators import EmulatorBundleConfiguration, Emulator
+from androidtestorchestrator.devicequeues import AsyncEmulatorQueue
 from . import support
 from .support import uninstall_apk
 

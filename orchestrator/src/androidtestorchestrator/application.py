@@ -1,3 +1,13 @@
+"""
+This package contains classes associated with an application installed on the device.
+An application is distinguished from a bundle (an apk).  A bundle is a package that only after installed
+creates an application on the target device.  Thus, an application only makes sense in the context of the
+device on which it can be launched.
+
+The base class for applications is *Application* with *ServiceApplication* and *TestApplication* inheriting
+from that class to provide additional APIs specific to service application and (Espresso) test applications.
+"""
+
 import asyncio
 import logging
 import subprocess
@@ -7,7 +17,11 @@ from asyncio import AbstractEventLoop
 from apk_bitminer.parsing import AXMLParser  # type: ignore
 from typing import List, TypeVar, Type, Optional, AsyncContextManager, Dict, Union, Any, Set
 
-from .device import Device, RemoteDeviceBased
+from .device import Device, DeviceBased
+
+
+__all__ = ["Application", "ServiceApplication", "TestApplication"]
+
 
 log = logging.getLogger(__name__)
 
@@ -17,33 +31,32 @@ _TApp = TypeVar('_TApp', bound='Application')
 _TTestApp = TypeVar('_TTestApp', bound='TestApplication')
 
 
-class Application(RemoteDeviceBased):
+class Application(DeviceBased):
     """
     Defines an application installed on a remotely USB-connected device. Provides an interface for stopping,
-    starting an application, and such.
+    starting an application, and such. It is recommended to create instances via the class-method `from_apk` or
+    `from_apk_async`
 
-    An application is distinguished from a bundle (an apk).  A bundle is a package that only after installed
-    creates an application on the target device.  Thus, an application only makes sense in the context of the
-    device on which it can be launched.
+    :param manifest: AXMLParser instance representing manifest from an apk, or Dict of key/value string pairs of
+       package name and permissions for app;  if Dict, the dictionary MUST contain "package_name" as a key, and
+       optionally contain "permissions" as a key (otherwise assumed to be empty)
+    :param device: which device app resides on
+
+    >>> async def install(device:Device):
+    ...     app = await Application.from_apk_async("some.apk", device)
+    ...     app.grant_permissions(["android.permission.WRITE_EXTERNAL_STORAGE"])
+
+    or the non-async version
+
+    >>> def install(device: Device):
+    ...    app = Application.from_apk("some.apk", device)
+    ...    app.grant_permissions(["android.permission.WRITE_EXTERNAL_STORAGE"])
     """
 
     SILENT_RUNNING_PACKAGES = ["com.samsung.android.mtpapplication", "com.wssyncmldm", "com.bitbar.testdroid.monitor"]
     SLEEP_GRANT_PERMISSION = 4
 
     def __init__(self, device: Device, manifest: Union[AXMLParser, Dict[str, str]]):
-        """
-        Create an instance of a remote app and the interface to manipulate it.
-        It is recommended to create instances via the class-method `install`:
-
-        :param manifest: AXMLParser instance representing manifest from an apk, or Dict of key/value string pairs of
-           package name and permissions for app;  if Dict, the dictionary MUST contain "package_name" as a key, and
-           optionally contain "permissions" as a key (otherwise assumed to be empty)
-        :param device: which device app resides on
-
-        >>> device = Device("some_serial_id", "/path/to/adb")
-        >>> app = asyncio.wait(Application.from_apk_async("some.apk", device))
-        >>> app.grant_permissions(["android.permission.WRITE_EXTERNAL_STORAGE"])
-        """
         super().__init__(device)
         self._version: Optional[str] = None  # loaded on-demand first time self.version called
         self._package_name: str = manifest.package_name if isinstance(manifest, AXMLParser) else manifest.get("package_name", None)
@@ -93,7 +106,7 @@ class Application(RemoteDeviceBased):
     @classmethod
     async def from_apk_async(cls: Type[_TApp], apk_path: str, device: Device, as_upgrade: bool = False) -> _TApp:
         """
-        Install provided application asynchronously.  This allows the output of the install to be processed
+        Install application asynchronously.  This allows the output of the install to be processed
         in a streamed fashion.  This can be useful on some devices that are non-standard android where installs
         cause (for example) a pop-up requesting direct user permission for the install -- monitoring for a specific
         message to simulate the tap to confirm the install.
@@ -182,27 +195,27 @@ class Application(RemoteDeviceBased):
         """
         return self.grant_permissions(self._granted_permissions)
 
-    def start(self, activity: Optional[str] = None, *options: str, intent: Optional[str] = None) -> None:
+    def start(self, activity: str, *options: str, intent: Optional[str] = None) -> None:
         """
         start an app on the device
 
-        :param activity: which Android Activity to invoke on start of app, or None for default (MainActivity)
+        :param activity: which Android Activity to invoke on start of app
         :param intent: which Intent to invoke, or None for default intent
         :param options: string list of options to pass on to the "am start" command on the remote device, or None
         """
         # embellish to fully qualified name as Android expects
-        activity = f"{self.package_name}/{activity}" if activity else f"{self.package_name}/{self.package_name}.MainActivity"
+        activity = f"{self.package_name}/{activity}"
         if intent:
             options = ("-a", intent, *options)
 
         self.device.execute_remote_cmd("shell", "am", "start", "-n", activity, *options, capture_stdout=False)
 
-    async def launch(self, activity: Optional[str] = None, *options: str, intent: Optional[str] = None,
+    async def launch(self, activity: str, *options: str, intent: Optional[str] = None,
                      timeout: Optional[int] = None) -> None:
         """
         start the app, monitoring logcat output until it indicates app has either Displayed or crashed
 
-        :param activity: which Android Activity to invoke on start of app, or None for default (MainActivity)
+        :param activity: which Android Activity to invoke on start of app
         :param intent: which Intent to invoke, or None for default intent
         :param options: string list of options to pass on to the "am start" command on the remote device, or None
         :param timeout: if not none, timeout if no detection of startup after at least this many seconds
@@ -306,7 +319,7 @@ class ServiceApplication(Application):
     Class representing an Android application that is specifically a service
     """
 
-    def start(self, activity: str,  # type: ignore # TODO: activity should be Optional, as it is in Application.
+    def start(self, activity: str,  # type: ignore
               *options: str, intent: Optional[str] = None, foreground: bool = True) -> None:
 
         """
@@ -318,8 +331,6 @@ class ServiceApplication(Application):
         :param foreground: whether to start in foreground or not (Android O+
             does not allow background starts any longer)
         """
-        # TODO: This is bad. Breaks liskov substitution principle.
-
         if not activity:
             raise Exception("Must provide an activity for ServiceApplication")
 
@@ -356,20 +367,23 @@ class ServiceApplication(Application):
 class TestApplication(Application):
     """
     Class representing an Android test application installed on a remote device
+    It is recommended to  create instances via the class-method `from_apk` or `from_apk_async`:
+
+    >>> async def install_test_app(device: Device):
+    ...    await test_app = TestApplication.from_apk("some.apk", device)
+    ...    test_app.run()
+
+    or the non-async version:
+
+    >>> def install_test_app(device: Device):
+    ...    test_app = TestApplication.from_apk("some.apk", device)
+    ...    test_app.run()
+
+    :param device: which device app resides on
+    :param mainfest: contains info about app
     """
 
     def __init__(self, device: Device, manifest: AXMLParser):
-        """
-        Create an instance of a remote test app and the interface to manipulate it.
-        It is recommended to  create instances via the class-method `install`:
-
-        >>> device = Device("some_serial_id", "/path/to/adb")
-        >>> test_app = TestApplication.from_apk("some.apk", device)
-        >>> test_app.run()
-
-        :param device: which device app resides on
-        :param mainfest: contains info about app
-        """
         super(TestApplication, self).__init__(device=device, manifest=manifest)
         valid = (hasattr(manifest, "instrumentation") and (manifest.instrumentation is not None) and
                  bool(manifest.instrumentation.target_package) and bool(manifest.instrumentation.runner))

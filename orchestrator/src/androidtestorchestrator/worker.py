@@ -10,7 +10,8 @@ from .device import Device
 from .testprep import EspressoTestSetup
 from .reporting import TestExecutionListener
 from .devicestorage import DeviceStorage
-from .devicelog import DeviceLog, LogcatTagDemuxer
+from .devicelog import DeviceLog
+from androidtestorchestrator.parsing import LogcatTagDemuxer
 from .parsing import InstrumentationOutputParser, LineParser
 from .timing import Timer
 

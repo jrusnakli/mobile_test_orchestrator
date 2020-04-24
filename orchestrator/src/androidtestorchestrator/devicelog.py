@@ -1,3 +1,6 @@
+"""
+The *devielog* package provides the API for streaming, capturing and manipulating the device log
+"""
 import os
 from asyncio import AbstractEventLoop
 
@@ -6,24 +9,25 @@ from subprocess import Popen
 from types import TracebackType
 
 from contextlib import suppress
-from typing import AsyncContextManager, Dict, Tuple, Optional, TextIO, Type, Any
+from typing import AsyncContextManager, Optional, TextIO, Type, Any
 
-from .parsing import LineParser
-from .device import Device, RemoteDeviceBased
+from .device import Device, DeviceBased
 
 log = logging.getLogger(__file__)
 log.setLevel(logging.WARNING)
 
+__all__ = ["DeviceLog"]
 
-class DeviceLog(RemoteDeviceBased):
+
+class DeviceLog(DeviceBased):
     """
     Class to read, capture and clear a device's log (Android logcat)
     """
 
-    class LogCapture(RemoteDeviceBased):
+    class LogCapture(DeviceBased):
         """
-        context manager to capture logcat output from an Android device to a file, providing interface
-        to mark key positions within the file (e.g. start and end of a test)
+        Context manager to capture continuous logcat output from an Android device to a file.
+        On exit, will terminat the logcat process, closing the file
         """
 
         def __init__(self, device: Device, output_path: str):
@@ -60,13 +64,15 @@ class DeviceLog(RemoteDeviceBased):
     DEFAULT_LOGCAT_BUFFER_SIZE = "5M"
 
     def __init__(self, device: Device) -> None:
+        """
+        :param device: Device from which to capture the log
+        """
         super().__init__(device)
         device.execute_remote_cmd("logcat", "-G", self.DEFAULT_LOGCAT_BUFFER_SIZE)
 
     def get_logcat_buffer_size(self, channel: str = 'main') -> Optional[str]:
         """
-        @:param channel: which channel's size ('main', 'system', or 'crash')
-
+        :param channel: which channel's size ('main', 'system', or 'crash')
         :return: the logcat buffer size for given channel, or None if not defined
         """
         output = self.device.execute_remote_cmd("logcat", "-g", capture_stdout=True)
@@ -95,19 +101,20 @@ class DeviceLog(RemoteDeviceBased):
         """
         async generator to continually output lines from logcat until client
         exits processing (exist async iterator), at which point process is killed
+
         :param options: list of string options to provide to logcat command
         :param loop: specific asyncio loop to use or None for default
-
         :return: AsyncGenerator to iterate over lines of logcat
-
         :raises: asyncio.TimeoutError if timeout is not None and timeout is reached
         """
         return await self.device.monitor_remote_cmd("logcat", *options, loop=loop)
 
     def capture_to_file(self, output_path: str) -> "LogCapture":
         """
-        :param output_path: path to capture log output to
+        Capture log to a file. This is a convenience method over instantiating
+        an instance of LogCaptur directly
 
+        :param output_path: path to capture log output to
         :return: context manager for capturing output to specified file
 
         >>> device = Device("some_serial_id", "/path/to/adb")
@@ -119,43 +126,3 @@ class DeviceLog(RemoteDeviceBased):
         ... # file closed, logcat process terminated
         """
         return self.LogCapture(self.device, output_path=output_path)
-
-
-class LogcatTagDemuxer(LineParser):
-    """
-    Concrete LineParser that processes lines of output from logcat filtered on a set of tags and demuxes those lines
-    based on a specific handler for each tag
-    """
-
-    def __init__(self, handlers: Dict[str, Tuple[str, LineParser]]):
-        """
-        :param handlers: dictionary of tuples of (logcat priority, handler)
-        """
-        # remove any spec on priority from tags:
-        super().__init__()
-        self._handlers = {tag: handlers[tag][1] for tag in handlers}
-
-    def parse_line(self, line: str) -> None:
-        """
-        farm each incoming line to associated handler based on adb tag
-        :param line: line to be parsed
-        """
-        if not self._handlers:
-            return
-        if line.startswith("-----"):
-            # ignore, these are startup output not actual logcat output from device
-            return
-        try:
-            # extract basic tag from line of logcat:
-            tag = line.split('(', 2)[0]
-            if not len(tag) > 2 and tag[1] == '/':
-                log.debug("Invalid tag in logcat output: %s" % line)
-                return
-            tag = tag[2:]
-            if tag not in self._handlers:
-                log.error("Unrecognized tag!? %s" % tag)
-                return
-            # demux and handle through the proper handler
-            self._handlers[tag].parse_line(line)
-        except ValueError:
-            log.error("Unexpected logcat line format: %s" % line)

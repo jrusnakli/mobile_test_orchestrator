@@ -1,8 +1,9 @@
 import logging
 
 from abc import abstractmethod, ABC
-from typing import List, Optional, Any
+from typing import List, Optional, Any, Dict, Tuple
 
+from androidtestorchestrator.devicelog import log
 from .reporting import TestExecutionListener
 from .timing import StopWatch
 
@@ -439,3 +440,43 @@ class InstrumentationOutputParser(LineParser):
             self._report_test_run_failed(
                 "Test run failed to complete."
                 " Expected %s tests, received %s" % (self._num_tests_expected, self._num_tests_run))
+
+
+class LogcatTagDemuxer(LineParser):
+    """
+    Concrete LineParser that processes lines of output from logcat filtered on a set of tags and demuxes those lines
+    based on a specific handler for each tag
+    """
+
+    def __init__(self, handlers: Dict[str, Tuple[str, LineParser]]):
+        """
+        :param handlers: dictionary of tuples of (logcat priority, handler)
+        """
+        # remove any spec on priority from tags:
+        super().__init__()
+        self._handlers = {tag: handlers[tag][1] for tag in handlers}
+
+    def parse_line(self, line: str) -> None:
+        """
+        farm each incoming line to associated handler based on adb tag
+        :param line: line to be parsed
+        """
+        if not self._handlers:
+            return
+        if line.startswith("-----"):
+            # ignore, these are startup output not actual logcat output from device
+            return
+        try:
+            # extract basic tag from line of logcat:
+            tag = line.split('(', 2)[0]
+            if not len(tag) > 2 and tag[1] == '/':
+                log.debug("Invalid tag in logcat output: %s" % line)
+                return
+            tag = tag[2:]
+            if tag not in self._handlers:
+                log.error("Unrecognized tag!? %s" % tag)
+                return
+            # demux and handle through the proper handler
+            self._handlers[tag].parse_line(line)
+        except ValueError:
+            log.error("Unexpected logcat line format: %s" % line)

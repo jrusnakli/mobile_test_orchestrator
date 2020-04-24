@@ -1,18 +1,24 @@
+"""
+The *devicestorage* package provides the API for working with a devices (sdcard) storage
+"""
 import logging
 import os
 from typing import Optional
 
 from .device import (
     Device,
-    RemoteDeviceBased,
+    DeviceBased,
 )
+
+__all__ = ["DeviceStorage"]
+
 
 log = logging.getLogger(__name__)
 
 
-class DeviceStorage(RemoteDeviceBased):
+class DeviceStorage(DeviceBased):
     """
-    Class providing API to push, install and remove files and apps to a remote device
+    Class providing API to push, push and pull files to a remote device
     """
 
     ERROR_MSG_INSUFFICIENT_STORAGE = "INSTALL_FAILED_INSUFFICIENT_STORAGE"
@@ -31,15 +37,15 @@ class DeviceStorage(RemoteDeviceBased):
     def push(self, local_path: str, remote_path: str) -> None:
         """
         Push a local file to the given location on the remote device.
-        NOTE: pushin to an app's data directory is not possible and leads to
-          a permission-denied response even when using "run-as"
 
         :param local_path: path to local host file
         :param remote_path: path to place file on the remote device
 
         :raises FileNotFoundError: if provide local path does not exist and is a file
-        :raises Exception: if command to push file failed
+        :raises `Device.CommandExecutionFailureException`: if command to push file failed
         """
+        # NOTE: pushing to an app's data directory is not possible and leads to
+        # a permission-denied response even when using "run-as"
         if not os.path.isfile(local_path):
             raise FileNotFoundError("No such file found: %s" % local_path)
         self.device.execute_remote_cmd('push', local_path, remote_path, capture_stdout=False)
@@ -53,7 +59,7 @@ class DeviceStorage(RemoteDeviceBased):
         :param timeout: timeout in seconds before raising TimeoutError, or None for no expiry
 
         :raises FileNotFoundError: if provide local path does not exist and is a file
-        :raises Exception: if command to push file failed
+        :raises `Device.CommandExecutionFailureException`: if command to push file failed
         """
         if not os.path.isfile(local_path):
             raise FileNotFoundError("No such file found: %s" % local_path)
@@ -69,7 +75,7 @@ class DeviceStorage(RemoteDeviceBased):
         :param run_as: user to run command under on remote device, or None
 
         :raises FileExistsError: if the locat path already exists
-        :raises Exception: if command to pull file failed
+        :raises `Device.CommandExecutionFailureException`: if command to pull file failed
         """
         if os.path.exists(local_path):
             log.warning("File %s already exists when pulling. Potential to overwrite files.", local_path)
@@ -88,7 +94,7 @@ class DeviceStorage(RemoteDeviceBased):
         :param timeout: timeout in seconds before raising TimeoutError, or None for no expiry
 
         :raises FileExistsError: if the locat path already exists
-        :raises Exception: if command to pull file failed
+        :raises `Device.CommandExecutionFailureException`: if command to pull file failed
         """
         if os.path.exists(local_path):
             log.warning("File %s already exists when pulling. Potential to overwrite files." % local_path)
@@ -104,7 +110,7 @@ class DeviceStorage(RemoteDeviceBased):
         :param path: path to create
         :param run_as: user to run command under on remote device, or None
 
-        :raises Exception: on failure to create directory
+        :raises `Device.CommandExecutionFailureException`: on failure to create directory
         """
         if run_as:
             self.device.execute_remote_cmd("shell", "run-as", run_as, "mkdir", "-p", path, capture_stdout=False)
@@ -120,7 +126,7 @@ class DeviceStorage(RemoteDeviceBased):
             Exception if directory is not empty
         :param run_as: user to run command under on remote device, or None
 
-        :raises Exception: on failure to remote specified path
+        :raises `Device.CommandExecutionFailureException`: on failure to remote specified path
         """
         if run_as:
             cmd = ["shell", "run-as", run_as, "rm"]

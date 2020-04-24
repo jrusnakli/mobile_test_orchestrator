@@ -57,8 +57,8 @@ class TestWorker:
         }
         test_suites = [TestSuite(name=key, test_parameters={"class": value}) for key, value in tests.items()]
         expectations = self.Expectations(tests)
-        test_setup = EspressoTestSetup(path_to_apk=support_app,
-                                       path_to_test_apk=support_test_app)
+        test_setup = EspressoTestSetup.Builder(path_to_apk=support_app,
+                                               path_to_test_apk=support_test_app).resolve()
         worker = Worker(device, iter(test_suites), test_setup, artifact_dir=temp_dir, listeners=[expectations])
         completion_called = False
 

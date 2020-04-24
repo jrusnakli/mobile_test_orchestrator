@@ -9,7 +9,8 @@ import os
 import pytest
 
 from pathlib import Path
-from androidtestorchestrator.emulators import EmulatorBundleConfiguration, Emulator, AsyncEmulatorQueue
+from androidtestorchestrator.emulators import EmulatorBundleConfiguration, Emulator
+from androidtestorchestrator.devicequeues import AsyncEmulatorQueue
 
 log = logging.getLogger("MTO")
 log.setLevel(logging.INFO)

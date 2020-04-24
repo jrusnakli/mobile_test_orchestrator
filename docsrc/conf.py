@@ -180,3 +180,5 @@ epub_exclude_files = ['search.html']
 
 # -- Extension configuration -------------------------------------------------
 add_module_names = False
+
+autodoc_member_oder = 'bysource'

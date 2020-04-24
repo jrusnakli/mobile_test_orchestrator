@@ -7,7 +7,8 @@ import pytest
 import pytest_mproc
 
 from androidtestorchestrator.main import AndroidTestOrchestrator, TestSuite
-from androidtestorchestrator.device import Device, AsyncDeviceQueue
+from androidtestorchestrator.device import Device
+from androidtestorchestrator.devicequeues import AsyncDeviceQueue
 from androidtestorchestrator.parsing import LineParser
 from androidtestorchestrator.reporting import TestExecutionListener
 from androidtestorchestrator.testprep import EspressoTestSetup
@@ -137,11 +138,11 @@ class TestAndroidTestOrchestrator(object):
                              test_parameters={"class": "com.linkedin.mtotestapp.InstrumentedTestSomeFailures"}))
 
         listener = TestExpectations()
-        bundle = EspressoTestSetup(path_to_apk=support_app, path_to_test_apk=support_test_app)
+        test_setup = EspressoTestSetup(path_to_apk=support_app, path_to_test_apk=support_test_app)
         async with AndroidTestOrchestrator(artifact_dir=str(tmpdir)) as orchestrator:
             orchestrator.add_test_listener(listener)
             await orchestrator.execute_test_plan(test_plan=test_generator(),
-                                                 test_setup=bundle,
+                                                 test_setup=test_setup,
                                                  devices=devices)
         assert listener.test_count == 4
         assert set(listener.expected_test_class.keys()) == set(listener.test_suites)
@@ -227,12 +228,12 @@ class TestAndroidTestOrchestrator(object):
             yield (TestSuite(name='test_suite1',
                              test_parameters={"class": "com.linkedin.mtotestapp.InstrumentedTestAllSuccess"}))
 
-        bundle =EspressoTestSetup(path_to_apk=support_app, path_to_test_apk=support_test_app)
-        bundle.add_foreign_apks([test_services_apk, android_orchestrator_apk])
+        test_setup = EspressoTestSetup.Builder(path_to_apk=support_app, path_to_test_apk=support_test_app).\
+            add_foreign_apks([test_services_apk, android_orchestrator_apk]).resolve()
         async with AndroidTestOrchestrator(artifact_dir=str(tmpdir), run_under_orchestration=True) as orchestrator:
             orchestrator.add_test_listener(TestExpectations())
             await orchestrator.execute_test_plan(test_plan=test_generator(),
-                                                 test_setup=bundle,
+                                                 test_setup=test_setup,
                                                  devices=devices)
 
         assert test_count == 4

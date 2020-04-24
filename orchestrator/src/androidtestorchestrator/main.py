@@ -9,7 +9,8 @@ from typing import AsyncIterator, Dict, Iterator, List, Optional, Tuple, Type, U
 
 from .testprep import EspressoTestSetup
 from .application import TestApplication
-from .device import Device, AsyncDeviceQueue
+from .device import Device
+from androidtestorchestrator.devicequeues import AsyncDeviceQueue
 from .parsing import LineParser
 from .reporting import TestExecutionListener
 from .worker import Worker
@@ -76,6 +77,9 @@ class AndroidTestOrchestrator:
     ...                                 stack_trace: str) -> None:
     ...         print("Test assumption failed, %s skipped" % test_name)
     ...
+    ...     def test_started(self, test_run_name: str, class_name: str, test_name: str):
+    ...         print(f"Test {class_name}::{test_name} for suite {test_run_name} started")
+    ...
     ...     def test_suite_started(self, test_run_name: str, count: int = 0) -> None:
     ...         print("Test execution started: " + test_run_name)
     ...
@@ -85,14 +89,34 @@ class AndroidTestOrchestrator:
     ...     def test_suite_failed(self, test_run_name: str, error_message: str) -> None:
     ...         print("Test execution failed with error message: %s" % error_message)
     ...
-    ...
-    ... async with AndroidTestOrchestrator(device_id="<some device/emulator id>", artifact_dir=".") as orchestrator:
-    ...     test_suite = TestSuite('test_suite1', {"package": "com.some.test.package"})
-    ...     test_plan = iter([test_suite])
-    ...     orchestrator.add_test_listener(Listener())
-    ...     orchestrator.execute_test_plan(test_application, test_plan)
-    ...     # or
-    ...     await orchestrator.execute_single_test_suite(test_suite)
+    ... async def launch_emulators_and_run():
+    ...    setup = EspressoTestSetup(path_to_apk="/a/path/to/an/apk/file",
+    ...                              path_to_test_apk="/path/to/corresponding/test/apk")
+    ...    emulator_config = EmulatorBundleConfig(...)
+    ...    emulator_q = AsyncEmulatorQueue.create(count, emulator_config)
+    ...    #
+    ...    # call other methods on setup to prepare device for testing as needed...
+    ...    #
+    ...    async with AndroidTestOrchestrator(,
+    ...          artifact_dir=os.get_cwd(),
+    ...          max_device_count = 4,
+    ...          max_test_time = 5*60,  # five minutes
+    ...          max_test_suite_time = 1*60*60,  # one hour
+    ...          run_under_orchestration= False) as orchestrator:
+    ...        test_suite = TestSuite('test_suite1', {"package": "com.some.test.package"})
+    ...        test_plan = iter([test_suite])
+    ...        orchestrator.add_test_listener(Listener())
+    ...        await orchestrator.execute_test_plan(
+    ...            test_setup=setup,
+    ...            test_plan=test_plan,
+    ...            devices = emulator_q
+    ...        )
+    ...        # or
+    ...        await orchestrator.execute_single_test_suite(
+    ...           test_suite=test_suite
+    ...           devices=emulator_q,
+    ...           test_setup=setup
+    ...        )
 
     """
 
@@ -106,7 +130,7 @@ class AndroidTestOrchestrator:
         :param artifact_dir: directory where logs and screenshots are saved
         :param max_device_count: max number of devices to utilize, or None for unbounded
         :param max_test_time: maximum allowed time for a single test to execute before timing out (or None)
-        :param max_test_suite_time: maximum allowed time for a suite to execut; or None
+        :param max_test_suite_time: maximum allowed time for a suite to execute; or None
         :param run_under_orchestration: whether to run under Android Test Orchestrator or regular instument command
 
         :raises ValueError: if max_test_suite_time is smaller than max_test_time

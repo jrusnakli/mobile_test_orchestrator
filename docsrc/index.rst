@@ -28,8 +28,9 @@ devices.
 
 Other features include:
 #. Capture of full logcat during execution of the test plan
-#. File positions within the logcat file to mark the beginning and end of a test suite and each test
 #. Ability to monitor specific tags fom logcat during execution
+#. Support for emulator bring up
+#. Support for running in parallel on multiple devices/emulators
 
 Developers:  see the :ref:`developer_guide`;
 
