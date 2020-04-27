@@ -3,7 +3,7 @@ from queue import Queue
 
 import pytest
 
-from androidtestorchestrator.devicequeues import AsyncQueueAdapter
+from androidtestorchestrator.devicepool import AsyncQueueAdapter
 
 
 class TestAsyncQueueAdapter:

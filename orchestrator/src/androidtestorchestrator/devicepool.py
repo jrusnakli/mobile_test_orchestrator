@@ -67,7 +67,7 @@ class AsyncQueueAdapter(AbstractAsyncQueue):
 AsyncQ = TypeVar('AsyncQ', AbstractAsyncQueue, asyncio.Queue, covariant=False)
 
 
-class BaseDeviceQueue(ABC):
+class BaseDevicePool(ABC):
     """
     Abstract base class for all device queues.
     """
@@ -90,7 +90,7 @@ class BaseDeviceQueue(ABC):
         return device_ids
 
     @classmethod
-    async def discover(cls, filt: Callable[[str], bool] = lambda x: True) -> "BaseDeviceQueue":
+    async def discover(cls, filt: Callable[[str], bool] = lambda x: True) -> "BaseDevicePool":
         """
         Discover all online devices and create a DeviceQueue with them
 
@@ -107,7 +107,7 @@ class BaseDeviceQueue(ABC):
         return cls(q)
 
 
-class AsyncDeviceQueue(BaseDeviceQueue):
+class AsyncDevicePool(BaseDevicePool):
     """
     Class providing an async interface for a general device queue (aka, agnostic to
     whether devices are Emulator's or Device's).
@@ -138,7 +138,7 @@ class AsyncDeviceQueue(BaseDeviceQueue):
             await self._q.put(device)
 
     @staticmethod
-    def from_external(queue: multiprocessing.Queue) -> "AsyncDeviceQueue":
+    def from_external(queue: multiprocessing.Queue) -> "AsyncDevicePool":
         """
         Return an AsyncDeviceQueue instance from the given multiprocessing Queue (i.e., with devices provided
         from an external process, which must be running on the same host)
@@ -146,10 +146,10 @@ class AsyncDeviceQueue(BaseDeviceQueue):
         :param queue: non-async Queue to draw devices from
         :return: an AsynDeviceQueue that draws from the given (non-async) queue
         """
-        return AsyncEmulatorQueue(AsyncQueueAdapter(queue))
+        return AsyncEmulatorPool(AsyncQueueAdapter(queue))
 
 
-class AsyncEmulatorQueue(AsyncDeviceQueue):
+class AsyncEmulatorPool(AsyncDevicePool):
     """
     A class used to by clients wishing to be served emulators.  Clients reserve and emulator, which when
     finished, relinquish it back into the queue.  Emulators can be "leased", in which case the class instance
@@ -213,9 +213,9 @@ class AsyncEmulatorQueue(AsyncDeviceQueue):
                     exc = result
                     failed_port_counts.setdefault(exc.port, 0)
                     failed_port_counts[exc.port] += 1
-                    if failed_port_counts[exc.port] >= AsyncEmulatorQueue.MAX_BOOT_RETRIES:
+                    if failed_port_counts[exc.port] >= AsyncEmulatorPool.MAX_BOOT_RETRIES:
                         log.error(f"Failed to launch emulator on port {exc.port} after " +
-                                  f"{AsyncEmulatorQueue.MAX_BOOT_RETRIES} attempts")
+                                  f"{AsyncEmulatorPool.MAX_BOOT_RETRIES} attempts")
                 else:
                     exc = result
                     for em in emulators:
@@ -230,7 +230,7 @@ class AsyncEmulatorQueue(AsyncDeviceQueue):
     @asynccontextmanager
     async def create(cls, count: int, avd: str, config: EmulatorBundleConfiguration, *args: str,
                      max_lease_time: Optional[int] = None,
-                     wait_for_startup: Optional[int] = None) -> "AsyncEmulatorQueue":
+                     wait_for_startup: Optional[int] = None) -> "AsyncEmulatorPool":
         """
         Create an emulator queue by lanuching them explicitly.  Returns quickly unless specified otherwise,
         launching the emulators in the background
@@ -271,7 +271,7 @@ class AsyncEmulatorQueue(AsyncDeviceQueue):
 
     @classmethod
     async def discover(cls, max_lease_time: Optional[int] = None,
-                       config: Optional[EmulatorBundleConfiguration] = None) -> "AsyncEmulatorQueue":
+                       config: Optional[EmulatorBundleConfiguration] = None) -> "AsyncEmulatorPool":
         """
         Discover all online devices and create a DeviceQueue with them
 

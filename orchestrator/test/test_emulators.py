@@ -12,7 +12,7 @@ from pathlib import Path
 
 from androidtestorchestrator.device import Device
 from androidtestorchestrator.emulators import EmulatorBundleConfiguration, Emulator
-from androidtestorchestrator.devicequeues import AsyncEmulatorQueue
+from androidtestorchestrator.devicepool import AsyncEmulatorPool
 
 log = logging.getLogger("MTO")
 log.setLevel(logging.INFO)
@@ -84,13 +84,13 @@ class TestEmulator:
             asyncio.get_event_loop().run_until_complete(launch())
 
 
-class TestEmulatorQueue:
+class TestEmulatorPool:
 
     @pytest.mark.asyncio
     @pytest.mark.skipif("STANDALONE_Q_TEST" not in os.environ,
                         reason="Can only run this standalone, as testing in the mainstream brings up emulators already")
     async def test_start_queue(self):
-        async with AsyncEmulatorQueue.create(2, TestEmulator.AVD, TestEmulator.EMULATOR_CONFIG, *self.ARGS) as queue:
+        async with AsyncEmulatorPool.create(2, TestEmulator.AVD, TestEmulator.EMULATOR_CONFIG, *self.ARGS) as queue:
             async with queue.reserve(timeout=10*60) as emulator1:
                 # stagger the async-with's so that emulator2 is releinquished by itself
                 async with queue.reserve(timeout=10*60) as emulator2:
@@ -112,7 +112,7 @@ class TestLeasedEmulator:
     @pytest.mark.asyncio
     async def test_lease(self, device: Emulator):
         default_config = EmulatorBundleConfiguration(avd_dir=None, sdk=Path(os.environ.get("ANDROID_SDK_ROOT")))
-        leased_emulator = AsyncEmulatorQueue.LeasedEmulator(device.port, config=default_config)
+        leased_emulator = AsyncEmulatorPool.LeasedEmulator(device.port, config=default_config)
         await leased_emulator.set_timer(expiry=1)
         await asyncio.sleep(3)
         with pytest.raises(Device.LeaseExpired):

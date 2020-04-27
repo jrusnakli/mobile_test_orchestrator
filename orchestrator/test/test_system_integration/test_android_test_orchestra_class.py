@@ -8,7 +8,7 @@ import pytest_mproc
 
 from androidtestorchestrator.main import AndroidTestOrchestrator, TestSuite
 from androidtestorchestrator.device import Device
-from androidtestorchestrator.devicequeues import AsyncDeviceQueue
+from androidtestorchestrator.devicepool import AsyncDevicePool
 from androidtestorchestrator.parsing import LineParser
 from androidtestorchestrator.reporting import TestExecutionListener
 from androidtestorchestrator.testprep import EspressoTestSetup
@@ -82,7 +82,7 @@ class TestAndroidTestOrchestrator(object):
     @pytest_mproc.group("device_q")
     @pytest.mark.asyncio
     async def test_execute_test_suite(self,
-                                      devices: AsyncDeviceQueue,
+                                      devices: AsyncDevicePool,
                                       support_app: str,
                                       support_test_app: str,
                                       tmpdir):
@@ -149,7 +149,7 @@ class TestAndroidTestOrchestrator(object):
 
     @pytest_mproc.group("device_q")
     @pytest.mark.asyncio
-    async def test_execute_test_suite_orchestrated(self, devices: AsyncDeviceQueue, support_app: str,
+    async def test_execute_test_suite_orchestrated(self, devices: AsyncDevicePool, support_app: str,
                                                    support_test_app: str, tmpdir):
         test_count = 0
         test_suite_count = 0

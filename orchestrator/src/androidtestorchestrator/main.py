@@ -10,7 +10,7 @@ from typing import AsyncIterator, Dict, Iterator, List, Optional, Tuple, Type, U
 from .testprep import EspressoTestSetup
 from .application import TestApplication
 from .device import Device
-from androidtestorchestrator.devicequeues import AsyncDeviceQueue
+from androidtestorchestrator.devicepool import AsyncDevicePool
 from .parsing import LineParser
 from .reporting import TestExecutionListener
 from .worker import Worker
@@ -93,7 +93,7 @@ class AndroidTestOrchestrator:
     ...    setup = EspressoTestSetup(path_to_apk="/a/path/to/an/apk/file",
     ...                              path_to_test_apk="/path/to/corresponding/test/apk")
     ...    emulator_config = EmulatorBundleConfig(...)
-    ...    emulator_q = AsyncEmulatorQueue.create(count, emulator_config)
+    ...    emulator_q = AsyncEmulatorPool.create(count, emulator_config)
     ...    #
     ...    # call other methods on setup to prepare device for testing as needed...
     ...    #
@@ -239,7 +239,7 @@ class AndroidTestOrchestrator:
 
     async def execute_test_plan(self,
                                 test_setup: EspressoTestSetup,
-                                devices: AsyncDeviceQueue,
+                                devices: AsyncDevicePool,
                                 test_plan: Union[Iterator[TestSuite], AsyncIterator[TestSuite]]) -> None:
         """
         Execute the given test plan, distributing test exeuction across the given test application instances
@@ -278,7 +278,7 @@ class AndroidTestOrchestrator:
                     worker_tasks.append(task)
                     # synchronize, to ensure we don't spin our wheels and that we wait for the device to first
                     # be reserved.  This is a little quirky, but it also allows the provision of having a simpler
-                    # and safer API on the AsyncDeviceQueue that ensures reserved devices are always relinquished
+                    # and safer API on the AsyncDevicePool that ensures reserved devices are always relinquished
                     # upon completion
                     await sem.acquire()
             results, pending = await asyncio.wait(worker_tasks, return_when=asyncio.FIRST_EXCEPTION)
@@ -290,7 +290,7 @@ class AndroidTestOrchestrator:
 
     async def execute_single_test_suite(self,
                                         test_setup: EspressoTestSetup,
-                                        devices: AsyncDeviceQueue,
+                                        devices: AsyncDevicePool,
                                         test_suite: TestSuite) -> None:
         """
         Convenience method to execute a single test suite

@@ -3,14 +3,14 @@ from typing import List
 
 import pytest
 
-from androidtestorchestrator.devicequeues import AsyncDeviceQueue, AsyncEmulatorQueue
+from androidtestorchestrator.devicepool import AsyncDevicePool, AsyncEmulatorPool
 from androidtestorchestrator.emulators import Emulator
 
 
-class TestDeviceQueue:
+class TestDevicePool:
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("q_class", [AsyncDeviceQueue, AsyncEmulatorQueue])
+    @pytest.mark.parametrize("q_class", [AsyncDevicePool, AsyncEmulatorPool])
     async def test_device_queue_discovery(self, device_list: List[Emulator], q_class: type):
         device_queue = await q_class.discover()
 
@@ -24,7 +24,7 @@ class TestDeviceQueue:
         assert await asyncio.wait_for(get_count(), timeout=3) == len(device_list)
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("q_class", [AsyncDeviceQueue, AsyncEmulatorQueue])
+    @pytest.mark.parametrize("q_class", [AsyncDevicePool, AsyncEmulatorPool])
     async def test_device_queue_discovery_no_such_devices(self, device_list, q_class: type):
         # device is needed to make sure there are some emulators in existence and the filter filters them out
         with pytest.raises(Exception) as e:

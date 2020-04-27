@@ -17,7 +17,7 @@ from typing import Optional, Tuple, List
 from androidtestorchestrator.application import Application, TestApplication, ServiceApplication
 from androidtestorchestrator.device import Device
 from androidtestorchestrator.emulators import EmulatorBundleConfiguration, Emulator
-from androidtestorchestrator.devicequeues import AsyncEmulatorQueue
+from androidtestorchestrator.devicepool import AsyncEmulatorPool
 from . import support
 from .support import uninstall_apk
 
@@ -162,14 +162,14 @@ def device_manager():
 @pytest.fixture()
 @pytest.mark.asyncio
 async def devices(device_manager):
-    # convert queue to an async queue.  We specifially want to test with AsyncEmulatorQueue,
+    # convert queue to an async queue.  We specifially want to test with AsyncEmulatorPool,
     # so will not ust the AsynQueueAdapter class.
     count = min(device_manager.count(), 2)
     with device_manager.reserve(count) as devs:
         async_q = asyncio.Queue()
         for dev in devs:
             await async_q.put(dev)
-        yield AsyncEmulatorQueue(async_q)
+        yield AsyncEmulatorPool(async_q)
 
 
 @pytest.fixture
