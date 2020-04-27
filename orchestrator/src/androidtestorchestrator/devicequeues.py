@@ -1,3 +1,7 @@
+"""
+The package *devicequeue" contains both classes for reserving `Device`'s and `Emulator`'s from a queue.  The interface
+for setting and expiration on reserved Device's/Emulator's is also provided.
+"""
 import asyncio
 import multiprocessing
 import os
@@ -24,7 +28,6 @@ class AbstractAsyncQueue(ABC):
     @abstractmethod
     async def put(self, item) -> None:
         """
-        Put an item in the queue
         :param item: item to place in the queue
         """
 
@@ -68,7 +71,6 @@ class BaseDeviceQueue(ABC):
     """
     Abstract base class for all device queues.
     """
-
     def __init__(self, queue: AsyncQ):
         """
         :param queue: queue to server Device's from.
@@ -80,8 +82,7 @@ class BaseDeviceQueue(ABC):
         cmd = [Device.adb_path(), "devices"]
         completed = subprocess.run(" ".join(cmd), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, shell=True)
         device_ids = []
-        for line in completed.stdout.splitlines():
-            line = line.decode('utf-8').strip()
+        for line in completed.stdout.decode('utf-8').splitlines():
             if line.strip().endswith("device"):
                 device_id = line.split()[0]
                 if filt(device_id):
@@ -97,14 +98,13 @@ class BaseDeviceQueue(ABC):
 
         :return: Created DeviceQueue instance containing all online devices
         """
-        queue = Queue(20)
+        q = Queue(20)
         device_ids = cls._list_devices(filt)
         if not device_ids:
-            raise Exception("No device were discovered based on any filter critera. " +
-                            f"output of 'adb devices' was: {completed.stdout}")
+            raise queue.Empty("Empty queue. No device were discovered based on any filter critera.")
         for device_id in device_ids:
-            await queue.put(Device(device_id))
-        return cls(queue)
+            await q.put(Device(device_id))
+        return cls(q)
 
 
 class AsyncDeviceQueue(BaseDeviceQueue):
@@ -112,6 +112,10 @@ class AsyncDeviceQueue(BaseDeviceQueue):
     Class providing an async interface for a general device queue (aka, agnostic to
     whether devices are Emulator's or Device's).
     """
+
+    """Subclass of Device with an ability to set an expiration time"""
+    # class LeasedDevice:
+    LeasedDevice = Device._Leased()
 
     def __init__(self, queue: AsyncQ):
         """
@@ -127,10 +131,14 @@ class AsyncDeviceQueue(BaseDeviceQueue):
         device = await self._q.get()
         try:
             yield device
+        except Device.LeaseExpired as e:
+            # remove any lease on the device before putting back in queue
+            e.device.reset()
         finally:
             await self._q.put(device)
 
-    def from_external(self, queue: multiprocessing.Queue) -> "AsyncDeviceQueue":
+    @staticmethod
+    def from_external(queue: multiprocessing.Queue) -> "AsyncDeviceQueue":
         """
         Return an AsyncDeviceQueue instance from the given multiprocessing Queue (i.e., with devices provided
         from an external process, which must be running on the same host)
@@ -150,55 +158,19 @@ class AsyncEmulatorQueue(AsyncDeviceQueue):
 
     It is recommended to use one of the class factory methods ("create" or "discover") to create an
     emulator queue instance.
+
+    :param queue: queue used to serve emulators
+    :param max_lease_time: optional maximum amount of time client can hold a "lease" on this emulator, with
+       any attempts to execute commands against the device raising a "LeaseExpired" exception after this time.
     """
+
+    # class LeasedDevice:
+    """Subclass of Emaultor with an ability to set an expiration time"""
+    LeasedEmulator = Emulator._Leased()
 
     MAX_BOOT_RETRIES = 2
 
-    class LeaseExpired(Exception):
-
-        def __init__(self, device: Device):
-            super().__init__(f"Lease expired for {device.device_id}")
-
-    class LeasedEmulator(Emulator):
-
-        def __init__(self, device_id: str, config: EmulatorBundleConfiguration):
-            port = int(device_id.split("emulator-")[1])
-            # must come first to avoid issues with __getattribute__ override
-            self._timed_out = False
-            super().__init__(device_id, port=port, config=config)
-            self._task: asyncio.Task = None
-
-        async def set_timer(self, expiry: int):
-            """
-            set lease expiration
-
-            :param expiry: number of seconds until expiration of lease (from now)
-            """
-            if self._task is not None:
-                raise Exception("Renewal of already existing lease is not allowed")
-
-            async def timeout():
-                await asyncio.sleep(expiry)
-                self._timed_out = True
-
-            self._task = asyncio.create_task(timeout())
-
-        def __getattribute__(self, item: str):
-            # Playing with fire a little here -- make sure you know what you are doing if you update this method
-            if item == '_device_id' or item == 'device_id':
-                # always allow this one to go through (one is a property reflecting the other)
-                return object.__getattribute__(self, item)
-            if object.__getattribute__(self, "_timed_out"):
-                raise AsyncEmulatorQueue.LeaseExpired(self)
-            return object.__getattribute__(self, item)
-
-    def __init__(self, queue: AsyncQ, max_lease_time: Optional[int] = None):
-        """
-        :param queue: queue used to serve emulators
-        :param max_lease_time: optional maximum amount of time client can hold a "lease" on this emulator, with
-           any attempts to execute commands against the device raising a "LeaseExpired" exception after this time.
-           NOTE: this only applies when create method is used to create the queue.
-        """
+    def __init__(self, queue: Queue, max_lease_time: Optional[int] = None):
         super().__init__(queue)
         self._max_lease_time = max_lease_time
 
@@ -214,9 +186,11 @@ class AsyncEmulatorQueue(AsyncDeviceQueue):
         """
         async def launch_next(index: int, port: int) -> Emulator:
             await asyncio.sleep(index * 3)  # space out launches as this can help with avoiding instability
-            leased_emulator = await self.LeasedEmulator.launch(port, avd, config, *args)
             if self._max_lease_time:
+                leased_emulator = await self.LeasedEmulator.launch(port, avd, config, *args)
                 leased_emulator.set_timer(expiry=self._max_lease_time)
+            else:
+                leased_emulator = await Emulator.launch(port, avd, config, *args)
             return leased_emulator
 
         ports = Emulator.PORTS[:count]
@@ -266,11 +240,10 @@ class AsyncEmulatorQueue(AsyncDeviceQueue):
         :param config: emulator bundle config
         :param args: additional arguments to pass to the emulator launch command
         :param max_lease_time: see constructor
-        :param wait_for_startup: if positive non-zero, wait at most this many seconds for emulators to be started
-            before returning,
+        :param wait_for_startup: opiontal amount of time to wait emulators to be started before a TimeoutError is raised
 
         :return: new EmulatorQueue populated with requested emulators
-        :raises: TimeoutError if timeout specified and not started in time
+        :raises: TimeoutError if *wait_for_startup* is specified and emulaors not started in time
         """
         if count > len(Emulator.PORTS):
             raise Exception(f"Can have at most {count} emulators at one time")
@@ -304,7 +277,6 @@ class AsyncEmulatorQueue(AsyncDeviceQueue):
 
         :param max_lease_time: see constructor
         :param config: Definition of emulator configuration (for access to root sdk), or None to use env vars
-
         :return: Created DeviceQueue instance containing all online devices
         """
         queue = Queue(20)

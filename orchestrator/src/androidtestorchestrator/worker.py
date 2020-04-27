@@ -81,43 +81,51 @@ class Worker:
             self._signal_listeners("test_suite_started", test_run.name)
             # chain the listeners to the parser of the "adb instrument" command,
             # which is the source of test status from the device:
-            instrumentation_parser = InstrumentationOutputParser(test_run.name)
-            instrumentation_parser.add_execution_listeners(self._run_listeners)
-            # add timer that times timeout if any INDIVIDUAL test takes too long
-            if test_timeout is not None:
-                instrumentation_parser.add_simple_test_listener(Timer(test_timeout))
-            try:
-                # push test vectors, if any, to device
-                for local_path, remote_path in test_run.uploadables:
-                    device_storage.push(local_path=local_path, remote_path=remote_path)
-                # run tests on the device, and parse output
-                test_args = []
-                for key, value in test_run.test_parameters.items():
-                    test_args += ["-e", key, value]
-                if under_orchestration:
-                    run_future = test_app.run_orchestrated(*test_args)
-                else:
-                    run_future = test_app.run(*test_args)
-                async with await run_future as proc:
-                    async for line in proc.output(unresponsive_timeout=test_timeout):
-                        instrumentation_parser.parse_line(line)
-                    await proc.wait(timeout=test_timeout)
-            except Exception as e:
-                log.exception("Test run failed \n%s", str(e))
-                self._signal_listeners("test_suite_failed", test_run.name, str(e))
-            finally:
-                # cleanup
-                for _, remote_path in test_run.uploadables:
-                    try:
-                        device_storage.remove(remote_path, recursive=True)
-                    except Exception:
-                        log.error("Failed to remove temporary test vector %s from device %s", remote_path,
-                                  self._device.device_id)
+            with  InstrumentationOutputParser(test_run.name) as instrumentation_parser:
+                instrumentation_parser.add_execution_listeners(self._run_listeners)
+                # add timer that times timeout if any INDIVIDUAL test takes too long
+                if test_timeout is not None:
+                    instrumentation_parser.add_simple_test_listener(Timer(test_timeout))
                 try:
-                    self._signal_listeners("test_suite_ended", test_run.name,
-                                           duration=instrumentation_parser.execution_time)
-                except Exception:
-                    log.exception("Exception raised in client test status handler! Ignoring and moving on")
+                    # push test vectors, if any, to device
+                    for local_path, remote_path in test_run.uploadables:
+                        device_storage.push(local_path=local_path, remote_path=remote_path)
+                    # run tests on the device, and parse output
+                    test_args = []
+                    for key, value in test_run.test_parameters.items():
+                        test_args += ["-e", key, value]
+                    if under_orchestration:
+                        run_future = test_app.run_orchestrated(*test_args)
+                    else:
+                        run_future = test_app.run(*test_args)
+                    async with await run_future as proc:
+                        async for line in proc.output(unresponsive_timeout=test_timeout):
+                            instrumentation_parser.parse_line(line)
+                        await proc.wait(timeout=test_timeout)
+                except Exception as e:
+                    log.exception("Test run failed \n%s", str(e))
+                    self._signal_listeners("test_suite_failed", test_run.name, str(e))
+                finally:
+                    # cleanup
+                    for _, remote_path in test_run.uploadables:
+                        try:
+                            device_storage.remove(remote_path, recursive=True)
+                        except Exception:
+                            log.error("Failed to remove temporary test vector %s from device %s", remote_path,
+                                      self._device.device_id)
+                    failure_msg = instrumentation_parser.failure_message()
+                    if failure_msg:
+                        try:
+                            self._signal_listeners("test_suite_failed", test_run.name, failure_msg)
+                        except Exception:
+                            log.exception("Exception raised in client test status handler 'test_suite_failed'!" 
+                                          "Ignoring and moving on")
+                    try:
+                        self._signal_listeners("test_suite_ended", test_run.name,
+                                               duration=instrumentation_parser.execution_time)
+                    except Exception:
+                        log.exception("Exception raised in client test status handler 'test_suite_ended'!"
+                                      "Ignoring and moving on")
         log.info("Test queue exhausted. DONE")
 
     def _signal_listeners(self, method_name: str, *args: Any, **kargs: Any) -> Any:

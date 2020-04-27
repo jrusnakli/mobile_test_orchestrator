@@ -40,7 +40,6 @@ class DeviceStorage(DeviceBased):
 
         :param local_path: path to local host file
         :param remote_path: path to place file on the remote device
-
         :raises FileNotFoundError: if provide local path does not exist and is a file
         :raises `Device.CommandExecutionFailure`: if command to push file failed
         """
@@ -57,7 +56,6 @@ class DeviceStorage(DeviceBased):
         :param local_path: path to local host file
         :param remote_path: path to place file on the remote device
         :param timeout: timeout in seconds before raising TimeoutError, or None for no expiry
-
         :raises FileNotFoundError: if provide local path does not exist and is a file
         :raises `Device.CommandExecutionFailure`: if command to push file failed
         """
@@ -73,7 +71,6 @@ class DeviceStorage(DeviceBased):
         :param remote_path: location on phone to pull file from
         :param local_path: path to file to be created from content from device
         :param run_as: user to run command under on remote device, or None
-
         :raises FileExistsError: if the locat path already exists
         :raises `Device.CommandExecutionFailure`: if command to pull file failed
         """
@@ -92,7 +89,6 @@ class DeviceStorage(DeviceBased):
         :param remote_path: location on phone to pull file from
         :param local_path: path to file to be created from content from device
         :param timeout: timeout in seconds before raising TimeoutError, or None for no expiry
-
         :raises FileExistsError: if the locat path already exists
         :raises `Device.CommandExecutionFailure`: if command to pull file failed
         """
@@ -109,7 +105,6 @@ class DeviceStorage(DeviceBased):
 
         :param path: path to create
         :param run_as: user to run command under on remote device, or None
-
         :raises `Device.CommandExecutionFailure`: on failure to create directory
         """
         if run_as:
@@ -125,7 +120,6 @@ class DeviceStorage(DeviceBased):
         :param recursive: if True and path is directory, recursively remove all contents otherwise will raise
            `Device.CommandExecutionFailure` exception
         :param run_as: user to run command under on remote device, or None
-
         :raises `Device.CommandExecutionFailure`: on failure to remove specified path
         """
         if run_as:

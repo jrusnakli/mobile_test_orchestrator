@@ -9,6 +9,8 @@ import os
 import pytest
 
 from pathlib import Path
+
+from androidtestorchestrator.device import Device
 from androidtestorchestrator.emulators import EmulatorBundleConfiguration, Emulator
 from androidtestorchestrator.devicequeues import AsyncEmulatorQueue
 
@@ -108,12 +110,12 @@ class TestEmulatorQueue:
 class TestLeasedEmulator:
 
     @pytest.mark.asyncio
-    async def test_lease(self, device):
+    async def test_lease(self, device: Emulator):
         default_config = EmulatorBundleConfiguration(avd_dir=None, sdk=Path(os.environ.get("ANDROID_SDK_ROOT")))
-        leased_emulator = AsyncEmulatorQueue.LeasedEmulator(device.device_id, config=default_config)
+        leased_emulator = AsyncEmulatorQueue.LeasedEmulator(device.port, config=default_config)
         await leased_emulator.set_timer(expiry=1)
         await asyncio.sleep(3)
-        with pytest.raises(AsyncEmulatorQueue.LeaseExpired):
+        with pytest.raises(Device.LeaseExpired):
             # access to any attribute should throw an exception
             leased_emulator.model
         assert leased_emulator.device_id == device.device_id  # device_id should be accessible always

@@ -76,9 +76,10 @@ pygments_style = None
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes. (classic, haiku, natural, alabaster)
 #
-html_theme = 'alabaster'
+html_theme = 'classic' # 'alabster'
 html_theme_options = {
-    'body_min_width': '75%'
+    'body_min_width': '75%',
+    'page_width': '90%'
 }
 
 # Theme options are theme-specific and customize the look and feel of a theme
@@ -181,4 +182,4 @@ epub_exclude_files = ['search.html']
 # -- Extension configuration -------------------------------------------------
 add_module_names = False
 
-autodoc_member_oder = 'bysource'
+autodoc_member_order = 'bysource'

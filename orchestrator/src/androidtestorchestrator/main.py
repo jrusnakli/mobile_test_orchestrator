@@ -196,8 +196,8 @@ class AndroidTestOrchestrator:
         self._tag_monitors[tag] = (priority, handler)
 
     async def run(self,
-                  test_setup: EspressoTestSetup,
                   device: Device,
+                  test_setup: EspressoTestSetup,
                   test_plan: Union[Iterator[TestSuite], AsyncIterator[TestSuite]],
                   completion_callback: Optional[Coroutine[None, None, None]] = None) -> None:
         """

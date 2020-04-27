@@ -28,7 +28,7 @@ from typing import (
     Optional,
     Union,
     Type,
-    Tuple)
+    Tuple, TypeVar)
 
 from apk_bitminer.parsing import AXMLParser  # type: ignore
 
@@ -82,7 +82,25 @@ class Device:
         """Device is not detected"""
         NON_EXISTENT: str = "non-existent"
 
-    class Process:
+    class InsufficientStorageError(Exception):
+        """
+        Raised on insufficient storage on device (e.g. in install)
+        """
+
+    class CommandExecutionFailure(Exception):
+        """
+        raised on error to execute a command on the (remote) device
+        """
+
+        def __init__(self, return_code: int, msg: str):
+            super().__init__(msg)
+            self._return_code = return_code
+
+        @property
+        def return_code(self) -> int:
+            return self._return_code
+
+    class _Process:
         """
         Provides a basic interface to an underlying asyncio.Subprocess, providing access to an async generator
         for iterating over lines of output asynchronously
@@ -90,7 +108,7 @@ class Device:
         def __init__(self, process: asyncio.subprocess.Process):
             self._proc = process
 
-        async def __aenter__(self) -> "Device.Process":
+        async def __aenter__(self) -> "Device._Process":
             return self
 
         async def __aexit__(self, exc_type: Optional[Type[BaseException]], exc_val: Optional[BaseException],
@@ -150,21 +168,6 @@ class Device:
         @property
         def returncode(self) -> Optional[int]:
             return self._proc.returncode
-
-    class InsufficientStorageError(Exception):
-        """
-        Raised on insufficient storage on device (e.g. in install)
-        """
-
-    class CommandExecutionFailure(Exception):
-
-        def __init__(self, return_code: int, msg: str):
-            super().__init__(msg)
-            self._return_code = return_code
-
-        @property
-        def return_code(self) -> int:
-            return self._return_code
 
     ERROR_MSG_INSUFFICIENT_STORAGE = "INSTALL_FAILED_INSUFFICIENT_STORAGE"
     # These packages may appear as running when looking at the activities in a device's activity stack. The running
@@ -291,17 +294,6 @@ class Device:
             device_datetime if device_datetime is not None else datetime.timedelta()
         return self._device_server_datetime_offset
 
-    @property
-    def device_id(self) -> str:
-        """
-        :return: the unique serial id of this device
-        """
-        return self._device_id
-
-    @property
-    def is_alive(self) -> bool:
-        return self.get_state() == Device.State.ONLINE
-
     def _determine_system_property(self, property_: str) -> str:
         """
         :param property_: property to fetch
@@ -323,22 +315,11 @@ class Device:
         return self._brand
 
     @property
-    def model(self) -> str:
+    def device_id(self) -> str:
         """
-        :return: the model of this device, or "UNKNOWN" if indeterminable
+        :return: the unique serial id of this device
         """
-        if not self._model:
-            self._model = self._determine_system_property("ro.product.model")
-        return self._model
-
-    @property
-    def manufacturer(self) -> str:
-        """
-        :return: the manufacturer of this device, or "UNKNOWN" if indeterminable
-        """
-        if not self._manufacturer:
-            self._manufacturer = self._determine_system_property("ro.product.manufacturer")
-        return self._manufacturer
+        return self._device_id
 
     @property
     def device_name(self) -> str:
@@ -361,6 +342,28 @@ class Device:
                     self._ext_storage = msg.strip()
                     break
         return self._ext_storage or "/sdcard"
+
+    @property
+    def is_alive(self) -> bool:
+        return self.get_state() == Device.State.ONLINE
+
+    @property
+    def manufacturer(self) -> str:
+        """
+        :return: the manufacturer of this device, or "UNKNOWN" if indeterminable
+        """
+        if not self._manufacturer:
+            self._manufacturer = self._determine_system_property("ro.product.manufacturer")
+        return self._manufacturer
+
+    @property
+    def model(self) -> str:
+        """
+        :return: the model of this device, or "UNKNOWN" if indeterminable
+        """
+        if not self._model:
+            self._model = self._determine_system_property("ro.product.model")
+        return self._model
 
     ######################
     # command execution on device
@@ -467,11 +470,31 @@ class Device:
                                                                stderr=asyncio.subprocess.STDOUT,
                                                                loop=loop or asyncio.events.get_event_loop(),
                                                                bufsize=0)  # noqa
-        return self.Process(proc)
+        return self._Process(proc)
 
     ###################
     # Setting and getting device settings/properties
     ##################
+
+    def get_device_setting(self, namespace: str, key: str, verbose: bool = True) -> Optional[str]:
+        """
+        Get a device setting
+
+        :param namespace: android setting namespace
+        :param key: which setting to get
+        :param verbose: if False, silence any logging
+
+        :return: value of the requested setting as string, or None if setting could not be found
+        """
+        try:
+            output = self.execute_remote_cmd("shell", "settings", "get", namespace, key)
+            if output.startswith("Invalid namespace"):  # some devices output a message with no error return code
+                return None
+            return output.rstrip()
+        except Exception as e:
+            if verbose:
+                log.error(f"Could not get setting for {namespace}:{key} [{str(e)}]")
+            return None
 
     def set_device_setting(self, namespace: str, key: str, value: str) -> Optional[str]:
         """
@@ -496,39 +519,6 @@ class Device:
             log.warning(f"Unable to detect device setting {namespace}:{key}")
         return previous_value
 
-    def get_device_setting(self, namespace: str, key: str, verbose: bool = True) -> Optional[str]:
-        """
-        Get a device setting
-
-        :param namespace: android setting namespace
-        :param key: which setting to get
-        :param verbose: if False, silence any logging
-
-        :return: value of the requested setting as string, or None if setting could not be found
-        """
-        try:
-            output = self.execute_remote_cmd("shell", "settings", "get", namespace, key)
-            if output.startswith("Invalid namespace"):  # some devices output a message with no error return code
-                return None
-            return output.rstrip()
-        except Exception as e:
-            if verbose:
-                log.error(f"Could not get setting for {namespace}:{key} [{str(e)}]")
-            return None
-
-    def set_system_property(self, key: str, value: str) -> Optional[str]:
-        """
-        Set a system property on this device
-
-        :param key: system property key to be set
-        :param value: value to set to
-
-        :return: previous value, in case client wishes to restore at some point
-        """
-        previous_value = self.get_system_property(key)
-        self.execute_remote_cmd("shell", "setprop", key, value, capture_stdout=False)
-        return previous_value
-
     def get_system_property(self, key: str, verbose: bool = True) -> Optional[str]:
         """
         :param key: the key of the property to be retrieved
@@ -543,6 +533,19 @@ class Device:
             if verbose:
                 log.error(f"Unable to get system property {key} [{str(e)}]")
             return None
+
+    def set_system_property(self, key: str, value: str) -> Optional[str]:
+        """
+        Set a system property on this device
+
+        :param key: system property key to be set
+        :param value: value to set to
+
+        :return: previous value, in case client wishes to restore at some point
+        """
+        previous_value = self.get_system_property(key)
+        self.execute_remote_cmd("shell", "setprop", key, value, capture_stdout=False)
+        return previous_value
 
     def get_device_properties(self) -> Dict[str, str]:
         """
@@ -582,6 +585,37 @@ class Device:
                 device_locale = device_locale.replace('-', '_').strip()
         return device_locale
 
+    def get_state(self) -> "Device.State":
+        """
+        :return: current state of emulaor ("device", "offline", "non-existent", ...)
+        """
+        try:
+            state = self.execute_remote_cmd("get-state", capture_stdout=True, timeout=10).strip()
+            mapping = {"device": Device.State.ONLINE,
+                       "offline": Device.State.OFFLINE}
+            return mapping.get(state, Device.State.UNKNOWN)
+        except Exception:
+            return Device.State.NON_EXISTENT
+
+    def get_version(self, package: str) -> Optional[str]:
+        """
+        Get version of given package
+
+        :param package: package of inquiry
+
+        :return: version of given package or None if no such package
+        """
+        version = None
+        try:
+            output = self.execute_remote_cmd("shell", "dumpsys", "package", package)
+            for line in output.splitlines():
+                if line and "versionName" in line and '=' in line:
+                    version = line.split('=')[1].strip()
+                    break
+        except Exception as e:
+            log.error(f"Unable to get version for package {package} [{str(e)}]")
+        return version
+
     def list(self, kind: str) -> List[str]:
         """
         List available items of a given kind on the device
@@ -608,75 +642,6 @@ class Device:
         """
         return self.list("instrumentation")
 
-    def home_screen_active(self) -> bool:
-        """
-        :return: True if the home screen is currently in the foreground. Note that system pop-ups will result in this
-        function returning False.
-
-        :raises Exception: if unable to make determination
-        """
-        found_potential_stack_match = False
-        stdout = self.execute_remote_cmd("shell", "dumpsys", "activity", "activities", capture_stdout=True,
-                                         timeout=Device.TIMEOUT_ADB_CMD)
-        # Find lines that look like this:
-        #   Stack #0:
-        # or
-        #   Stack #0: type=home mode=fullscreen
-        app_stack_pattern = re.compile(r'^Stack #(\d*):')
-        stdout_lines = stdout.splitlines()
-        for line in stdout_lines:
-            matches = app_stack_pattern.match(line.strip())
-            if matches:
-                if matches.group(1) == "0":
-                    return True
-                else:
-                    found_potential_stack_match = True
-                    break
-
-        # Went through entire activities stack, but no line matched expected format for displaying activity
-        if not found_potential_stack_match:
-            raise Exception(
-                f"Could not determine if home screen is in foreground because no lines matched expected "
-                f"format of \"dumpsys activity activities\" pattern. Please check that the format did not change:\n"
-                f"{stdout_lines}")
-
-        # Format of activities was fine, but detected home screen was not in foreground. But it is possible this is a
-        # Samsung device with silent packages in foreground. Need to check if that's the case, and app after them
-        # is the launcher/home screen.
-        foreground_activity = self.foreground_activity(ignore_silent_apps=True)
-        return bool(foreground_activity and foreground_activity.lower() == "com.sec.android.app.launcher")
-
-    def get_version(self, package: str) -> Optional[str]:
-        """
-        Get version of given package
-
-        :param package: package of inquiry
-
-        :return: version of given package or None if no such package
-        """
-        version = None
-        try:
-            output = self.execute_remote_cmd("shell", "dumpsys", "package", package)
-            for line in output.splitlines():
-                if line and "versionName" in line and '=' in line:
-                    version = line.split('=')[1].strip()
-                    break
-        except Exception as e:
-            log.error(f"Unable to get version for package {package} [{str(e)}]")
-        return version
-
-    def get_state(self) -> "Device.State":
-        """
-        :return: current state of emulaor ("device", "offline", "non-existent", ...)
-        """
-        try:
-            state = self.execute_remote_cmd("get-state", capture_stdout=True, timeout=10).strip()
-            mapping = {"device": Device.State.ONLINE,
-                       "offline": Device.State.OFFLINE}
-            return mapping.get(state, Device.State.UNKNOWN)
-        except Exception:
-            return Device.State.NON_EXISTENT
-
     ###############
     # Screenshot
     ###############
@@ -695,15 +660,6 @@ class Device:
             self.execute_remote_cmd("shell", "screencap", "-p", capture_stdout=False,
                                     stdout_redirect=f.fileno(),
                                     timeout=timeout or Device.TIMEOUT_SCREEN_CAPTURE)
-
-    def input(self, subject: str, source: Optional[str] = None) -> None:
-        """
-        Send event subject through given source
-
-        :param subject: event to send
-        :param source: source of event, or None to default to "keyevent"
-        """
-        self.execute_remote_cmd("shell", "input", source or "keyevent", subject, capture_stdout=False)
 
     async def check_network_connection(self, domain: str, count: int = 3) -> int:
         """
@@ -827,17 +783,16 @@ class Device:
                 cmd.append("-r")
             cmd.append(source)
             # Do not allow more than one install at a time on a specific device, as this can be problematic
-            async with _device_lock(self):
-                async with await self.monitor_remote_cmd(*cmd) as proc:
-                    async for msg in proc.output(unresponsive_timeout=Device.TIMEOUT_LONG_ADB_CMD):
-                        if self.ERROR_MSG_INSUFFICIENT_STORAGE in msg:
-                            raise self.InsufficientStorageError("Insufficient storage for install of %s" %
-                                                                apk_path)
-                        # Some devices have non-standard pop-ups that must be cleared by accepting usb installs
-                        # (non-standard Android):
-                        if on_full_install and msg and any([condition in msg for condition in conditions]):
-                            on_full_install()
-                    await proc.wait(Device.TIMEOUT_LONG_ADB_CMD)
+            async with _device_lock(self), await self.monitor_remote_cmd(*cmd) as proc:
+                async for msg in proc.output(unresponsive_timeout=Device.TIMEOUT_LONG_ADB_CMD):
+                    if self.ERROR_MSG_INSUFFICIENT_STORAGE in msg:
+                        raise self.InsufficientStorageError("Insufficient storage for install of %s" %
+                                                            apk_path)
+                    # Some devices have non-standard pop-ups that must be cleared by accepting usb installs
+                    # (non-standard Android):
+                    if on_full_install and msg and any([condition in msg for condition in conditions]):
+                        on_full_install()
+                await proc.wait(Device.TIMEOUT_LONG_ADB_CMD)
 
             # On some devices, a pop-up may prevent successful install even if return code from adb install
             # showed success, so must explicitly verify the install was successful:
@@ -903,6 +858,51 @@ class Device:
         """
         self.input("KEYCODE_HOME")
 
+    def home_screen_active(self) -> bool:
+        """
+        :return: True if the home screen is currently in the foreground. Note that system pop-ups will result in this
+            function returning False.
+        :raises Exception: if unable to make determination
+        """
+
+        found_potential_stack_match = False
+        stdout = self.execute_remote_cmd("shell", "dumpsys", "activity", "activities", capture_stdout=True,
+                                         timeout = Device.TIMEOUT_ADB_CMD)
+        # Find lines that look like this:
+        # Stack #0:
+        # or
+        # Stack #0: type=home mode=fullscreen
+        app_stack_pattern = re.compile(r'^Stack #(\d*):')
+        for line in stdout.splitlines():
+            matches = app_stack_pattern.match(line.strip())
+            if matches:
+                if matches.group(1) == "0":
+                    return True
+                else:
+                    found_potential_stack_match = True
+                    break
+
+        # Went through entire activities stack, but no line matched expected format for displaying activity
+        if not found_potential_stack_match:
+            raise Exception(
+                f"Could not determine if home screen is in foreground because no lines matched expected "
+                f"format of \"dumpsys activity activities\" pattern. Please check that the format did not change:\n"
+                f"{stdout_lines}")
+        # Format of activities was fine, but detected home screen was not in foreground. But it is possible this is a
+        # Samsung device with silent packages in foreground. Need to check if that's the case, and app after them
+        # is the launcher/home screen.
+        foreground_activity = self.foreground_activity(ignore_silent_apps=True)
+        return bool(foreground_activity and foreground_activity.lower() == "com.sec.android.app.launcher")
+
+    def input(self, subject: str, source: Optional[str] = None) -> None:
+        """
+        Send event subject through given source
+
+        :param subject: event to send
+        :param source: source of event, or None to default to "keyevent"
+        """
+        self.execute_remote_cmd("shell", "input", source or "keyevent", subject, capture_stdout=False)
+
     ################
     # Screen related
     ################
@@ -927,15 +927,6 @@ class Device:
     # host-to-device port configurations
     ###############
 
-    def reverse_port_forward(self, device_port: int, local_port: int) -> None:
-        """
-        reverse forward traffic on remote port to local port
-
-        :param device_port: remote device port to forward
-        :param local_port: port to forward to
-        """
-        self.execute_remote_cmd("reverse", f"tcp:{device_port}", f"tcp:{local_port}")
-
     def port_forward(self, local_port: int, device_port: int) -> None:
         """
         forward traffic from local port to remote device port
@@ -944,17 +935,6 @@ class Device:
         :param device_port: port to forward to
         """
         self.execute_remote_cmd("forward", f"tcp:{device_port}", f"tcp:{local_port}")
-
-    def remove_reverse_port_forward(self, port: Optional[int] = None) -> None:
-        """
-        Remove reverse port forwarding
-
-        :param port: port to remove or None to remove all reverse forwarded ports
-        """
-        if port is not None:
-            self.execute_remote_cmd("reverse", "--remove", f"tcp:{port}")
-        else:
-            self.execute_remote_cmd("reverse", "--remove-all")
 
     def remove_port_forward(self, port: Optional[int] = None) -> None:
         """
@@ -966,6 +946,26 @@ class Device:
             self.execute_remote_cmd("forward", "--remove", f"tcp:{port}")
         else:
             self.execute_remote_cmd("forward", "--remove-all")
+
+    def reverse_port_forward(self, device_port: int, local_port: int) -> None:
+        """
+        reverse forward traffic on remote port to local port
+
+        :param device_port: remote device port to forward
+        :param local_port: port to forward to
+        """
+        self.execute_remote_cmd("reverse", f"tcp:{device_port}", f"tcp:{local_port}")
+
+    def remove_reverse_port_forward(self, port: Optional[int] = None) -> None:
+        """
+        Remove reverse port forwarding
+
+        :param port: port to remove or None to remove all reverse forwarded ports
+        """
+        if port is not None:
+            self.execute_remote_cmd("reverse", "--remove", f"tcp:{port}")
+        else:
+            self.execute_remote_cmd("reverse", "--remove-all")
 
     ################
     # device control
@@ -1001,6 +1001,76 @@ class Device:
         :param timeout: timeout in seconds
         """
         cls.TIMEOUT_LONG_ADB_CMD = timeout
+
+    ################
+    # Leased devices
+    ################
+
+    class LeaseExpired(Exception):
+
+        def __init__(self, device: "Device"):
+            super().__init__(f"Lease expired for {device.device_id}")
+            self._device = device
+
+        @property
+        def device(self):
+            return self._device
+
+    @classmethod
+    def _Leased(cls) -> TypeVar('D', bound="Device", covariant=False):
+        """
+        This provides a Pythonic way of doing mixins to subclass a Device or a subclass of Device to
+        be "Leased"
+
+        :return: subclass of this class that can be set to expire after a prescribed amount of time
+        """
+        class LeasedDevice(cls):
+
+            def __init__(self, *args: Any, **kargs: Any):
+                # must come first to avoid issues with __getattribute__ override
+                self._timed_out = False
+                super().__init__(*args, **kargs)
+                self._task: asyncio.Task = None
+
+            async def set_timer(self, expiry: int):
+                """
+                set lease expiration
+
+                :param expiry: number of seconds until expiration of lease (from now)
+                """
+                if self._task is not None:
+                    raise Exception("Renewal of already existing lease is not allowed")
+                self._task = asyncio.create_task(self._expire(expiry))
+
+            async def _expire(self, expiry: int) -> None:
+                """
+                set the expiration time
+
+                :param expiry: seconds into the future to expire
+                """
+                await asyncio.sleep(expiry)
+                self._timed_out = True
+
+            def reset(self) -> None:
+                """
+                Reset to no long have expiration.  Should only be called internally, and probably only by
+                the AndroidTestOrchestrator orchestrating test execution
+                """
+                if self._task and not self._task.done():
+                    self._task.cancel()
+                self._task = None
+                self._timed_out = False
+
+            def __getattribute__(self, item: str) -> Any:
+                # Playing with fire a little here -- make sure you know what you are doing if you update this method
+                if item == '_device_id' or item == 'device_id':
+                    # always allow this one to go through (one is a property reflecting the other)
+                    return object.__getattribute__(self, item)
+                if object.__getattribute__(self, "_timed_out"):
+                    raise Device.LeaseExpired(self)
+                return object.__getattribute__(self, item)
+
+        return LeasedDevice
 
 
 class DeviceBased(object):

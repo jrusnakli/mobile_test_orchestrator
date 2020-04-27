@@ -4,12 +4,11 @@ import multiprocessing
 import getpass
 import os
 import shutil
+import socket
 import tempfile
-from contextlib import suppress
+from contextlib import suppress, closing, contextmanager
 from multiprocessing.managers import BaseManager
-from threading import Semaphore
 
-import pytest_mproc.utils
 from pathlib import Path
 
 import pytest
@@ -36,26 +35,12 @@ else:
 # these dependent tasks. The tasks populate results out to Queue's that test fixtures then use as needed
 # (hence once a test needs that fixture, it would block until the dependent task(s) are complete, but only then)
 
-
-def _start_queues() -> Tuple[str, str]:
-    """
-    start the emulator queue and the queues for the app/test app compiles running in parallel
-
-    :return: Tuple of Emulator(if only one in queue)/EmulatorQueue and two string names of app & test_app apks
-    TODO: just return Application and TestApplication and do the install here
-    """
-    app_queue, test_app_queue = support.compile_all()
-    return app_queue, test_app_queue
+#############
+# Device related fixtures
+############
 
 
-@pytest_mproc.utils.global_session_context("devices", "device", "device_list")
-class ParallelizedTestManager:
-
-    _app_queue, _test_app_queue = _start_queues()
-    # place to cache the app and test app once they are gotten from the Queue
-    _app: Optional[str] = None
-    _test_app: Optional[str] = None
-    _queue = multiprocessing.Queue()
+class DeviceManager:
 
     AVD = "MTO_emulator"
     CONFIG = EmulatorBundleConfiguration(
@@ -70,105 +55,184 @@ class ParallelizedTestManager:
         "-no-boot-anim",
         "-skin", "320x640",
         "-partition-size", "1024"
-    ]    
+    ]
 
-    def serve(self, count: int):
+    _queue = multiprocessing.Queue()
+    _process: multiprocessing.Process = None
+    _reservation_gate = multiprocessing.Semaphore(1)
+
+    def serve(self, count: int, queue: multiprocessing.Queue):
+        """
+        Launch the given number of emulators and make available through the provided queue.
+        This method is started in a separate `multiprocessing.Process` so as not to block other activities.
+        emulators become avilable in the queue as soon as each one is booted.
+
+        :param count: Number of emulators to start
+        :param queue: queue to hold the emulators
+        """
         support.ensure_avd(str(self.CONFIG.sdk), self.AVD)
-        emulators: List[Emulator] = []
         if IS_CIRCLECI or TAG_MTO_DEVICE_ID in os.environ:
             self.ARGS.append("-no-accel")
 
-        async def launch_one(index: int):
+        async def launch_one(index: int) -> Emulator:
+            """
+            Launch the nth (per index) emulator
+
+            :returns: the fully booted emulator
+            """
             if index:
                 await asyncio.sleep(index*3)
             return await Emulator.launch(Emulator.PORTS[index], self.AVD, self.CONFIG, *self.ARGS)
 
-        async def launch_emulators():
+        async def launch_emulators() -> None:
+            """
+            Launch the requested emulators, monitoring their boot status concurrently via asyncio
+            """
             pending = [launch_one(index) for index in range(count)]
             while pending:
                 completed, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
                 for task in completed:
                     emulator = task.result()
-                    self._queue.put(emulator)
-                    emulators.append(emulator)
-            return emulators
+                    queue.put(emulator)
 
-        return asyncio.get_event_loop().run_until_complete(asyncio.wait_for(launch_emulators(), timeout=5*60))
+        asyncio.get_event_loop().run_until_complete(asyncio.wait_for(launch_emulators(), timeout=5*60))
 
     def __enter__(self):
-        self._emulators = self.serve(self.count())
+        assert DeviceManager._process is None, "DeviceManager is a singleton and should only be instantiated once"
+        # at the class level as they shouldn't have to be pickled since we want to use this
+        # object in a global multiprocess-safe fixture
+        DeviceManager._process = multiprocessing.Process(target=self.serve, args=(self.count(), self._queue))
+        DeviceManager._process.start()
         return self
 
-    def __exit__(self, *args, **kargs):
-        for em in self._emulators:
-            with suppress(Exception):
-                em.kill()
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        try:
+            for _ in range(self.count()):
+                em = self._queue.get(timeout=1)
+                with suppress(Exception):
+                    em.kill()
+            DeviceManager._process.join(timeout=10)
+        except Exception:
+            print(">>> ERROR Stopping emulators.  Terminating process directly...")
+            DeviceManager._process.terminate()
+
+    @contextmanager
+    def reserve(self, count: int = 1):
+        """
+        Reserve the given number of emulators, relinqushing them on exit of context manager back to the queue
+
+        :param count: number of emulators to reserve
+        :return: List of reserved emulators
+        :raises: ValueError if the count is larger than the number of emulators available
+        """
+        # do not allow those reserving 1 to block those that first requested more than 1:
+        if count > self.count():
+            raise ValueError(f"Cannot resesrve more than the number of emulators launched ({count} > {self.count()}")
+        self._reservation_gate.acquire()
+        try:
+            devs = [self._queue.get(timeout=5 * 60) for _ in range(count)]
+        finally:
+            self._reservation_gate.release()
+        try:
+            yield devs
+        finally:
+            for dev in devs:
+                self._queue.put(dev)
 
     @staticmethod
     def count():
+        """
+        :return: a max number of emulators that can be launched on the platform.  Users can set this via the
+           MTO_MAX_EMULATORS environment variable, and must if their platform cannot support 4 simultaneous emulators
+        """
         if IS_CIRCLECI or TAG_MTO_DEVICE_ID in os.environ:
             Device.TIMEOUT_ADB_CMD *= 10  # slow machine
             count = 1
         else:
-            max_count = min(multiprocessing.cpu_count(), 2)
-            count = int(os.environ.get("MTO_EMULATOR_COUNT", f"{max_count}"))
+            count = min(multiprocessing.cpu_count(), int(os.environ.get("MTO_MAX_EMULATORS", "4")))
         return count
 
-    @classmethod
-    def reserve(cls) -> Device:
-        return cls._queue.get(timeout=2*60)
 
-    @classmethod
-    def relinquish(cls, device: Device):
-        cls._queue.put(device, timeout=10)
-
-    @classmethod
-    def test_app(cls):
-        if cls._test_app is None:
-            cls._test_app = cls._test_app_queue.get()
-        return cls._test_app
-
-    @classmethod
-    def app(cls):
-        if cls._app is None:
-            cls._app = cls._app_queue.get()
-        return cls._app
+@pytest.fixture(scope='global')
+def device_manager():
+    with DeviceManager() as device_manager:
+        yield device_manager
 
 
 @pytest.fixture()
 @pytest.mark.asyncio
-async def devices():
-    # convert queue to an async queue
-    count = min(ParallelizedTestManager.count(), 2)
-    devs = [ParallelizedTestManager.reserve() for _ in range(count)]
-    try:
+async def devices(device_manager):
+    # convert queue to an async queue.  We specifially want to test with AsyncEmulatorQueue,
+    # so will not ust the AsynQueueAdapter class.
+    count = min(device_manager.count(), 2)
+    with device_manager.reserve(count) as devs:
         async_q = asyncio.Queue()
         for dev in devs:
             await async_q.put(dev)
         yield AsyncEmulatorQueue(async_q)
-    finally:
-        for dev in devs:
-            ParallelizedTestManager.relinquish(dev)
 
 
 @pytest.fixture
-def device_list():
-    count = min(ParallelizedTestManager.count(), 2)
-    try:
-        devs = [ParallelizedTestManager.reserve() for _ in range(count)]
+def device_list(device_manager):
+    # return a list of at most 2 emulators (and only 1 if on a constrained system such as Circlci free)
+    count = min(device_manager.count(), 2)
+    with device_manager.reserve(count) as devs:
         yield devs
-    finally:
-        for dev in devs:
-            ParallelizedTestManager.relinquish(dev)
 
 
 @pytest.fixture()
-async def device():
-    dev = ParallelizedTestManager.reserve()
-    try:
-        yield dev
-    finally:
-        ParallelizedTestManager.relinquish(dev)
+async def device(device_manager):
+    """
+    return a single reserved device
+    """
+    with device_manager.reserve() as devs:
+        yield devs[0]
+
+
+#################
+# App-related fixtures;  TODO: logic could be cleaned up overall here
+#################
+
+
+class AppManager:
+    """
+    For managing compilation of apps used as test resources and providing them through fixtures
+    """
+
+    _proc, _app_queue, _test_app_queue = None, None, None
+
+    def __init__(self):
+        AppManager._app_queue = multiprocessing.Queue(1)
+        AppManager._test_app_queue = multiprocessing.Queue(1)
+        self._app = None
+        self._test_app = None
+        AppManager._proc =support.compile_all(self._app_queue, self._test_app_queue)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        try:
+            self._proc.join(timeout=10)
+        except TimeoutError:
+            # shouldn't really get here as the process should legit end on its own(?)
+            self._proc.terminate()
+
+    def test_app(self):
+        """
+        :return: the string path to the test apk that was compiled
+        """
+        if self._test_app is None:
+            self._test_app = self._test_app_queue.get()
+        return self._test_app
+
+    def app(self):
+        """
+        :return: the string path to the target apk that was compiled
+        """
+        if self._app is None:
+            self._app = self._app_queue.get()
+        return self._app
 
 
 # noinspection PyShadowingNames
@@ -177,6 +241,9 @@ async def device():
 def android_test_app(device,
                      support_app: str,
                      support_test_app: str):
+    """
+    :return: installed test app
+    """
     uninstall_apk(support_app, device)
     uninstall_apk(support_test_app, device)
     app_for_test = TestApplication.from_apk(support_test_app, device)
@@ -226,20 +293,20 @@ def android_service_app(device,
     return service_app
 
 
-@pytest.fixture(scope='session')
-def support_test_app():
-    test_app = ParallelizedTestManager.test_app()
-    if test_app is None:
-        raise Exception("Failed to build test app")
-    return test_app
+@pytest.fixture(scope='global')
+def apps():
+    with AppManager() as app_manager:
+        yield app_manager.app(), app_manager.test_app()
 
 
 @pytest.fixture(scope='session')
-def support_app():
-    support_app = ParallelizedTestManager.app()
-    if isinstance(support_app, Exception) or support_app is None:
-        raise Exception("Failed to build support app")
-    return support_app
+def support_app(apps: Tuple[Application, TestApplication]):
+    return apps[0]
+
+
+@pytest.fixture(scope='session')
+def support_test_app(apps: Tuple[Application, TestApplication]):
+    return apps[1]
 
 
 @pytest.fixture
@@ -274,46 +341,64 @@ def install_app(device: Device):
     for app in apps:
         app.uninstall()
 
+################
+# Process-safe temp dir
+###############
 
-@pytest_mproc.utils.global_session_context("temp_dir")
-class TempDir:
+
+class TempDirFactory:
+    """
+    tmpdir is not process/thread safe when used in a multiprocessing environment.  Failures on setup can
+    occur (even if infrequently) under certain rae conditoins.  This provides a safe mechanism for
+    creating temporary directories utilizng s a global-scope fixture
+    """
 
     class Manager(BaseManager):
 
         def __init__(self, tmp_root_dir: Optional[str] = None):
-            address = ('127.0.0.1', 32453)
+
+            def find_free_port():
+                with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
+                    s.bind(('', 0))
+                    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                    return s.getsockname()[1]
+
+            address = ('127.0.0.1', find_free_port())
             if tmp_root_dir is not None:
                 # server:
-                TempDir.Manager.register("tmp_root_dir", lambda: tmp_root_dir)
+                TempDirFactory.Manager.register("tmp_root_dir", lambda: tmp_root_dir)
                 super().__init__(address, b'pass')
                 super().start()
             else:
                 # client
-                TempDir.Manager.register("tmp_root_dir")
+                TempDirFactory.Manager.register("tmp_root_dir")
                 super().__init__(address, b'pass')
                 super().connect()
 
-    _manager = None
-
-    @staticmethod
-    def manager(tmp_root_dir: Optional[str] = None):
-        if not TempDir._manager:
-            TempDir._manager = TempDir.Manager(tmp_root_dir)
-        return TempDir._manager
+    def __init__(self):
+        self._tmp_root_dir = tempfile.mkdtemp(f"pytest-{getpass.getuser()}")
+        self._manager = TempDirFactory.Manager(self._tmp_root_dir)
 
     def __enter__(self):
-        self._tmp_root_dir = tempfile.mkdtemp(f"pytest-{getpass.getuser()}")
-        TempDir._manager = self.manager(self._tmp_root_dir)
+        return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        self.manager().shutdown()
+        self._manager.shutdown()
         shutil.rmtree(self._tmp_root_dir)
+
+    def root_tmp_dir(self):
+        return self._tmp_root_dir
+
+
+@pytest.fixture(scope='global')
+def root_temp_dir():
+    with TempDirFactory() as factory:
+        yield factory.root_tmp_dir()
 
 
 @pytest.fixture()
-def temp_dir():
+def temp_dir(root_temp_dir: str):
     # tmpdir is not thread safe and can fail on test setup when running on a highly loaded very parallelized system
     # so use this instead
-    tmp_root = TempDir.manager().tmp_root_dir()
-    tmp_dir = tempfile.mkdtemp(dir=tmp_root.strip())
+    tmp_dir = tempfile.mkdtemp(dir=root_temp_dir)
     return tmp_dir

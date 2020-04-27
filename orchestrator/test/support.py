@@ -1,4 +1,5 @@
 import logging
+import multiprocessing
 import os
 # TODO: CAUTION: WE CANNOT USE asyncio.subprocess as we executein in a thread other than made and on unix-like systems, there
 # is bug in Python 3.7.
@@ -92,19 +93,19 @@ def gradle_build(*target_and_q: Tuple[str, Queue]):
         log.info(f"Built {apk_path}")
 
 
-def compile_all() -> Tuple[str, str]:
+def compile_all(support_app_q: Queue, support_test_app_q: Queue) -> multiprocessing.Process:
     """
     compile support app and test app in the background and return the queues where they will be placed
 
     :return: tuple of queues that will hold the apps once built
     """
-    support_app_q = Queue()
-    support_test_app_q = Queue()
-    gradle_build(("assemble", None),
-                 ("assembleAndroidTest", support_test_app_q),
-                 ("assembleDebug", support_app_q)
-                 )
-    return support_app_q, support_test_app_q
+    process = multiprocessing.Process(target=gradle_build, args=(
+        ("assemble", None),
+        ("assembleAndroidTest", support_test_app_q),
+        ("assembleDebug", support_app_q),
+    ))
+    process.start()
+    return process
 
 
 def uninstall_apk(apk, device):

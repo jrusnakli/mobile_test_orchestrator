@@ -1,3 +1,6 @@
+"""
+Package that provides the constructs and the interface for reporting test status back to client
+"""
 import datetime
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -22,6 +25,7 @@ class TestSuite:
     """
     A dataclass representing a test suite
     """
+    # TODO: this belongs with the execution interface
     name: str
     "unique name for this test suite"
     arguments: List[str] = field(default_factory=list)
@@ -36,33 +40,7 @@ class TestSuite:
     "whether to clean user data and re-grant permissions before executing this test"
 
 
-class TestSuiteListener(ABC):
-
-    @abstractmethod
-    def test_suite_started(self, test_run: TestSuite) -> None:
-        """
-        Signal given test_run (suite) has started
-        :param test_run:
-        """
-
-    @abstractmethod
-    def test_suite_failed(self, test_run: TestSuite, error_message: str) -> None:
-        """
-        Signal given test_run (suite) has ended
-        :param test_run:
-        :param error_message: error message from failure output
-        """
-
-    @abstractmethod
-    def test_suite_ended(self, test_run: TestSuite, duration: float = -1.0) -> None:
-        """
-        Signal given test_run (suite) has ended
-        :param test_run:
-        :param duration: how long the test took, or -1.0 if unknown
-        """
-
-
-class TestExecutionListener(TestSuiteListener):
+class TestExecutionListener:
     """
     Abstraction for reporting test status (coming from InstrumentationOutputParser)
 

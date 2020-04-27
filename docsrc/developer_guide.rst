@@ -8,10 +8,10 @@ Welcome to MobileTestOrchestrator's Developer Guide!
 Introduction
 ============
 
-This is the developer guide for MobileTestOrchestrator.  Mobile Test Orchestrator (MTO) is a scalable framework for executing
-distributed, parallelized tests for Android applications.  As medium to large size apps grow in features and in the
-number of tests, so can the time it takes to execute those tests.  Having a platform that can distribute tests across
-many different emulator instances or real devices can keep those times down and development cycles short.
+This is the developer guide for MobileTestOrchestrator.  Mobile Test Orchestrator (MTO) is a scalable framework
+for executing distributed, parallelized tests for Android applications.  As medium to large size apps grow in features
+and in the number of tests, so can the time it takes to execute those tests.  Having a platform that can distribute
+tests across many different emulator instances or real devices can keep those times down and development cycles short.
 
 In this document, the term "device" will be used to refer to either an emulator or a real device without distinction.
 Android development tools nicely abstract out the difference between emulators and real devices, and any distinction
@@ -68,12 +68,14 @@ Getting to the Details
 To be more specific, the I/O ladened tasks performed by the host during test setup and execution are:
 
 Setup:
+
 #. Installation of the target app and test app
 #. Optionally. installation of possibly other (foreign) apps needed for testing purposes
 #. Optionally, pushing of files to the device to act as test vectors for testing (e.g., a video file if testing video transcoding logic)
 #. Optionally, initial settings and properties on the device
 
 Execution and Post-Debugging Support:
+
 #. Triggering execution of the tests on the device (via adb execution of the "instrument" command on the device)
 #. Capturing of the device log (known in Android and refered to from here on out as "logcat") during the run
 #. Monitoring specific logcat commands (as a means for tests to communicate additional data to the host, e.g.)
@@ -131,6 +133,78 @@ Working with Applications
 .. automodule:: androidtestorchestrator.application
    :members:
 
+Test Execution
+--------------
+With the foundational elements in place, the next layer of software is directed at execution of tests in the context
+of a single host (but multiple devices).  Such a setup is shown in the figure below:
+
+.. image:: resources/single_host_setup.png
+
+Again, this depicts real devices over USB connections, but emulators work similarly -- all transprently through adb.
+The Worker class is responsible for execution of tests against a single device while the orchestrator acts to
+establish each Worker instance, one for each device.  The orchestrator contains all the configuration information,
+such as app and test app to be installed, providing that information to each worker as it creates them,
+therby ensuring consistent configuration of the devices.
+
+Test execution is organized at the top level in a "test plan" that contains multiple "test suites".  Each test suite
+is a group of one or more tests to be run in serial on a device.  Grouping of tests is done in the same manner as
+the adb "instrument" command. (See the package and class parameter specifications).   The client is responsible
+for defining this test plan and passing it to the orchestrator.
+
+MTO uses a pull model for requests;  the orchestrator provides the test plan (an iterator actually) to
+each worker.  Each worker then pulls the next test suite to be run from the iterator as one test finsishes and it
+becomes available to run another. This model has the advantage the workers are continually kept active and the client
+doesn't have to worry about "balacning" tests across multiple devices.  It also allows flexibility of being able
+to continue test execution even if one device/worker goes down, as well as potentially dynamcially add devices as they
+become available during test execution. The only downside is that the model works best if the client organizes the
+test plan to run the longer running tests first.  One could imagine a scenario where the first 100 tests take 10 minutes
+to run, but the last one takes 9 minutes -- the system could be waiting on that last test for that 9 minutes. As a
+future enhancement, MTO may provide mechanisms for automatic tuning over subsequent test runs.
+
+.. automodule:: androidtestorchestrator.main
+   :members:
+
+.. automodule:: androidtestorchestrator.worker
+   :members:
+
+Initial Setup
+-------------
+Just as the client must pass in the test setup (apps to install, initial device settings, etc.) to the ochrestrator,
+it must also pass in the devices to use for execution.  The orchestrator is not responsible for device set up, how
+many devices to use and the like; its function is to execute the tests in a distributed manner across the devices it
+is provided.
+
+Devices are provided by the client throug a queue.  This has the advantage of not prescribing a fixed
+number of devices, and allowing for dynamic complement of devices as they become available.  (Although the client
+does have the ability to set a max number of devices the orchestrator is allowed to use).  Each device is "reserved"
+from the queue, not being avaialble for use by any other worker. When each worker is done, it relinquishes the device
+back to the queue.
+
+
+.. automodule:: androidtestorchestrator.devicequeues
+   :members:
+
+Getting Test Status
+-------------------
+
+Now that test execution is covered, let us turn to receiving test status.  There are two aspects to this.  First,
+is receiving status from the execution that is occurring on the device.  Underneath the covers, the "adb instrument"
+command is used, and this command provides test pass/fail and timing status via standard output, streamed back
+across the interface to the host.  Second, is providing status back to the client via a listener interface.
+
+Pasring Line Output
+-------------------
+.. automodule:: androidtestorchestrator.parsing
+   :members:
+
+Client Interface for Listening to Test Status
+---------------------------------------------
+
+.. automodule:: androidtestorchestrator.reporting
+   :members:
 
 
 
+
+Test Orchestration, Multiple Hosts
+----------------------------------

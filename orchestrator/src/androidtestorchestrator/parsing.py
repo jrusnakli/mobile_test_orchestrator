@@ -1,3 +1,12 @@
+"""
+This package deals with parsing output from command line utilities, including command executed on a remote device.
+The primary interaction with devices is conducted through adb (a command line utility), and progres and status is
+received as part of the standard output of such commands.
+
+The core class for parsing this output is a simple, abstract LineParser class.  Core concrete subclasses for parsing
+the test status through the output of "adb instrument"  test status, and for demultiplexing logcat output based on tags
+are provided by this package.
+"""
 import logging
 
 from abc import abstractmethod, ABC
@@ -150,7 +159,6 @@ class InstrumentationOutputParser(LineParser):
         # either we got INSTRUMENTATION_CODE or INSTRUMENTATION_FAILED signaling end of run
         self._test_run_finished: bool = False
         self._reported_any_results: bool = False
-        self._reported_test_run_fail: bool = False
         self._got_failure_msg: bool = False
 
         self._num_tests_expected: int = 0
@@ -161,12 +169,15 @@ class InstrumentationOutputParser(LineParser):
 
         self._include_instrumentation_output = include_instrumentation_output
         self._instrumentation_text = ""
+        self._test_run_failure_msgs: List[str] = []
 
     def __enter__(self) -> "InstrumentationOutputParser":
         return self
 
     def __exit__(self, *args: Any) -> None:
         self.close()
+        if self._test_run_failure_msgs:
+            raise self.TestRunError(self._test_run_failure_msgs)
 
     @property
     def execution_time(self) -> float:
@@ -179,6 +190,11 @@ class InstrumentationOutputParser(LineParser):
     @property
     def num_tests_expected(self) -> int:
         return self._num_tests_expected
+
+    def failure_message(self) -> str:
+        if not self._test_run_failure_msgs:
+            return ""
+        return "\n".join(["Test run failed to execute all tests. Erros message(s) were:"] + self._test_run_failure_msgs)
 
     def add_execution_listener(self, listener: TestExecutionListener) -> None:
         """
@@ -207,6 +223,7 @@ class InstrumentationOutputParser(LineParser):
         :param line: A single line of output (typically ending in '\n', unless the end of output has been reached)
         """
         if self._include_instrumentation_output:
+            # collect raw output to send to client:
             self._instrumentation_text += line + "\n"
         if line.startswith(self.PREFIX_STATUS_CODE):
             self._finalize_current_key_value()
@@ -414,7 +431,6 @@ class InstrumentationOutputParser(LineParser):
             test_class = self._last_test.test_class or self.UNKNOWN_TEST_CLASS
             test_name = self._last_test.test_name or self.UNKNOWN_TEST_NAME
             # got test start but not test stop - assume that test caused this and report as test failure
-            # todo: get logs here?
             stack_trace = "Test failed to run to completion. Reason: '%s'." \
                           " Check device logcat for details." % error_message
             for reporter in self._execution_listeners:
@@ -422,17 +438,16 @@ class InstrumentationOutputParser(LineParser):
                 reporter.test_ended(self._test_run_name, test_class, test_name,
                                     instrumentation_output=self._instrumentation_text)
         self._instrumentation_text = ""
-
-        for reporter in self._execution_listeners:
-            reporter.test_suite_failed(self._test_run_name, error_message=error_message)
+        self._test_run_failure_msgs.append(error_message)
+        #!for reporter in self._execution_listeners:
+        #!    reporter.test_suite_failed(self._test_run_name, error_message=error_message)
         self._reported_any_results = True
-        self._reported_test_run_fail = True
 
     def close(self) -> None:
         """
         Ensures that all expected tests have been run, or else fails the test run.
         """
-        if self._reported_test_run_fail:
+        if self._test_run_failure_msgs:
             return
         if not self._reported_any_results and (not self._test_run_finished or self._got_failure_msg):
             self._report_test_run_failed("No test results, instrumentation may have failed")
@@ -446,12 +461,11 @@ class LogcatTagDemuxer(LineParser):
     """
     Concrete LineParser that processes lines of output from logcat filtered on a set of tags and demuxes those lines
     based on a specific handler for each tag
+
+    :param handlers: dictionary of tuples of (logcat priority, handler)
     """
 
     def __init__(self, handlers: Dict[str, Tuple[str, LineParser]]):
-        """
-        :param handlers: dictionary of tuples of (logcat priority, handler)
-        """
         # remove any spec on priority from tags:
         super().__init__()
         self._handlers = {tag: handlers[tag][1] for tag in handlers}
