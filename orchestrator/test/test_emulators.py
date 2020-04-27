@@ -111,7 +111,8 @@ class TestLeasedEmulator:
 
     @pytest.mark.asyncio
     async def test_lease(self, device: Emulator):
-        default_config = EmulatorBundleConfiguration(avd_dir=None, sdk=Path(os.environ.get("ANDROID_SDK_ROOT")))
+        os.environ["ANDRDOID_SDK_ROOT"] = Path(find_sdk())
+        default_config = EmulatorBundleConfiguration()
         leased_emulator = AsyncEmulatorPool.LeasedEmulator(device.port, config=default_config)
         await leased_emulator.set_timer(expiry=1)
         await asyncio.sleep(3)

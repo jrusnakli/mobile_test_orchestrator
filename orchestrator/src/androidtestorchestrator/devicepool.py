@@ -283,9 +283,7 @@ class AsyncEmulatorPool(AsyncDevicePool):
         emulator_ids = cls._list_devices(filt=lambda x: x.startswith('emulator-'))
         if not emulator_ids:
             raise Exception("No emulators discovered.")
-        avd_home = os.environ.get("ANDROID_AVD_HOME")
-        default_config = EmulatorBundleConfiguration(avd_dir=Path(avd_home) if avd_home else None,
-                                                     sdk=Path(os.environ.get("ANDROID_SDK_ROOT")))
+        default_config = EmulatorBundleConfiguration()  # Use default environ values
         for emulator_id in emulator_ids:
             leased_emulator = cls.LeasedEmulator(emulator_id, config=config or default_config)
             await queue.put(leased_emulator)

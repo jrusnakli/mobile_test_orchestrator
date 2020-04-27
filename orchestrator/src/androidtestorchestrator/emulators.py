@@ -19,12 +19,19 @@ log = logging.getLogger(__name__)
 log.setLevel(logging.WARNING)
 
 
+_ANDROID_AVD_HOME = os.environ.get("ANDROID_AVD_HOME")
+_ANDROID_EMULATOR_HOME = os.environ.get("ANDROID_EMULATOR_HOME")
+_ANDROID_SDK_ROOT = os.environ.get("ANDROID_SDK_ROOT")
+_ANDROID_RESOLVED_AVD_HOME = _ANDROID_AVD_HOME if _ANDROID_AVD_HOME else \
+    os.path.join(_ANDROID_EMULATOR_HOME, "avd") if _ANDROID_EMULATOR_HOME else None
+
+
 @dataclass
 class EmulatorBundleConfiguration:
     """Path to SDK (must contain platform-tools and emulator dirs)"""
-    sdk: Path
+    sdk: Path = Path(_ANDROID_SDK_ROOT) if _ANDROID_SDK_ROOT else None
     """Location of AVDs, or None for default"""
-    avd_dir: Optional[Path] = None
+    avd_dir: Optional[Path] = Path(_ANDROID_RESOLVED_AVD_HOME) if _ANDROID_RESOLVED_AVD_HOME else None
     """Location of system image or None for default"""
     system_img: Optional[Path] = None
     """Location of kernal to use or None for default"""
@@ -32,12 +39,12 @@ class EmulatorBundleConfiguration:
     """location of RAM disk or None for default"""
     ramdisk: Optional[Path] = None
     """which working directory to ro run from (or None to use cwd)"""
-    working_dir: Optional[Path] = None
+    working_dir: Optional[Path] = Path(os.getcwd())
     """timeout if boot does not happen after this many seconds"""
     boot_timeout: int = 5*60
 
-    def adb_path(self) -> str:
-        return Path(self.sdk).joinpath("platform-tools").joinpath("adb")
+    def adb_path(self) -> Path:
+        return self.sdk.joinpath("platform-tools").joinpath("adb")
 
 
 class Emulator(Device):
