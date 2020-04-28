@@ -174,14 +174,14 @@ it must also pass in the devices to use for execution.  The orchestrator is not 
 many devices to use and the like; its function is to execute the tests in a distributed manner across the devices it
 is provided.
 
-Devices are provided by the client throug a queue.  This has the advantage of not prescribing a fixed
-number of devices, and allowing for dynamic complement of devices as they become available.  (Although the client
-does have the ability to set a max number of devices the orchestrator is allowed to use).  Each device is "reserved"
-from the queue, not being avaialble for use by any other worker. When each worker is done, it relinquishes the device
-back to the queue.
+Devices are provided by the client throug a DevicePool (a queue of devices).  This has the advantage of not prescribing
+a fixed number of devices, and allowing for dynamic complement of devices as they become available.  (Although the
+client does have the ability to set a max number of devices the orchestrator is allowed to use).  Each device is
+"reserved" from the queue, not being avaialble for use by any other worker. When each worker is done, it relinquishes
+the device back to the queue.
 
 
-.. automodule:: androidtestorchestrator.devicequeues
+.. automodule:: androidtestorchestrator.devicepool
    :members:
 
 Getting Test Status

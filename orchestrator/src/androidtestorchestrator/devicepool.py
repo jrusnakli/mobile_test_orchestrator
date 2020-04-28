@@ -1,6 +1,6 @@
 """
-The package *devicequeue" contains both classes for reserving `Device`'s and `Emulator`'s from a queue.  The interface
-for setting and expiration on reserved Device's/Emulator's is also provided.
+The package *devicepool" contains *DevicePool* classes for reserving `Device`'s and `Emulator`'s from a queue.
+The interface for setting and expiration on reserved Device's/Emulator's is also provided through these classes.
 """
 import asyncio
 import multiprocessing

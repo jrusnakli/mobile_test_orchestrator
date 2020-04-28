@@ -1,1 +1,2 @@
-graft src/androidtestorchestrator/resources
+include src/androidtestorchestrator/resources
+
