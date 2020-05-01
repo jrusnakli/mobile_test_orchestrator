@@ -17,7 +17,7 @@ from .support import uninstall_apk
 
 TAG_MTO_DEVICE_ID = "MTO_DEVICE_ID"
 IS_CIRCLECI = getpass.getuser() == 'circleci' or "CIRCLECI" in os.environ
-
+Device.TIMEOUT_LONG_ADB_CMD = 10*60  # circleci may need more time
 
 if IS_CIRCLECI:
     print(">>>> Running in Circleci environment.  Not using parallelized testing")
