@@ -99,6 +99,10 @@ class Device:
                     except TimeoutError:
                         log.error("Failed to kill subprocess while exiting its context")
 
+        @property
+        def returncode(self) -> Optional[int]:
+            return self._proc.returncode
+
         async def output(self,  unresponsive_timeout: Optional[float] = None) -> AsyncIterator[str]:
             """
             Async iterator over lines of output from process
@@ -138,10 +142,6 @@ class Device:
                 await self._proc.wait()
             else:
                 await asyncio.wait_for(self._proc.wait(), timeout=timeout)
-
-        @property
-        def returncode(self) -> Optional[int]:
-            return self._proc.returncode
 
     ERROR_MSG_INSUFFICIENT_STORAGE = "INSTALL_FAILED_INSUFFICIENT_STORAGE"
 
@@ -318,6 +318,15 @@ class Device:
         return self._api_level
 
     @property
+    def brand(self) -> str:
+        """
+        :return: the brand of the device as provided in its system properties, or "UNKNOWN" if indeterminable
+        """
+        if not self._brand:
+            self._brand = self._determine_system_property("ro.product.brand")
+        return self._brand
+
+    @property
     def device_server_datetime_offset(self) -> datetime.timedelta:
         """
         :return: Returns a datetime.timedelta object that represents the difference between the server/host datetime
@@ -353,33 +362,6 @@ class Device:
         return self._device_id
 
     @property
-    def brand(self) -> str:
-        """
-        :return: the brand of the device as provided in its system properties, or "UNKNOWN" if indeterminable
-        """
-        if not self._brand:
-            self._brand = self._determine_system_property("ro.product.brand")
-        return self._brand
-
-    @property
-    def model(self) -> str:
-        """
-        :return: the model of this device, or "UNKNOWN" if indeterminable
-        """
-        if not self._model:
-            self._model = self._determine_system_property("ro.product.model")
-        return self._model
-
-    @property
-    def manufacturer(self) -> str:
-        """
-        :return: the manufacturer of this device, or "UNKNOWN" if indeterminable
-        """
-        if not self._manufacturer:
-            self._manufacturer = self._determine_system_property("ro.product.manufacturer")
-        return self._manufacturer
-
-    @property
     def device_name(self) -> str:
         """
         :return: a name for this device based on model and manufacturer
@@ -399,6 +381,24 @@ class Device:
                 if msg:
                     self._ext_storage = msg.strip()
         return self._ext_storage or "/sdcard"
+
+    @property
+    def manufacturer(self) -> str:
+        """
+        :return: the manufacturer of this device, or "UNKNOWN" if indeterminable
+        """
+        if not self._manufacturer:
+            self._manufacturer = self._determine_system_property("ro.product.manufacturer")
+        return self._manufacturer
+
+    @property
+    def model(self) -> str:
+        """
+        :return: the model of this device, or "UNKNOWN" if indeterminable
+        """
+        if not self._model:
+            self._model = self._determine_system_property("ro.product.model")
+        return self._model
 
     ###############
     # RAW COMMAND EXECUTION ON DEVICE
@@ -511,28 +511,13 @@ class Device:
     # Device settings/properties
     ###################
 
-    def set_device_setting(self, namespace: str, key: str, value: str) -> Optional[str]:
+    def get_device_datetime(self) -> datetime.datetime:
         """
-        Change a setting of the device
-
-        :param namespace: system, etc. -- and android namespace for settings
-        :param key: which setting
-        :param value: new value for setting
-
-        :return: previous value setting, in case client wishes to restore setting at some point
+        :return: Best estimate of device's current datetime. If device's original datetime could not be computed during
+            init phase, the server's datetime is returned.
         """
-        if value == '' or value == '""':
-            value = '""""'
-
-        previous_value = self.get_device_setting(namespace, key)
-        if previous_value is not None or key in ["location_providers_allowed"]:
-            try:
-                self.execute_remote_cmd("shell", "settings", "put", namespace, key, value, capture_stdout=False)
-            except Exception as e:
-                log.error(f"Failed to set device setting {namespace}:{key}. Ignoring error [{str(e)}]")
-        else:
-            log.warning(f"Unable to detect device setting {namespace}:{key}")
-        return previous_value
+        current_device_time = datetime.datetime.utcnow() - self.device_server_datetime_offset
+        return current_device_time
 
     def get_device_setting(self, namespace: str, key: str, verbose: bool = True) -> Optional[str]:
         """
@@ -553,34 +538,6 @@ class Device:
                 log.error(f"Could not get setting for {namespace}:{key} [{str(e)}]")
             return None
 
-    def set_system_property(self, key: str, value: str) -> Optional[str]:
-        """
-        Set a system property on this device
-
-        :param key: system property key to be set
-        :param value: value to set to
-
-        :return: previous value, in case client wishes to restore at some point
-        """
-        previous_value = self.get_system_property(key)
-        self.execute_remote_cmd("shell", "setprop", key, value, capture_stdout=False)
-        return previous_value
-
-    def get_system_property(self, key: str, verbose: bool = True) -> Optional[str]:
-        """
-        :param key: the key of the property to be retrieved
-        :param verbose: whether to print error messages on command execution problems or not
-
-        :return: the property from the device associated with the given key, or None if no such property exists
-        """
-        try:
-            output = self.execute_remote_cmd("shell", "getprop", key)
-            return output.rstrip()
-        except Exception as e:
-            if verbose:
-                log.error(f"Unable to get system property {key} [{str(e)}]")
-            return None
-
     def get_device_properties(self) -> Dict[str, str]:
         """
         :return: full dict of properties
@@ -593,14 +550,6 @@ class Device:
                 results[property_name.strip()[1:-1]] = property_value.strip()
 
         return results
-
-    def get_device_datetime(self) -> datetime.datetime:
-        """
-        :return: Best estimate of device's current datetime. If device's original datetime could not be computed during
-            init phase, the server's datetime is returned.
-        """
-        current_device_time = datetime.datetime.utcnow() - self.device_server_datetime_offset
-        return current_device_time
 
     def get_locale(self) -> Optional[str]:
         """
@@ -624,6 +573,15 @@ class Device:
 
         return device_locale
 
+    def get_state(self) -> str:
+        """
+        :return: current state of emulaor ("device", "offline", "non-existent", ...)
+        """
+        try:
+            return self.execute_remote_cmd("get-state", capture_stdout=True, timeout=10).strip()
+        except Exception:
+            return "non-existent"
+
     def get_version(self, package: str) -> Optional[str]:
         """
         Get version of given package
@@ -643,18 +601,86 @@ class Device:
             log.error(f"Unable to get version for package {package} [{str(e)}]")
         return version
 
-    def get_state(self) -> str:
+    def get_system_property(self, key: str, verbose: bool = True) -> Optional[str]:
         """
-        :return: current state of emulaor ("device", "offline", "non-existent", ...)
+        :param key: the key of the property to be retrieved
+        :param verbose: whether to print error messages on command execution problems or not
+
+        :return: the property from the device associated with the given key, or None if no such property exists
         """
         try:
-            return self.execute_remote_cmd("get-state", capture_stdout=True, timeout=10).strip()
-        except Exception:
-            return "non-existent"
+            output = self.execute_remote_cmd("shell", "getprop", key)
+            return output.rstrip()
+        except Exception as e:
+            if verbose:
+                log.error(f"Unable to get system property {key} [{str(e)}]")
+            return None
+
+    def set_device_setting(self, namespace: str, key: str, value: str) -> Optional[str]:
+        """
+        Change a setting of the device
+
+        :param namespace: system, etc. -- and android namespace for settings
+        :param key: which setting
+        :param value: new value for setting
+
+        :return: previous value setting, in case client wishes to restore setting at some point
+        """
+        if value == '' or value == '""':
+            value = '""""'
+
+        previous_value = self.get_device_setting(namespace, key)
+        if previous_value is not None or key in ["location_providers_allowed"]:
+            try:
+                self.execute_remote_cmd("shell", "settings", "put", namespace, key, value, capture_stdout=False)
+            except Exception as e:
+                log.error(f"Failed to set device setting {namespace}:{key}. Ignoring error [{str(e)}]")
+        else:
+            log.warning(f"Unable to detect device setting {namespace}:{key}")
+        return previous_value
+
+    def set_system_property(self, key: str, value: str) -> Optional[str]:
+        """
+        Set a system property on this device
+
+        :param key: system property key to be set
+        :param value: value to set to
+
+        :return: previous value, in case client wishes to restore at some point
+        """
+        previous_value = self.get_system_property(key)
+        self.execute_remote_cmd("shell", "setprop", key, value, capture_stdout=False)
+        return previous_value
 
     ###################
     # Device listings of installed apps/activities
     ###################
+
+    def foreground_activity(self, ignore_silent_apps: bool = True) -> Optional[str]:
+        """
+        :param ignore_silent_apps: whether or not to ignore silent-running apps (ignoring those if they are in the
+            stack. They show up as the foreground activity, even if the normal activity we care about is behind it and
+            running as expected).
+
+        :return: package name of current foreground activity
+        """
+        ignored = self.SILENT_RUNNING_PACKAGES if ignore_silent_apps else []
+        return self._activity_stack_top(filter=lambda x: x.lower() not in ignored)
+
+    def get_activity_stack(self) -> List[str]:
+        output = self.execute_remote_cmd("shell", "dumpsys", "activity", "activities", timeout=10)
+        activity_list = []
+        # Find lines that look like this:
+        #  * TaskRecord{133fbae #1340 I=com.google.android.apps.nexuslauncher/.NexusLauncherActivity U=0 StackId=0 sz=1}
+        # or
+        #  * TaskRecord{94c8098 #1791 A=com.android.chrome U=0 StackId=454 sz=1}
+        app_record_pattern = re.compile(r'^\* TaskRecord\{[a-f0-9-]* #\d* [AI]=(com\.[a-zA-Z0-9.]*)[ /].*')
+        for line in output.splitlines():
+            matches = app_record_pattern.match(line.strip())
+            if matches:
+                app_package = matches.group(1)
+                activity_list.append(app_package)
+        return activity_list
 
     def list(self, kind: str) -> List[str]:
         """
@@ -682,32 +708,6 @@ class Device:
         """
         return self.list("instrumentation")
 
-    def get_activity_stack(self) -> List[str]:
-        output = self.execute_remote_cmd("shell", "dumpsys", "activity", "activities", timeout=10)
-        activity_list = []
-        # Find lines that look like this:
-        #  * TaskRecord{133fbae #1340 I=com.google.android.apps.nexuslauncher/.NexusLauncherActivity U=0 StackId=0 sz=1}
-        # or
-        #  * TaskRecord{94c8098 #1791 A=com.android.chrome U=0 StackId=454 sz=1}
-        app_record_pattern = re.compile(r'^\* TaskRecord\{[a-f0-9-]* #\d* [AI]=(com\.[a-zA-Z0-9.]*)[ /].*')
-        for line in output.splitlines():
-            matches = app_record_pattern.match(line.strip())
-            if matches:
-                app_package = matches.group(1)
-                activity_list.append(app_package)
-        return activity_list
-
-    def foreground_activity(self, ignore_silent_apps: bool = True) -> Optional[str]:
-        """
-        :param ignore_silent_apps: whether or not to ignore silent-running apps (ignoring those if they are in the
-            stack. They show up as the foreground activity, even if the normal activity we care about is behind it and
-            running as expected).
-
-        :return: package name of current foreground activity
-        """
-        ignored = self.SILENT_RUNNING_PACKAGES if ignore_silent_apps else []
-        return self._activity_stack_top(filter=lambda x: x.lower() not in ignored)
-
     #################
     # Screenshot
     #################
@@ -728,7 +728,7 @@ class Device:
                                     timeout=timeout or Device.TIMEOUT_SCREEN_CAPTURE)
 
     #################
-    # Device network connectivity
+    # Device network connectivity: TODO move to DeviceNetwork class
     ################
 
     def check_network_connection(self, domain: str, count: int = 3) -> int:
@@ -756,15 +756,6 @@ class Device:
         except self.CommandExecutionFailureException:
             return -1
 
-    def reverse_port_forward(self, device_port: int, local_port: int) -> None:
-        """
-        reverse forward traffic on remote port to local port
-
-        :param device_port: remote device port to forward
-        :param local_port: port to forward to
-        """
-        self.execute_remote_cmd("reverse", f"tcp:{device_port}", f"tcp:{local_port}")
-
     def port_forward(self, local_port: int, device_port: int) -> None:
         """
         forward traffic from local port to remote device port
@@ -773,17 +764,6 @@ class Device:
         :param device_port: port to forward to
         """
         self.execute_remote_cmd("forward", f"tcp:{device_port}", f"tcp:{local_port}")
-
-    def remove_reverse_port_forward(self, port: Optional[int] = None) -> None:
-        """
-        Remove reverse port forwarding
-
-        :param port: port to remove or None to remove all reverse forwarded ports
-        """
-        if port is not None:
-            self.execute_remote_cmd("reverse", "--remove", f"tcp:{port}")
-        else:
-            self.execute_remote_cmd("reverse", "--remove-all")
 
     def remove_port_forward(self, port: Optional[int] = None) -> None:
         """
@@ -796,18 +776,35 @@ class Device:
         else:
             self.execute_remote_cmd("forward", "--remove-all")
 
+    def remove_reverse_port_forward(self, port: Optional[int] = None) -> None:
+        """
+        Remove reverse port forwarding
+
+        :param port: port to remove or None to remove all reverse forwarded ports
+        """
+        if port is not None:
+            self.execute_remote_cmd("reverse", "--remove", f"tcp:{port}")
+        else:
+            self.execute_remote_cmd("reverse", "--remove-all")
+
+    def reverse_port_forward(self, device_port: int, local_port: int) -> None:
+        """
+        reverse forward traffic on remote port to local port
+
+        :param device_port: remote device port to forward
+        :param local_port: port to forward to
+        """
+        self.execute_remote_cmd("reverse", f"tcp:{device_port}", f"tcp:{local_port}")
+
     ##############
     # Navigation : TODO: Move to DeviceNavigation class
     ##############
 
-    def input(self, subject: str, source: Optional[str] = None) -> None:
+    def go_home(self) -> None:
         """
-        Send event subject through given source
-
-        :param subject: event to send
-        :param source: source of event, or None to default to "keyevent"
+        Equivalent to hitting home button to go to home screen
         """
-        self.execute_remote_cmd("shell", "input", source or "keyevent", subject, capture_stdout=False)
+        self.input("KEYCODE_HOME")
 
     # todo: why this is a property instead of a function?
     @property
@@ -849,6 +846,25 @@ class Device:
         foreground_activity = self.foreground_activity(ignore_silent_apps=True)
         return bool(foreground_activity and foreground_activity.lower() == "com.sec.android.app.launcher")
 
+    def input(self, subject: str, source: Optional[str] = None) -> None:
+        """
+        Send event subject through given source
+
+        :param subject: event to send
+        :param source: source of event, or None to default to "keyevent"
+        """
+        self.execute_remote_cmd("shell", "input", source or "keyevent", subject, capture_stdout=False)
+
+    def is_screen_on(self) -> bool:
+        """
+        :return: whether device's screen is on
+        """
+        lines = self.execute_remote_cmd("shell", "dumpsys", "activity", "activities", timeout=10).splitlines()
+        for msg in lines:
+            if 'mInteractive=false' in msg or 'mScreenOn=false' in msg or 'isSleeping=true' in msg:
+                return False
+        return True
+
     def return_home(self, keycode_back_limit: int = 10) -> None:
         """
         Return to home screen as though the user did so via one or many taps on the back button.
@@ -878,22 +894,6 @@ class Device:
         raise Exception(f"Max number of back button presses ({keycode_back_limit}) to get to Home screen has "
                         f"been reached. Found foreground activity {foreground_activity}. App closure failed.")
 
-    def go_home(self) -> None:
-        """
-        Equivalent to hitting home button to go to home screen
-        """
-        self.input("KEYCODE_HOME")
-
-    def is_screen_on(self) -> bool:
-        """
-        :return: whether device's screen is on
-        """
-        lines = self.execute_remote_cmd("shell", "dumpsys", "activity", "activities", timeout=10).splitlines()
-        for msg in lines:
-            if 'mInteractive=false' in msg or 'mScreenOn=false' in msg or 'isSleeping=true' in msg:
-                return False
-        return True
-
     def toggle_screen_on(self) -> None:
         """
         Toggle device's screen on/off
@@ -903,19 +903,6 @@ class Device:
     ##############
     # Install API  # TODO: move to Application class
     ##############
-
-    def install_synchronous(self, apk_path: str, as_upgrade: bool) -> None:
-        """
-        install the given bundle, blocking until complete
-        :param apk_path: local path to the apk to be installed
-        :param as_upgrade: install as upgrade or not
-        """
-        if as_upgrade:
-            cmd: Tuple[str, ...] = ("install", "-r", apk_path)
-        else:
-            cmd = ("install", apk_path)
-
-        self.execute_remote_cmd(*cmd, timeout=Device.TIMEOUT_LONG_ADB_CMD)
 
     async def install(self, apk_path: str, as_upgrade: bool,
                       conditions: Optional[List[str]] = None,
@@ -988,6 +975,19 @@ class Device:
                 with suppress(Exception):
                     rm_cmd = ("shell", "rm", remote_data_path)
                     self.execute_remote_cmd(*rm_cmd, timeout=self.TIMEOUT_ADB_CMD)
+
+    def install_synchronous(self, apk_path: str, as_upgrade: bool) -> None:
+        """
+        install the given bundle, blocking until complete
+        :param apk_path: local path to the apk to be installed
+        :param as_upgrade: install as upgrade or not
+        """
+        if as_upgrade:
+            cmd: Tuple[str, ...] = ("install", "-r", apk_path)
+        else:
+            cmd = ("install", apk_path)
+
+        self.execute_remote_cmd(*cmd, timeout=Device.TIMEOUT_LONG_ADB_CMD)
 
 
 class RemoteDeviceBased(object):
