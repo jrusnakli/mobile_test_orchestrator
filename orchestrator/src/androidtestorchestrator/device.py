@@ -83,7 +83,7 @@ class Device:
         def __init__(self, proc: asyncio.subprocess.Process):
             self._proc = proc
 
-        async def __aenter__(self) -> "Process":
+        async def __aenter__(self) -> "Device.Process":
             return self
 
         async def __aexit__(self, exc_type: Optional[Type[BaseException]], exc_val: Optional[BaseException],
