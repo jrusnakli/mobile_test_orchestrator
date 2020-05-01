@@ -17,7 +17,7 @@ from .support import uninstall_apk
 
 TAG_MTO_DEVICE_ID = "MTO_DEVICE_ID"
 IS_CIRCLECI = getpass.getuser() == 'circleci' or "CIRCLECI" in os.environ
-
+Device.TIMEOUT_LONG_ADB_CMD = 10*60  # circleci may need more time
 
 if IS_CIRCLECI:
     print(">>>> Running in Circleci environment.  Not using parallelized testing")
@@ -102,16 +102,14 @@ def device(request):
     if isinstance(TestEmulatorQueue._queue, Emulator):
         emulator = TestEmulatorQueue._queue  # queue of 1 == an emulator
         assert emulator.get_state() == 'device'
-        return emulator
+        yield emulator
     else:
         queue = TestEmulatorQueue._queue
         emulator = queue.reserve(timeout=10*60)
-
-        def finalizer():
+        try:
+            yield emulator
+        finally:
             queue.relinquish(emulator)
-
-        request.addfinalizer(finalizer)
-        return emulator
 
 
 # noinspection PyShadowingNames

@@ -95,7 +95,8 @@ class TestRunListener(TestSuiteListener):
         """
 
     @abstractmethod
-    def test_run_ended(self, duration: float = -1.0, **kwargs: Optional[Any]) -> None:
+    def test_run_ended(self, duration: float = -1.0,
+                       **kwargs: Optional[Any]) -> None:
         """
         signals test suite has ended
         :param duration: device-reported elapsed time

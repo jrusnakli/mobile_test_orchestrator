@@ -110,12 +110,15 @@ class AndroidTestOrchestrator:
     def __init__(self,
                  artifact_dir: str,
                  max_test_time: Optional[float] = None,
-                 max_test_suite_time: Optional[float] = None) -> None:
+                 max_test_suite_time: Optional[float] = None,
+                 run_under_orchestration: bool = False) -> None:
         """
         :param artifact_dir: directory where logs and screenshots are saved
         :param max_test_time: maximum allowed time for a single test to execute before timing out (or None)
         :param max_test_suite_time:maximum allowed time for a suite of tets (a package under and Android instrument
            command, for example) to execute; or None
+        :param run_under_orchestration: whether to use Google's Android Test Orchestation to run tests (required
+           install of test services and orchestrator apks)
 
         :raises ValueError: if max_test_suite_time is smaller than max_test_time
         :raises FileExistsError: if artifact_dir point to a file and not a directory
@@ -137,6 +140,7 @@ class AndroidTestOrchestrator:
         self._tag_monitors: Dict[str, Tuple[str, LineParser]] = {}
         self._logcat_proc = None
         self._test_suite_listeners: List[TestSuiteListener] = []
+        self._run_orchestrated = run_under_orchestration
 
     def __enter__(self) -> "AndroidTestOrchestrator":
         return self
@@ -182,7 +186,6 @@ class AndroidTestOrchestrator:
         :param test_plan: generator of tuples of (test_suite_name, list_of_instrument_arguments)
         :param test_application: test application containing (remote) runner to execute tests
         """
-        # TASK-3: capture logcat to file and markers for beginning/end of each test
         device_log = DeviceLog(test_application.device)
         device_storage = DeviceStorage(test_application.device)
 
@@ -210,7 +213,11 @@ class AndroidTestOrchestrator:
                         arguments = list(test_run.arguments)
                         for key, value in test_run.test_parameters.items():
                             arguments += ["-e", key, value]
-                        async with await test_application.run(*arguments) as proc:
+                        if self._run_orchestrated:
+                            run_future = test_application.run_orchestrated(*arguments)
+                        else:
+                            run_future = test_application.run(*arguments)
+                        async with await run_future as proc:
                             async for line in proc.output(unresponsive_timeout=self._test_timeout):
                                 instrumentation_parser.parse_line(line)
                             await proc.wait(timeout=self._test_timeout)

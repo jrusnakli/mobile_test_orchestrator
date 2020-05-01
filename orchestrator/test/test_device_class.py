@@ -207,13 +207,17 @@ class TestAndroidDevice:
 
     def test_verify_install_on_non_installed_app(self, device: Device, in_tmp_dir: Path):
         with pytest.raises(expected_exception=Exception) as excinfo:
-            device._verify_install("fake/app/path", "com.linkedin.fake.app")
+            device._verify_install("fake/app/path", "com.linkedin.fake.app", "test_screenshots")
         assert "Failed to verify installation of app 'com.linkedin.fake.app'" in str(excinfo.value)
-        assert (in_tmp_dir / "install_failure-com.linkedin.fake.app.png").is_file()
+        assert (in_tmp_dir / "test_screenshots" / "install_failure-com.linkedin.fake.app.png").is_file()
 
     def test_is_screen_on(self, device: Device):
         is_screen_on = device.is_screen_on()
         device.toggle_screen_on()
-        time.sleep(3)
-        new_is_screen_on = device.is_screen_on()
+        retries = 3
+        new_is_screen_on = is_screen_on
+        while retries > 0 and new_is_screen_on == is_screen_on:
+            time.sleep(3)
+            new_is_screen_on = device.is_screen_on()
+            retries -= 1
         assert is_screen_on != new_is_screen_on

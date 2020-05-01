@@ -4,7 +4,7 @@ import time
 from asyncio import AbstractEventLoop
 
 from apk_bitminer.parsing import AXMLParser  # type: ignore
-from typing import List, TypeVar, Type, Optional, AsyncContextManager, Dict, Union, Any
+from typing import List, TypeVar, Type, Optional, AsyncContextManager, Dict, Union, Any, Set, Iterable
 
 from .device import Device, RemoteDeviceBased
 
@@ -49,6 +49,7 @@ class Application(RemoteDeviceBased):
         if self._package_name is None:
             raise ValueError("manifest argument as dictionary must contain \"package_name\" as key")
         self._permissions: List[str] = manifest.permissions if isinstance(manifest, AXMLParser) else manifest.get("permissions", [])
+        self._granted_permissions: Set[str] = set()
 
     @property
     def package_name(self) -> str:
@@ -80,6 +81,13 @@ class Application(RemoteDeviceBased):
         if len(split_output) > 0:
             return split_output[0].strip()
         return None
+
+    @property
+    def granted_permissions(self) -> Set[str]:
+        """
+        :return: set of all permissions granted to the app
+        """
+        return self._granted_permissions
 
     @classmethod
     async def from_apk_async(cls: Type[_TApp], apk_path: str, device: Device, as_upgrade: bool = False) -> _TApp:
@@ -140,35 +148,38 @@ class Application(RemoteDeviceBased):
             if self.package_name in self.device.list_installed_packages():
                 log.error(f"Failed to uninstall app {self.package_name} [{str(e)}]")
 
-    def grant_permissions(self, permissions: Optional[List[str]] = None) -> List[str]:
+    def grant_permissions(self, permissions: Optional[Iterable[str]] = None) -> Set[str]:
         """
         Grant permissions for a package on a device
 
         :param permissions: string list of Android permissions to be granted, or None to grant app's defined
            user permissions
 
-        :return: the list of permissions successfully granted
+        :return: the set of all permissions granted to the app
         """
-        succeeded = []
         permissions = permissions or self.permissions
         # workaround for xiaomi:
-        if 'xiaomi' in self.device.model.lower():
-            # gives initial time for UI to appear, otherwise can bring up wrong window and block tests
-            time.sleep(self.SLEEP_GRANT_PERMISSION)
-        permissions_filtered = list(set([p.strip() for p in permissions if
-                                         p not in Device.NORMAL_PERMISSIONS]))
+        permissions_filtered = set(p.strip() for p in permissions if p in Device.DANGEROUS_PERMISSIONS)
         if not permissions_filtered:
             log.info("Permissions %s already requested or no 'dangerous' permissions requested, so nothing to do" %
                      permissions)
-            return []
+            return self._granted_permissions
         # note "block grants" do not work on all Android devices, so grant 'em one-by-one
         for p in permissions_filtered:
             try:
                 self.device.execute_remote_cmd("shell", "pm", "grant", self.package_name, p, capture_stdout=False)
             except Exception as e:
                 log.error(f"Failed to grant permission {p} for package {self.package_name} [{str(e)}]")
-            succeeded.append(p)
-        return succeeded
+            self._granted_permissions.add(p)
+        return self._granted_permissions
+
+    def regrant_permissions(self) -> Set[str]:
+        """
+        Regrant permissions (e.g. if an app's data was cleared) that were previously granted
+
+        :return: set of permissions that are currently granted to the app
+        """
+        return self.grant_permissions(self._granted_permissions)
 
     def start(self, activity: Optional[str] = None, *options: str, intent: Optional[str] = None) -> None:
         """
@@ -229,11 +240,14 @@ class Application(RemoteDeviceBased):
             raise Exception(
                 f"Detected app process is still running, despite background command succeeding. App closure failed.")
 
-    def clear_data(self) -> None:
+    def clear_data(self, regrant_permissions: bool = True) -> None:
         """
         clears app data for given package
         """
         self.device.execute_remote_cmd("shell", "pm", "clear", self.package_name, capture_stdout=False)
+        self._granted_permissions = set()
+        if regrant_permissions:
+            self.regrant_permissions()
 
     def in_foreground(self, ignore_silent_apps: bool = True) -> bool:
         """
@@ -382,6 +396,33 @@ class TestApplication(Application):
         return await self.device.execute_remote_cmd_async("shell", "am", "instrument", "-w", *options, "-r",
                                                           "/".join([self._package_name, self._runner]),
                                                           loop=loop)
+
+    async def run_orchestrated(self, *options: str, loop: Optional[AbstractEventLoop] = None) -> AsyncContextManager[Any]:
+        """
+        Run an instrumentation test package via Google's test orchestrator that
+
+        :param options: arguments to pass to instrument command
+        :param loop: event loop to execute under, or None for default event loop
+
+        :returns: return coroutine wrapping an asyncio context manager for iterating over lines
+
+        :raises Device.CommandExecutionFailureException with non-zero return code information on non-zero exit status
+        """
+        packages = self.device.list_installed_packages()
+        if not {'android.support.test.services', 'android.support.test.orchestrator'} < set(packages):
+            raise Exception("Must install both test-services-<version>.apk and orchestrator-<version>.apk to run "
+                            + "under Google's Android Test Orchestrator")
+        if self._target_application.package_name not in self.device.list_installed_packages():
+            raise Exception("App under test, as designatee by this test app's manifest, is not installed!")
+        # surround each arg with quotes to preserve spaces in any arguments when sent to remote device:
+        options_text = " ".join(['"%s"' % arg if not arg.startswith('"') and not arg.startswith("-") else arg
+                                 for arg in options])
+        return await self.device.execute_remote_cmd_async(
+            "shell",
+            "CLASSPATH=$(pm path android.support.test.services) "
+            + "app_process / android.support.test.services.shellexecutor.ShellMain am instrument "
+            + f"-r -w -e -v -targetInstrumentation {'/'.join([self._package_name, self._runner])} {options_text} "
+            + "android.support.test.orchestrator/android.support.test.orchestrator.AndroidTestOrchestrator")
 
     @classmethod
     async def from_apk_async(cls: Type[_TTestApp], apk_path: str, device: Device, as_upgrade: bool = False

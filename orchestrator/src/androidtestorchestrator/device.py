@@ -5,11 +5,24 @@ import os
 import re
 import subprocess
 import time
+
 from asyncio import AbstractEventLoop
 from contextlib import suppress, asynccontextmanager
 from types import TracebackType
-from typing import List, Tuple, Dict, Optional, AsyncContextManager, Union, Callable, IO, Any, AsyncIterator, Type, \
-    AnyStr
+from typing import (
+    Any,
+    AnyStr,
+    AsyncContextManager,
+    AsyncIterator,
+    Callable,
+    Dict,
+    IO,
+    List,
+    Optional,
+    Union,
+    Tuple,
+    Type,
+)
 
 from apk_bitminer.parsing import AXMLParser  # type: ignore
 
@@ -17,7 +30,27 @@ log = logging.getLogger("MTO")
 log.setLevel(logging.ERROR)
 
 
-class Device(object):
+class DeviceLock:
+
+    _locks: Dict[str, asyncio.Semaphore] = {}
+
+
+@asynccontextmanager
+async def _device_lock(device: "Device") -> AsyncIterator["Device"]:
+    """
+    lock this device while a command is being executed against it
+
+    Is static to avoid possible pickling issues in parallelized execution
+    :param device: device to lock
+    :return: device
+    """
+    DeviceLock._locks.setdefault(device._device_id, asyncio.Semaphore())
+    DeviceLock._locks[device._device_id].acquire()
+    yield device
+    DeviceLock._locks[device._device_id].release()
+
+
+class Device:
     """
     Class for interacting with a device via Google's adb command. This is intended to be a direct bridge to the same
     functionality as adb, with minimized embellishments
@@ -51,41 +84,38 @@ class Device(object):
     TIMEOUT_ADB_CMD = 10
     TIMEOUT_LONG_ADB_CMD = 4 * 60
 
-    NORMAL_PERMISSIONS = [
-        "ACCESS_LOCATION_EXTRA_COMMANDS",
-        "ACCESS_NETWORK_STATE",
-        "ACCESS_NOTIFICATION_POLICY",
-        "ACCESS_WIFI_STATE",
-        "BLUETOOTH",
-        "BLUETOOTH_ADMIN",
-        "BROADCAST_STICKY",
-        "CHANGE_NETWORK_STATE",
-        "CHANGE_WIFI_MULTICAST_STATE",
-        "CHANGE_WIFI_STATE",
-        "DISABLE_KEYGUARD",
-        "EXPAND_STATUS_BAR",
-        "GET_PACKAGE_SIZE",
-        "INSTALL_SHORTCUT",
-        "INTERNET",
-        "KILL_BACKGROUND_PROCESSES",
-        "MODIFY_AUDIO_SETTINGS",
-        "NFC",
-        "READ_SYNC_SETTINGS",
-        "READ_SYNC_STATS",
-        "RECEIVE_BOOT_COMPLETED",
-        "REORDER_TASKS",
-        "REQUEST_IGNORE_BATTERY_OPTIMIZATIONS",
-        "REQUEST_INSTALL_PACKAGES",
-        "SET_ALARM",
-        "SET_TIME_ZONE",
-        "SET_WALLPAPER",
-        "SET_WALLPAPER_HINTS",
-        "TRANSMIT_IR",
-        "UNINSTALL_SHORTCUT",
-        "USE_FINGERPRINT",
-        "VIBRATE",
-        "WAKE_LOCK",
-        "WRITE_SYNC_SETTINGS",
+    DANGEROUS_PERMISSIONS = [
+        "android.permission.ACCEPT_HANDOVER",
+        "android.permission.ACCESS_BACKGROUND_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_MEDIA_LOCATION",
+        "android.permission.ACTIVITY_RECOGNITION",
+        "android.permission.ADD_VOICEMAIL",
+        "android.permission.ANSWER_PHONE_CALLS",
+        "android.permission.BODY_SENSORS",
+        "android.permission.CALL_PHONE",
+        "android.permission.CALL_PRIVILEGED",
+        "android.permission.CAMERA",
+        "android.permission.GET_ACCOUNTS",
+        "android.permission.PROCESS_OUTGOING_CALLS",
+        "android.permission.READ_CALENDAR",
+        "android.permission.READ_CALL_LOG",
+        "android.permission.READ_CONTACTS",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.READ_PHONE_NUMBERS",
+        "android.permission.READ_PHONE_STATE",
+        "android.permission.READ_SMS",
+        "android.permission.READ_MMS",
+        "android.permission.RECEIVE_SMS",
+        "android.permission.RECEIVE_WAP_PUSH",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.SEND_SMS",
+        "android.permission.USE_SIP",
+        "android.permission.WRITE_CALENDAR",
+        "android.permission.WRITE_CALL_LOG",
+        "android.permission.WRITE_CONTACTS",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
     ]
 
     WRITE_EXTERNAL_STORAGE_PERMISSION = "android.permission.WRITE_EXTERNAL_STORAGE"
@@ -135,7 +165,6 @@ class Device(object):
         self._ext_storage = Device.override_ext_storage.get(self.model)
         self._device_server_datetime_offset: Optional[datetime.timedelta] = None
         self._api_level: Optional[int] = None
-        self._lock: Optional[asyncio.Semaphore] = None
 
     @property
     def api_level(self) -> int:
@@ -321,7 +350,7 @@ class Device(object):
         log.debug(f"Executing: {' '.join(cmd)}")
         proc = await asyncio.subprocess.create_subprocess_exec(*cmd,
                                                                stdout=asyncio.subprocess.PIPE,
-                                                               stderr=asyncio.subprocess.PIPE,
+                                                               stderr=asyncio.subprocess.STDOUT,
                                                                loop=loop or asyncio.events.get_event_loop(),
                                                                bufsize=0)  # noqa
 
@@ -623,12 +652,13 @@ class Device(object):
             log.error(f"Unable to get version for package {package} [{str(e)}]")
         return version
 
-    def _verify_install(self, appl_path: str, package: str) -> None:
+    def _verify_install(self, appl_path: str, package: str, verify_screenshot_dir: Optional[str] = None) -> None:
         """
         Verify installation of an app, taking a screenshot on failure
 
         :param appl_path: For logging which apk failed to install (upon any failure)
         :param package: package name of app
+        :param verify_screenshot_dir: if not None, where to capture screenshot on failure
 
         :raises Exception: if failure to verify
         """
@@ -639,10 +669,12 @@ class Device(object):
             packages = self.list_installed_packages()
         if package not in packages:
             if package is not None:
-                screenshot_dir = "test-screenshots"
-                if not os.path.exists(screenshot_dir):
-                    os.makedirs(screenshot_dir)
-                self.take_screenshot("install_failure-%s.png" % package)
+                try:
+                    if verify_screenshot_dir:
+                        os.makedirs(verify_screenshot_dir, exist_ok=True)
+                        self.take_screenshot(os.path.join(verify_screenshot_dir, f"install_failure-{package}.png"))
+                except Exception as e:
+                    log.warning(f"Unable to take screenshot of installation failure: {e}")
                 log.error("Did not find installed package %s;  found: %s" % (package, packages))
                 log.error("Device failure to install %s on model %s;  install status succeeds,"
                           "but package not found on device" %
@@ -667,7 +699,8 @@ class Device(object):
 
     async def install(self, apk_path: str, as_upgrade: bool,
                       conditions: Optional[List[str]] = None,
-                      on_full_install: Optional[Callable[[], None]] = None) -> None:
+                      on_full_install: Optional[Callable[[], None]] = None,
+                      screenshot_dir: Optional[str] = None) -> None:
         """
         Install given apk asynchronously, monitoring output for messages containing any of the given conditions,
         executing a callback if given when any such condition is met.
@@ -679,48 +712,62 @@ class Device(object):
             uploaded and prepared. This param defaults to ["100%", "pkg:", "Success"] as indication that bundle was
             fully prepared (pre-pop-up).
         :param on_full_install: if not None the callback to be called
+        :param screenshot_dir: if not None, where to capture a screenshot on failure; if None, no verification of
+           install will be performed
 
         :raises Device.InsufficientStorageError: if there is not enough space on device
         """
         conditions = conditions or ["100%", "pkg:", "Success"]
         parser = AXMLParser.parse(apk_path)
         package = parser.package_name
+        remote_data_path = f"/data/local/tmp/{package}"
         if not as_upgrade:
             # avoid unnecessary conflicts with older certs and crap:
             # TODO: client should handle clean install -- this code really shouldn't be here??
             with suppress(Exception):
                 self.execute_remote_cmd("uninstall", package, capture_stdout=False)
 
-        # Execute the installation of the app, monitoring output for completion in order to invoke any extra commands
-        if as_upgrade:
-            cmd: Tuple[str, ...] = ("install", "-r", apk_path)
-        else:
-            cmd = ("install", apk_path)
-        # Do not allow more than one install at a time on a specific device, as this can be problematic
-        async with self.lock():
-            async with await self.execute_remote_cmd_async(*cmd) as proc:
-                async for msg in proc.output(unresponsive_timeout=Device.TIMEOUT_LONG_ADB_CMD):
-                    if self.ERROR_MSG_INSUFFICIENT_STORAGE in msg:
-                        raise self.InsufficientStorageError("Insufficient storage for install of %s" %
-                                                            apk_path)
-                    # Some devices have non-standard pop-ups that must be cleared by accepting usb installs
-                    # (non-standard Android):
-                    if on_full_install and msg and any([condition in msg for condition in conditions]):
-                        on_full_install()
-                await proc.wait(Device.TIMEOUT_LONG_ADB_CMD)
+        # We try Android Studio's method of pushing to device and installing from there, but if push is
+        # unsuccessful, we fallback to plain adb install
+        try:
+            push_cmd = ("push", apk_path, remote_data_path)
+            self.execute_remote_cmd(*push_cmd, timeout=Device.TIMEOUT_LONG_ADB_CMD)
+            push_successful = True
+        except Exception:
+            log.warning("Unable to push apk to install from device, will attempt direct install from local apk")
+            push_successful = False
 
-        # On some devices, a pop-up may prevent successful install even if return code from adb install showed success,
-        # so must explicitly verify the install was successful:
-        log.info("Verifying install...")
-        self._verify_install(apk_path, package)  # raises exception on failure to verify
+        try:
+            # Execute the installation of the app, monitoring output for completion in order to invoke any extra
+            # commands or detect insufficient storage issues
+            cmd: List[str] = ["shell", "pm", "install"] if push_successful else ["install"]
+            source = remote_data_path if push_successful else apk_path
+            if as_upgrade:
+                cmd.append("-r")
+            cmd.append(source)
+            # Do not allow more than one install at a time on a specific device, as this can be problematic
+            async with _device_lock(self):
+                async with await self.execute_remote_cmd_async(*cmd) as proc:
+                    async for msg in proc.output(unresponsive_timeout=Device.TIMEOUT_LONG_ADB_CMD):
+                        if self.ERROR_MSG_INSUFFICIENT_STORAGE in msg:
+                            raise self.InsufficientStorageError("Insufficient storage for install of %s" %
+                                                                apk_path)
+                        # Some devices have non-standard pop-ups that must be cleared by accepting usb installs
+                        # (non-standard Android):
+                        if on_full_install and msg and any([condition in msg for condition in conditions]):
+                            on_full_install()
+                    await proc.wait(Device.TIMEOUT_LONG_ADB_CMD)
 
-    @asynccontextmanager
-    async def lock(self) -> AsyncIterator["Device"]:
-        if self._lock is None:
-            self._lock = asyncio.Semaphore()
-        await self._lock.acquire()
-        yield self
-        self._lock.release()
+            # On some devices, a pop-up may prevent successful install even if return code from adb install showed success,
+            # so must explicitly verify the install was successful:
+            if screenshot_dir:
+                log.info("Verifying install...")
+                self._verify_install(apk_path, package, screenshot_dir)  # raises exception on failure to verify
+        finally:
+            if push_successful:
+                with suppress(Exception):
+                    rm_cmd = ("shell", "rm", remote_data_path)
+                    self.execute_remote_cmd(*rm_cmd, timeout=self.TIMEOUT_ADB_CMD)
 
     # todo: why this is a property instead of a function?
     @property

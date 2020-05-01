@@ -6,6 +6,7 @@ from androidtestorchestrator.device import Device
 from androidtestorchestrator.devicelog import DeviceLog
 from androidtestorchestrator.parsing import InstrumentationOutputParser
 from androidtestorchestrator.reporting import TestRunListener
+from androidtestorchestrator.timing import StopWatch
 
 
 class TestInstrumentationOutputParser(object):
@@ -166,6 +167,15 @@ at android.app.Instrumentation$InstrumentationThread.run(Instrumentation.java:17
             got_test_failed = False
             got_test_assumption_failure = False
 
+            class ExecutionListener(StopWatch):
+
+                def mark_start(self, name: str) -> None:
+                    assert name in ['com.test.TestSkipped', 'com.test.Test2', 'com.test.TestFailure']
+                    self._name = name
+
+                def mark_end(self, name: str) -> None:
+                    assert name == self._name
+
             class Listener(TestRunListener):
 
                 def test_run_failed(self, error_message: str):
@@ -176,13 +186,13 @@ at android.app.Instrumentation$InstrumentationThread.run(Instrumentation.java:17
                     got_test_assumption_failure = True
 
                 def test_run_started(self, test_run_name: str):
-                    pass
+                    assert test_run_name in ['com.test.TestSkipped', 'com.test.Test2', 'com.test.TestFailure']
 
                 def test_run_ended(self, duration: float, **kwargs):
                     pass
 
                 def test_started(self, class_name: str, test_name: str):
-                    pass
+                    assert class_name in ['com.test.TestSkipped', 'com.test.Test2', 'com.test.TestFailure']
 
                 def test_ended(self, class_name: str, test_name: str, **kwargs: Mapping[Any, Any]):
                     assert test_name in ["transcode1080pAvc", "transcode1440pAvc", "transcode2160pAvc"]
@@ -202,8 +212,8 @@ at android.app.Instrumentation$InstrumentationThread.run(Instrumentation.java:17
                     assert stack_trace.strip() == TestInstrumentationOutputParser.EXPECTED_STACK_TRACE
 
             parser = InstrumentationOutputParser(test_run_listener=Listener())
-            parser.add_test_execution_listener(logcat_marker)  # TODO: not yet tested other than to exercise interface
-
+            parser.add_test_execution_listener(ExecutionListener())
+            parser.add_test_execution_listener(logcat_marker)
             for line in self.example_output.splitlines():
                 parser.parse_line(line)
 
@@ -213,3 +223,9 @@ at android.app.Instrumentation$InstrumentationThread.run(Instrumentation.java:17
             assert parser.total_test_count == 3
             assert parser.num_tests_expected == 3
             assert abs(parser.execution_time - 9.387) < 0.0001
+
+    def test_non_int_status_code(self):
+        parser = InstrumentationOutputParser()
+        test = parser._get_current_test()
+        parser._parse_status_code("not_an_int")
+        assert test.code == parser.CODE_ERROR

@@ -58,6 +58,7 @@ class TestAndroidTestOrchestrator(object):
         expected_test_suite = None
         current_test_suite = None
         uninstall_apk(android_test_app, device)
+
         class TestExpectations(TestRunListener):
 
             def __init__(self):
@@ -103,7 +104,6 @@ class TestAndroidTestOrchestrator(object):
                 nonlocal current_test_suite
                 current_test_suite = test_run_name
                 print("Started test suite %s" % test_run_name)
-                test_count = 0  # reset
                 test_suite_count += 1
                 expected_test_suite = "test_suite%d" % test_suite_count
                 assert test_run_name == expected_test_suite
@@ -121,7 +121,7 @@ class TestAndroidTestOrchestrator(object):
             orchestrator.add_test_suite_listener(TestExpectations())
             orchestrator.execute_test_plan(test_plan=test_generator(),
                                            test_application=android_test_app)
-        assert test_count == 2  # last test suite had one test
+        assert test_count == 4  # last test suite had one test
 
     def test_add_background_task(self,
                                  device: Device,
@@ -244,3 +244,96 @@ class TestAndroidTestOrchestrator(object):
 
             assert device.get_system_property("debug.mock2") == "5555"
             assert device.get_device_setting("system", "dim_screen") == new
+
+    def test_execute_test_suite_orchestrated(self, device: Device, support_app: str,
+                                             support_test_app: str, tmpdir):
+        uninstall_apk(support_app, device)
+        uninstall_apk(support_test_app, device)
+
+        test_count = 0
+        test_suite_count = 0
+        expected_test_suite = None
+        current_test_suite = None
+
+        gradle_cache_dir = os.environ.get("GRADLE_USER_HOME", os.path.join(os.path.expanduser('~'), '.gradle'))
+        gradle_apk_root_dir = os.path.join(gradle_cache_dir, 'caches', 'modules-2', 'files-2.1')
+        test_services_root = os.path.join(gradle_apk_root_dir, 'com.android.support.test.services', 'test-services')
+        orchestrator_root = os.path.join(gradle_apk_root_dir, 'com.android.support.test', 'orchestrator')
+
+        def find_file(in_path: str, name_prefix: str) -> str:
+            for root, dirs, files in os.walk(in_path):
+                for file in files:
+                    if file.startswith(name_prefix) and file.endswith('.apk'):
+                        return os.path.join(root, file)
+
+        test_services_apk = find_file(test_services_root, 'test-services')
+        android_orchestrator_apk = find_file(orchestrator_root, 'orchestrator')
+
+        if not test_services_apk or not android_orchestrator_apk:
+            raise Exception("Unable to locate test-services apk or orchestrator apk for orchestrated run. Aborting")
+
+        class TestExpectations(TestRunListener):
+
+            def __init__(self):
+                self.expected_test_class = {
+                    'test_suite1': "com.linkedin.mtotestapp.InstrumentedTestAllSuccess",
+                }
+
+            def test_run_failed(self, error_message: str):
+                assert False, "did not expect test process to error; \n%s" % error_message
+
+            def test_assumption_failure(self, class_name: str, test_name: str, stack_trace: str):
+                pass
+
+            def test_run_ended(self, duration: float = -1.0, **kwargs: Optional[Any]) -> None:
+                pass
+
+            def test_started(self, class_name: str, test_name: str):
+                pass
+
+            def test_ended(self, class_name: str, test_name: str, **kwargs):
+                nonlocal test_count, current_test_suite
+                test_count += 1
+                assert test_name in ["useAppContext",
+                                     "testSuccess",
+                                     "testFail"
+                                     ]
+                assert class_name in [
+                    "com.linkedin.mtotestapp.InstrumentedTestAllSuccess",
+                    "com.linkedin.mtotestapp.InstrumentedTestSomeFailures"
+                ]
+
+            def test_failed(self, class_name: str, test_name: str, stack_trace: str):
+                nonlocal test_count, current_test_suite
+                assert class_name in [
+                    "com.linkedin.mtotestapp.InstrumentedTestAllSuccess",
+                    "com.linkedin.mtotestapp.InstrumentedTestSomeFailures"
+                ]
+                assert test_name == "testFail"  # this test case is designed to be failed
+
+            def test_ignored(self, class_name: str, test_name: str):
+                nonlocal test_count
+                assert False, "no skipped tests should be present"
+
+            def test_run_started(self, test_run_name: str, count: int = 0):
+                nonlocal test_count, test_suite_count
+                nonlocal expected_test_suite
+                nonlocal current_test_suite
+                current_test_suite = test_run_name
+                print("Started test suite %s" % test_run_name)
+                test_count = 0  # reset
+                test_suite_count += 1
+                expected_test_suite = "test_suite%d" % test_suite_count
+                assert test_run_name == expected_test_suite
+
+        def test_generator():
+            yield (TestSuite(name='test_suite1',
+                             test_parameters={"class": "com.linkedin.mtotestapp.InstrumentedTestAllSuccess"}))
+
+        with EspressoTestPreparation(device, path_to_apk=support_app, path_to_test_apk=support_test_app) as test_prep, \
+                AndroidTestOrchestrator(artifact_dir=str(tmpdir), run_under_orchestration=True) as orchestrator:
+            test_prep.setup_foreign_apps([test_services_apk, android_orchestrator_apk])
+            orchestrator.add_test_suite_listener(TestExpectations())
+            orchestrator.execute_test_plan(test_plan=test_generator(),
+                                           test_application=test_prep.test_app)
+        assert test_count == 3  # last test suite had one test

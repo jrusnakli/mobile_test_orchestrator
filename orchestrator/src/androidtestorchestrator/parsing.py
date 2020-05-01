@@ -134,7 +134,8 @@ class InstrumentationOutputParser(LineParser):
         def __repr__(self) -> str:
             return self.__class__.__name__ + str(self.__dict__)
 
-    def __init__(self, test_run_listener: Optional[TestRunListener] = None) -> None:
+    def __init__(self, test_run_listener: Optional[TestRunListener] = None,
+                 include_instrumentation_output: bool = False) -> None:
         super().__init__()
         self._reporters: List[TestRunListener] = [test_run_listener] if test_run_listener else []
         self._execution_listeners: List[StopWatch] = []
@@ -155,6 +156,9 @@ class InstrumentationOutputParser(LineParser):
 
         # todo: currently unused. However, android studio reports this as test run duration.
         self._test_run_time: float = 0
+
+        self._include_instrumentation_output = include_instrumentation_output
+        self._instrumentation_text = ""
 
     def __enter__(self) -> "InstrumentationOutputParser":
         return self
@@ -193,6 +197,8 @@ class InstrumentationOutputParser(LineParser):
         Entry point. Parses one line of output at a time.
         :param line: A single line of output (typically ending in '\n', unless the end of output has been reached)
         """
+        if self._include_instrumentation_output:
+            self._instrumentation_text += line + "\n"
         if line.startswith(self.PREFIX_STATUS_CODE):
             self._finalize_current_key_value()
             self._in_result_key_value = False
@@ -350,23 +356,19 @@ class InstrumentationOutputParser(LineParser):
         if test.code == self.CODE_FAIL or test.code == self.CODE_ERROR:
             for reporter in self._reporters:
                 reporter.test_failed(test_class, test_name, test.stack_trace or self.MISSING_STACK_TRACE)
-                reporter.test_ended(test_class, test_name)
-        elif test.code == self.CODE_SKIPPED:
-            for reporter in self._reporters:
-                reporter.test_started(test_class, test_name)
-                reporter.test_ignored(test_class, test_name)
-                reporter.test_ended(test_class, test_name)
-        elif test.code == self.CODE_ASSUMPTION_VIOLATION:
-            for reporter in self._reporters:
-                reporter.test_assumption_failure(test_class, test_name, test.stack_trace or self.MISSING_STACK_TRACE)
-                reporter.test_ended(test_class, test_name)
-        elif test.code == self.CODE_PASS:
-            for reporter in self._reporters:
-                reporter.test_ended(test_class, test_name)
         else:
-            log.warning("Unknown status code %s. Stacktrace: %s", test.code, test.stack_trace)
+            if test.code == self.CODE_SKIPPED:
+                for reporter in self._reporters:
+                    reporter.test_started(test_class, test_name)
+                    reporter.test_ignored(test_class, test_name)
+            elif test.code == self.CODE_ASSUMPTION_VIOLATION:
+                for reporter in self._reporters:
+                    reporter.test_assumption_failure(test_class, test_name, test.stack_trace or self.MISSING_STACK_TRACE)
+            elif test.code != self.CODE_PASS:
+                log.warning("Unknown status code %s. Stacktrace: %s", test.code, test.stack_trace)
             for reporter in self._reporters:
-                reporter.test_ended(test_class, test_name)
+                reporter.test_ended(test_class, test_name, instrumentation_output=self._instrumentation_text)
+        self._instrumentation_text = ""
 
     def _report_test_run_failed(self, error_message: str) -> None:
         """
@@ -383,7 +385,8 @@ class InstrumentationOutputParser(LineParser):
                           " Check device logcat for details." % error_message
             for reporter in self._reporters:
                 reporter.test_failed(test_class, test_name, stack_trace)
-                reporter.test_ended(test_class, test_name)
+                reporter.test_ended(test_class, test_name, instrumentation_output=self._instrumentation_text)
+        self._instrumentation_text = ""
 
         for reporter in self._reporters:
             reporter.test_run_failed(error_message)

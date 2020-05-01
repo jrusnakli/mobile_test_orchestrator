@@ -1,10 +1,10 @@
-apk-bitminer
+apk-bitminer>=1.1.0
 psutil
 pytest
 pytest-html
 pytest-cov
 pytest-asyncio
-pytest_mproc
+pytest_mproc==2.0.2
 mypy==0.720
 typed-ast
 flake8
