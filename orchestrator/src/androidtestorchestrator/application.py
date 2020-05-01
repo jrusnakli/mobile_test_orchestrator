@@ -4,7 +4,7 @@ import time
 from asyncio import AbstractEventLoop
 
 from apk_bitminer.parsing import AXMLParser  # type: ignore
-from typing import List, TypeVar, Type, Optional, AsyncContextManager, Dict, Union, Any, Set
+from typing import List, TypeVar, Type, Optional, AsyncContextManager, Dict, Union, Any, Set, Iterable
 
 from .device import Device, RemoteDeviceBased
 
@@ -49,7 +49,7 @@ class Application(RemoteDeviceBased):
         if self._package_name is None:
             raise ValueError("manifest argument as dictionary must contain \"package_name\" as key")
         self._permissions: List[str] = manifest.permissions if isinstance(manifest, AXMLParser) else manifest.get("permissions", [])
-        self._granted_permissions: List[str] = []
+        self._granted_permissions: Set[str] = set()
 
     @property
     def package_name(self) -> str:
@@ -87,7 +87,7 @@ class Application(RemoteDeviceBased):
         """
         :return: set of all permissions granted to the app
         """
-        return set(self._granted_permissions)
+        return self._granted_permissions
 
     @classmethod
     async def from_apk_async(cls: Type[_TApp], apk_path: str, device: Device, as_upgrade: bool = False) -> _TApp:
@@ -148,14 +148,14 @@ class Application(RemoteDeviceBased):
             if self.package_name in self.device.list_installed_packages():
                 log.error(f"Failed to uninstall app {self.package_name} [{str(e)}]")
 
-    def grant_permissions(self, permissions: Optional[List[str]] = None) -> Set[str]:
+    def grant_permissions(self, permissions: Optional[Iterable[str]] = None) -> Set[str]:
         """
         Grant permissions for a package on a device
 
         :param permissions: string list of Android permissions to be granted, or None to grant app's defined
            user permissions
 
-        :return: the list of all permissions granted to the app
+        :return: the set of all permissions granted to the app
         """
         permissions = permissions or self.permissions
         # workaround for xiaomi:
@@ -163,21 +163,21 @@ class Application(RemoteDeviceBased):
         if not permissions_filtered:
             log.info("Permissions %s already requested or no 'dangerous' permissions requested, so nothing to do" %
                      permissions)
-            return set()
+            return self._granted_permissions
         # note "block grants" do not work on all Android devices, so grant 'em one-by-one
         for p in permissions_filtered:
             try:
                 self.device.execute_remote_cmd("shell", "pm", "grant", self.package_name, p, capture_stdout=False)
             except Exception as e:
                 log.error(f"Failed to grant permission {p} for package {self.package_name} [{str(e)}]")
-            self._granted_permissions.append(p)
-        return set(self._granted_permissions)
+            self._granted_permissions.add(p)
+        return self._granted_permissions
 
     def regrant_permissions(self) -> Set[str]:
         """
         Regrant permissions (e.g. if an app's data was cleared) that were previously granted
 
-        :return: list of permissions that are currently granted to the app
+        :return: set of permissions that are currently granted to the app
         """
         return self.grant_permissions(self._granted_permissions)
 
@@ -245,7 +245,7 @@ class Application(RemoteDeviceBased):
         clears app data for given package
         """
         self.device.execute_remote_cmd("shell", "pm", "clear", self.package_name, capture_stdout=False)
-        self._granted_permissions = []
+        self._granted_permissions = set()
         if regrant_permissions:
             self.regrant_permissions()
 
