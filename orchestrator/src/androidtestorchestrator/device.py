@@ -40,7 +40,7 @@ async def _device_lock(device: "Device") -> AsyncIterator["Device"]:
     """
     lock this device while a command is being executed against it
 
-    Is static to vaoid possible pickling issues in parallelized execution
+    Is static to avoid possible pickling issues in parallelized execution
     :param device: device to lock
     :return: device
     """
@@ -652,13 +652,13 @@ class Device:
             log.error(f"Unable to get version for package {package} [{str(e)}]")
         return version
 
-    def _verify_install(self, appl_path: str, package: str, screenshot_dir: Optional[str] = None) -> None:
+    def _verify_install(self, appl_path: str, package: str, verify_screenshot_dir: Optional[str] = None) -> None:
         """
         Verify installation of an app, taking a screenshot on failure
 
         :param appl_path: For logging which apk failed to install (upon any failure)
         :param package: package name of app
-        :param screenshot_dir: if not None, where to capture screenshot on failure
+        :param verify_screenshot_dir: if not None, where to capture screenshot on failure
 
         :raises Exception: if failure to verify
         """
@@ -670,9 +670,9 @@ class Device:
         if package not in packages:
             if package is not None:
                 try:
-                    if screenshot_dir:
-                        os.makedirs(screenshot_dir, exist_ok=True)
-                        self.take_screenshot(os.path.join(screenshot_dir, f"install_failure-{package}.png"))
+                    if verify_screenshot_dir:
+                        os.makedirs(verify_screenshot_dir, exist_ok=True)
+                        self.take_screenshot(os.path.join(verify_screenshot_dir, f"install_failure-{package}.png"))
                 except Exception as e:
                     log.warning(f"Unable to take screenshot of installation failure: {e}")
                 log.error("Did not find installed package %s;  found: %s" % (package, packages))
@@ -760,8 +760,8 @@ class Device:
 
             # On some devices, a pop-up may prevent successful install even if return code from adb install showed success,
             # so must explicitly verify the install was successful:
-            log.info("Verifying install...")
             if screenshot_dir:
+                log.info("Verifying install...")
                 self._verify_install(apk_path, package, screenshot_dir)  # raises exception on failure to verify
         finally:
             if push_successful:

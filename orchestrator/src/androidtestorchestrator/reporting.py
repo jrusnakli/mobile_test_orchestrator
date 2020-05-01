@@ -150,8 +150,6 @@ class TestRunListener(TestSuiteListener):
         signal test has ended, presumably with success
         :param class_name: fully qualified class name of the test
         :param test_name: name of the test
-        :param instrumentation_output: if parser was so configured, will contain the lines of output from adb
-           instrument for the test that ended
         :param kwargs: additional data to store with this test
         """
 
