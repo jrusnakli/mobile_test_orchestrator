@@ -240,9 +240,9 @@ class Device:
         """
         stdout = self.execute_remote_cmd("shell", "dumpsys", "activity", "activities", capture_stdout=True)
         # Find lines that look like this:
-        #   * TaskRecord{133fbae #1340 I=com.google.android.apps.nexuslauncher/.NexusLauncherActivity U=0 StackId=0 sz=1}
+        #  * TaskRecord{133fbae #1340 I=com.google.android.apps.nexuslauncher/.NexusLauncherActivity U=0 StackId=0 sz=1}
         # or
-        #   * TaskRecord{94c8098 #1791 A=com.android.chrome U=0 StackId=454 sz=1}
+        #  * TaskRecord{94c8098 #1791 A=com.android.chrome U=0 StackId=454 sz=1}
         app_record_pattern = re.compile(r'^\* TaskRecord\{[a-f0-9-]* #\d* [AI]=([a-zA-Z].[a-zA-Z0-9.]*)[ /].*')
         for line in stdout.splitlines():
             matches = app_record_pattern.match(line.strip())
@@ -293,7 +293,6 @@ class Device:
                             package)
         else:
             log.info("Package %s installed" % str(package))
-
 
     #################
     # Properties
@@ -489,8 +488,9 @@ class Device:
 
         :return: AsyncGenerator iterating over lines of output from command
 
-        >>> async with await device.execute_remote_cmd_async("some_cmd", "with", "args", unresponsive_timeout=10) as stdout:
-        ...     async for line in stdout:
+        >>> async with await device.execute_remote_cmd_async("some_cmd", "with", "args",
+        ...                                                  unresponsive_timeout=10) as proc:
+        ...     async for line in proc.output():
         ...         process(line)
 
         """
@@ -686,9 +686,9 @@ class Device:
         output = self.execute_remote_cmd("shell", "dumpsys", "activity", "activities", timeout=10)
         activity_list = []
         # Find lines that look like this:
-        #   * TaskRecord{133fbae #1340 I=com.google.android.apps.nexuslauncher/.NexusLauncherActivity U=0 StackId=0 sz=1}
+        #  * TaskRecord{133fbae #1340 I=com.google.android.apps.nexuslauncher/.NexusLauncherActivity U=0 StackId=0 sz=1}
         # or
-        #   * TaskRecord{94c8098 #1791 A=com.android.chrome U=0 StackId=454 sz=1}
+        #  * TaskRecord{94c8098 #1791 A=com.android.chrome U=0 StackId=454 sz=1}
         app_record_pattern = re.compile(r'^\* TaskRecord\{[a-f0-9-]* #\d* [AI]=(com\.[a-zA-Z0-9.]*)[ /].*')
         for line in output.splitlines():
             matches = app_record_pattern.match(line.strip())
@@ -707,8 +707,6 @@ class Device:
         """
         ignored = self.SILENT_RUNNING_PACKAGES if ignore_silent_apps else []
         return self._activity_stack_top(filter=lambda x: x.lower() not in ignored)
-
-
 
     #################
     # Screenshot
