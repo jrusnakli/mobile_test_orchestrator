@@ -263,18 +263,32 @@ class AndroidTestOrchestrator:
                 # (completes when all tests ar exhausted)
 
                 async def do_work():
-                    async with devices.reserve() as device:
-                        sem.release()
-                        if not have_tests_to_process:
-                            return
-                        await self.run(
-                            device=device,
-                            test_setup=test_setup,
-                            test_plan=test_plan,
-                            completion_callback=worker_completion()
-                        )
+                    nonlocal have_tests_to_process
+                    released = False
+                    try:
+                        async with devices.reserve() as device:
+                            # this synchronizes reservation of device with outer loop to prevent it from spinning
+                            # its wheels.  This task blocks if until a device is available and the sem therefore
+                            # blocks the outer loop on the same condition
+                            sem.release()
+                            released = True
+                            if not have_tests_to_process:
+                                return
+                            await self.run(
+                                device=device,
+                                test_setup=test_setup,
+                                test_plan=test_plan,
+                                completion_callback=worker_completion()
+                            )
+                    except Exception:
+                        have_tests_to_process = False  # stops outer loop from trying to process more tests
+                        raise
+                    finally:
+                        if not released:
+                            sem.release()
+
                 if have_tests_to_process:
-                    task = asyncio.get_event_loop().create_task(do_work())
+                    task = asyncio.create_task(do_work())
                     worker_tasks.append(task)
                     # synchronize, to ensure we don't spin our wheels and that we wait for the device to first
                     # be reserved.  This is a little quirky, but it also allows the provision of having a simpler

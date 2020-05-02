@@ -10,15 +10,16 @@ from that class to provide additional APIs specific to service application and (
 
 import asyncio
 import logging
+import os
 import subprocess
 import time
 from asyncio import AbstractEventLoop
+from contextlib import suppress
 
 from apk_bitminer.parsing import AXMLParser  # type: ignore
-from typing import List, TypeVar, Type, Optional, AsyncContextManager, Dict, Union, Any, Set
+from typing import List, TypeVar, Type, Optional, AsyncContextManager, Dict, Union, Any, Set, Tuple, Callable
 
-from .device import Device, DeviceBased
-
+from .device import Device, DeviceBased, _device_lock, DeviceNavigation
 
 __all__ = ["Application", "ServiceApplication", "TestApplication"]
 
@@ -64,6 +65,129 @@ class Application(DeviceBased):
             raise ValueError("manifest argument as dictionary must contain \"package_name\" as key")
         self._permissions: List[str] = manifest.permissions if isinstance(manifest, AXMLParser) else manifest.get("permissions", [])
         self._granted_permissions: List[str] = []
+
+    @classmethod
+    def _verify_install(cls, device: Device, package: str, screenshot_dir: Optional[str] = None) -> None:
+        """
+        Verify installation of an app, taking a screenshot on failure
+
+        :param device: device to install on
+        :param package: package name of app
+        :param screenshot_dir: if not None, where to capture screenshot on failure
+
+        :raises Exception: if failure to verify
+        """
+        packages = device.list_installed_packages()
+        if package not in packages:
+            # some devices (may??) need time for package install to be detected by system
+            time.sleep(Device.SLEEP_PKG_INSTALL)
+            packages = device.list_installed_packages()
+        if package not in packages:
+            if package is not None:
+                try:
+                    if screenshot_dir:
+                        os.makedirs(screenshot_dir, exist_ok=True)
+                        device.take_screenshot(os.path.join(screenshot_dir, f"install_failure-{package}.png"))
+                except Exception as e:
+                    log.warning(f"Unable to take screenshot of installation failure: {e}")
+                log.error("Did not find installed package %s;  found: %s", package, packages)
+                log.error("Device failure to install %s on model %s;  install status succeeds,"
+                          "but package not found on device", package, device.model)
+            raise Exception("Failed to verify installation of app '%s', event though output indicated otherwise" %
+                            package)
+        else:
+            log.info("Package %s installed" % str(package))
+
+    @classmethod
+    def _install_synchronous(cls, device: Device, apk_path: str, as_upgrade: bool) -> None:
+        """
+        Install the given bundle, blocking until complete
+        Preference should be to use `Application.from_apk_async` method.
+
+        :param device: device to install on
+        :param apk_path: local path to the apk to be installed
+        :param as_upgrade: install as upgrade or not
+        """
+        if as_upgrade:
+            cmd: Tuple[str, ...] = ("install", "-r", apk_path)
+        else:
+            cmd = ("install", apk_path)
+
+        device.execute_remote_cmd(*cmd, timeout=Device.TIMEOUT_LONG_ADB_CMD)
+
+    @classmethod
+    async def _install_async(cls, device: Device, apk_path: str, as_upgrade: bool,
+                             conditions: Optional[List[str]] = None,
+                             on_full_install: Optional[Callable[[], None]] = None,
+                             screenshot_dir: Optional[str] = None) -> None:
+        """
+        Install given apk asynchronously, monitoring output for messages containing any of the given conditions,
+        executing a callback if given when any such condition is met.
+        Preference should be to use `Application.from_apk_async` method.
+
+        :param device: device to install on
+        :param apk_path: bundle to install
+        :param as_upgrade: whether as upgrade or not
+        :param conditions: list of strings to look for in stdout as a trigger for callback. Some devices are
+            non-standard and will provide a pop-up request explicit user permission for install once the apk is fully
+            uploaded and prepared. This param defaults to ["100%", "pkg:", "Success"] as indication that bundle was
+            fully prepared (pre-pop-up).
+        :param on_full_install: if not None the callback to be called
+        :param screenshot_dir: if not None, where to capture a screenshot on failure; if None, no verification of
+           install will be performed
+
+        :raises Device.InsufficientStorageError: if there is not enough space on device
+        """
+        conditions = conditions or ["100%", "pkg:", "Success"]
+        parser = AXMLParser.parse(apk_path)
+        package = parser.package_name
+        remote_data_path = f"/data/local/tmp/{package}"
+        if not as_upgrade:
+            # avoid unnecessary conflicts with older certs and crap:
+            # TODO: client should handle clean install -- this code really shouldn't be here??
+            with suppress(Exception):
+                device.execute_remote_cmd("uninstall", package, capture_stdout=False)
+
+        # We try Android Studio's method of pushing to device and installing from there, but if push is
+        # unsuccessful, we fallback to plain adb install
+        try:
+            push_cmd = ("push", apk_path, remote_data_path)
+            device.execute_remote_cmd(*push_cmd, timeout=Device.TIMEOUT_LONG_ADB_CMD)
+            push_successful = True
+        except Exception:
+            log.warning("Unable to push apk to install from device, will attempt direct install from local apk")
+            push_successful = False
+
+        try:
+            # Execute the installation of the app, monitoring output for completion in order to invoke any extra
+            # commands or detect insufficient storage issues
+            cmd: List[str] = ["shell", "pm", "install"] if push_successful else ["install"]
+            source = remote_data_path if push_successful else apk_path
+            if as_upgrade:
+                cmd.append("-r")
+            cmd.append(source)
+            # Do not allow more than one install at a time on a specific device, as this can be problematic
+            async with _device_lock(device), await device.monitor_remote_cmd(*cmd) as proc:
+                async for msg in proc.output(unresponsive_timeout=Device.TIMEOUT_LONG_ADB_CMD):
+                    if Device.ERROR_MSG_INSUFFICIENT_STORAGE in msg:
+                        raise Device.InsufficientStorageError("Insufficient storage for install of %s" %
+                                                              apk_path)
+                    # Some devices have non-standard pop-ups that must be cleared by accepting usb installs
+                    # (non-standard Android):
+                    if on_full_install and msg and any([condition in msg for condition in conditions]):
+                        on_full_install()
+                await proc.wait(Device.TIMEOUT_LONG_ADB_CMD)
+
+            # On some devices, a pop-up may prevent successful install even if return code from adb install
+            # showed success, so must explicitly verify the install was successful:
+            log.info("Verifying install...")
+            if screenshot_dir:
+                cls._verify_install(device, package, screenshot_dir)  # raises exception on failure to verify
+        finally:
+            if push_successful:
+                with suppress(Exception):
+                    rm_cmd = ("shell", "rm", remote_data_path)
+                    device.execute_remote_cmd(*rm_cmd, timeout=Device.TIMEOUT_ADB_CMD)
 
     @property
     def package_name(self) -> str:
@@ -127,7 +251,7 @@ class Application(DeviceBased):
 
         """
         parser = AXMLParser.parse(apk_path)
-        await device.install(apk_path, as_upgrade)
+        await cls._install_async(device, apk_path, as_upgrade)
         return cls(device, parser)
 
     @classmethod
@@ -146,7 +270,7 @@ class Application(DeviceBased):
         >>> app = Application.from_apk("/local/path/to/apk", device, as_upgrade=True)
         """
         parser = AXMLParser.parse(apk_path)
-        device.install_synchronous(apk_path, as_upgrade)
+        cls._install_synchronous(device, apk_path, as_upgrade)
         return cls(device, parser)
 
     def uninstall(self) -> None:
@@ -204,10 +328,11 @@ class Application(DeviceBased):
         :param options: string list of options to pass on to the "am start" command on the remote device, or None
         """
         # embellish to fully qualified name as Android expects
+        if '.' not in activity:
+            activity = f"{self.package_name}.{activity}"
         activity = f"{self.package_name}/{activity}"
         if intent:
             options = ("-a", intent, *options)
-
         self.device.execute_remote_cmd("shell", "am", "start", "-n", activity, *options, capture_stdout=False)
 
     async def launch(self, activity: str, *options: str, intent: Optional[str] = None,
@@ -262,7 +387,7 @@ class Application(DeviceBased):
         """
         try:
             if force:
-                self.device.go_home()
+                DeviceNavigation(self.device).go_home()
                 self.device.execute_remote_cmd("shell", "am", "force-stop", self.package_name, capture_stdout=False)
             else:
                 self.device.execute_remote_cmd("shell", "am", "stop", self.package_name, capture_stdout=False)
@@ -279,11 +404,13 @@ class Application(DeviceBased):
         cold app launch.
         NOTE: Currently appears to only work with Android 9.0 devices
         """
-        self.device.input("KEYCODE_HOME")
+        nav = DeviceNavigation(self.device)
+        nav.input("KEYCODE_HOME")
         # Sleep for a second to allow for app to be backgrounded
         # TODO: Get rid of sleep call as this is bad practice.
-        time.sleep(1)
-        if not self.device.home_screen_active:
+        if not nav.home_screen_active():
+            time.sleep(1)
+        if not nav.home_screen_active():
             raise Exception(f"Failed to background current foreground app. Cannot complete app closure.")
         self.device.execute_remote_cmd("shell", "am", "kill", self.package_name)
         if self.pid is not None:
@@ -420,8 +547,7 @@ class TestApplication(Application):
                 items.append(runner)
         return items
 
-    async def run(self, *options: str, loop: Optional[AbstractEventLoop] = None,
-                  ) -> AsyncContextManager[Any]:
+    async def run(self, *options: str) -> AsyncContextManager[Any]:
         """
         Run an instrumentation test package, yielding lines from std output
 
@@ -444,10 +570,9 @@ class TestApplication(Application):
         # surround each arg with quotes to preserve spaces in any arguments when sent to remote device:
         options = tuple('"%s"' % arg if not arg.startswith('"') and not arg.startswith("-") else arg for arg in options)
         return await self.device.monitor_remote_cmd("shell", "am", "instrument", "-w", *options, "-r",
-                                                          "/".join([self._package_name, self._runner]),
-                                                    loop=loop)
+                                                    "/".join([self._package_name, self._runner]))
 
-    async def run_orchestrated(self, *options: str, loop: Optional[AbstractEventLoop] = None) -> AsyncContextManager[Any]:
+    async def run_orchestrated(self, *options: str) -> AsyncContextManager[Any]:
         """
         Run an instrumentation test package via Google's test orchestrator that
 
@@ -489,7 +614,7 @@ class TestApplication(Application):
         >>> application = await Application.from_apk_async("local/path/to/apk", device)
         """
         parser = AXMLParser.parse(apk_path)
-        await device.install(apk_path, as_upgrade, parser.package_name)
+        await cls._install_async(device, apk_path, as_upgrade, parser.package_name)
         return cls(device, parser)
 
     @classmethod
@@ -506,5 +631,5 @@ class TestApplication(Application):
         >>> test_application = Application.from_apk("/local/path/to/apk", device, as_upgrade=True)
         """
         parser = AXMLParser.parse(apk_path)
-        device.install_synchronous(apk_path, as_upgrade)
+        cls._install_synchronous(device, apk_path, as_upgrade)
         return cls(device, parser)

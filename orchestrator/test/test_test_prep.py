@@ -9,7 +9,8 @@ from androidtestorchestrator.testprep import EspressoTestSetup
 
 class TestEspressoTestPreparation:
 
-    def test_upload_test_vectors(self, device, support_app, support_test_app, temp_dir):
+    @pytest.mark.asyncio
+    async def test_upload_test_vectors(self, device, support_app, support_test_app, temp_dir):
         root = os.path.join(str(temp_dir), "data_files")
         os.makedirs(root)
         tv_dir = os.path.join(root, "test_vectors")
@@ -19,29 +20,26 @@ class TestEspressoTestPreparation:
         with open(os.path.join(tv_dir, "tv-2.txt"), 'w'):
             pass
 
-        async def run():
-            bundle = EspressoTestSetup.Builder(
-                path_to_apk=support_app,
-                path_to_test_apk=support_test_app,
-                grant_all_user_permissions=False).upload_test_vectors(root).resolve()
-            async with bundle.apply(device) as test_app:
-                assert test_app
-                storage = DeviceStorage(device)
-                test_dir = os.path.join(str(temp_dir), "test_download")
-                storage.pull(remote_path="/".join([storage.external_storage_location, "test_vectors"]),
-                             local_path=os.path.join(test_dir))
-                assert os.path.exists(os.path.join(test_dir, "tv-1.txt"))
-                assert os.path.exists(os.path.join(test_dir, "tv-2.txt"))
-
-            # cleanup occurred on exit of context manager, so...
-            test_dir2 = os.path.join(str(temp_dir), "no_tv_download")
-            os.makedirs(test_dir2)
+        bundle = EspressoTestSetup.Builder(
+            path_to_apk=support_app,
+            path_to_test_apk=support_test_app,
+            grant_all_user_permissions=False).upload_test_vectors(root).resolve()
+        async with bundle.apply(device) as test_app:
+            assert test_app
+            storage = DeviceStorage(device)
+            test_dir = os.path.join(str(temp_dir), "test_download")
             storage.pull(remote_path="/".join([storage.external_storage_location, "test_vectors"]),
-                         local_path=os.path.join(test_dir2))
-            assert not os.path.exists(os.path.join(test_dir2, "tv-1.txt"))
-            assert not os.path.exists(os.path.join(test_dir2, "tv-2.txt"))
+                         local_path=os.path.join(test_dir))
+            assert os.path.exists(os.path.join(test_dir, "tv-1.txt"))
+            assert os.path.exists(os.path.join(test_dir, "tv-2.txt"))
 
-        asyncio.get_event_loop().run_until_complete(run())
+        # cleanup occurred on exit of context manager, so...
+        test_dir2 = os.path.join(str(temp_dir), "no_tv_download")
+        os.makedirs(test_dir2)
+        storage.pull(remote_path="/".join([storage.external_storage_location, "test_vectors"]),
+                     local_path=os.path.join(test_dir2))
+        assert not os.path.exists(os.path.join(test_dir2, "tv-1.txt"))
+        assert not os.path.exists(os.path.join(test_dir2, "tv-2.txt"))
 
     def test_upload_test_vectors_no_such_files(self, device, support_app, support_test_app,):
         with pytest.raises(IOError):

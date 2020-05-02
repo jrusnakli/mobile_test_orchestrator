@@ -44,7 +44,7 @@ class Timer(StopWatch):
         """
         :param duration: duration at end of which timer will expire and raise an `asyncior.TimeoutError`
         """
-        self._future: Optional[Future[bool]] = asyncio.get_event_loop().create_future()
+        self._future: Optional[Future[bool]] = asyncio.get_running_loop().create_future()
         self._timeout = duration
         self._task: Optional[Task[None]] = None
 
@@ -65,7 +65,9 @@ class Timer(StopWatch):
     def mark_start(self, name: str) -> None:
         """
         Mark the start of an activity by creating a timer (within the context of a running event loop)
+
         :param name: name associated with the activity
+        :raises: asyncio.TimeoutError if timer expires before end is marked
         """
         async def timer() -> None:
             assert self._future is not None, "Internal error: timer was run multiple times"
@@ -73,7 +75,10 @@ class Timer(StopWatch):
                 await asyncio.wait_for(self._future, timeout=self._timeout)
             except asyncio.TimeoutError:
                 log.error("Task %s timed out" % name)
-                asyncio.get_event_loop().stop()
+                for task in asyncio.all_tasks():
+                    if task != self._task:
+                        task.cancel()
+                raise
             self._future = None  # timer is used up
 
         # cancel any existing task if needed(restart timer essentially)
@@ -81,6 +86,7 @@ class Timer(StopWatch):
             with suppress(Exception):
                 self._task.cancel()
         # create a new future and start the timer:
-        self._future = asyncio.get_event_loop().create_future()
+        self._future = asyncio.get_running_loop().create_future()
         # in principle, a loop is already running, so just add another task to process:
-        self._task = asyncio.get_event_loop().create_task(timer())
+        self._task = asyncio.create_task(timer())
+

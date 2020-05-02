@@ -15,7 +15,7 @@ import pytest
 from typing import Optional, Tuple, List
 
 from androidtestorchestrator.application import Application, TestApplication, ServiceApplication
-from androidtestorchestrator.device import Device
+from androidtestorchestrator.device import Device, DeviceLock
 from androidtestorchestrator.emulators import EmulatorBundleConfiguration, Emulator
 from androidtestorchestrator.devicepool import AsyncEmulatorPool
 from . import support
@@ -160,13 +160,12 @@ def device_manager():
 
 
 @pytest.fixture()
-@pytest.mark.asyncio
-async def devices(device_manager):
+async def devices(device_manager, event_loop):
     # convert queue to an async queue.  We specifially want to test with AsyncEmulatorPool,
     # so will not ust the AsynQueueAdapter class.
     count = min(device_manager.count(), 2)
     with device_manager.reserve(count) as devs:
-        async_q = asyncio.Queue()
+        async_q = asyncio.Queue(loop=event_loop)
         for dev in devs:
             await async_q.put(dev)
         yield AsyncEmulatorPool(async_q)
@@ -237,10 +236,25 @@ class AppManager:
 
 # noinspection PyShadowingNames
 @pytest.fixture()
-@pytest.mark.asyncio
-def android_test_app(device,
-                     support_app: str,
-                     support_test_app: str):
+async def android_app(device: Device, support_app: str, event_loop):
+    """
+    :return: installed app
+    """
+    uninstall_apk(support_app, device)
+    app = Application.from_apk(support_app, device)
+    yield app
+    """
+    Leave the campground as clean as you found it:
+    """
+    app.uninstall()
+
+
+# noinspection PyShadowingNames
+@pytest.fixture()
+async def android_test_app(device,
+                           support_app: str,
+                           support_test_app: str,
+                           event_loop):
     """
     :return: installed test app
     """
@@ -258,10 +272,10 @@ def android_test_app(device,
 
 # noinspection PyShadowingNames
 @pytest.fixture()
-@pytest.mark.asyncio
-def android_test_app2(device2,
-                      support_app: str,
-                      support_test_app: str):
+async def android_test_app2(device2,
+                            support_app: str,
+                            support_test_app: str,
+                            event_loop):
     uninstall_apk(support_app, device2)
     uninstall_apk(support_test_app, device2)
     app_for_test = TestApplication.from_apk(support_test_app, device2)
@@ -275,10 +289,10 @@ def android_test_app2(device2,
 
 
 @pytest.fixture()
-@pytest.mark.asyncio
-def android_service_app(device,
+async def android_service_app(device,
                         request,
-                        support_app: str):
+                        support_app: str,
+                        event_loop):
     # the support app is created to act as a service app as well
     uninstall_apk(support_app, device)
     service_app = ServiceApplication.from_apk(support_app, device)

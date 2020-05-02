@@ -81,11 +81,11 @@ class Worker:
             self._signal_listeners("test_suite_started", test_run.name)
             # chain the listeners to the parser of the "adb instrument" command,
             # which is the source of test status from the device:
-            with  InstrumentationOutputParser(test_run.name) as instrumentation_parser:
+            with InstrumentationOutputParser(test_run.name) as instrumentation_parser:
                 instrumentation_parser.add_execution_listeners(self._run_listeners)
                 # add timer that times timeout if any INDIVIDUAL test takes too long
-                if test_timeout is not None:
-                    instrumentation_parser.add_simple_test_listener(Timer(test_timeout))
+                instrumentation_parser.add_simple_test_listener(Timer(test_timeout))
+
                 try:
                     # push test vectors, if any, to device
                     for local_path, remote_path in test_run.uploadables:

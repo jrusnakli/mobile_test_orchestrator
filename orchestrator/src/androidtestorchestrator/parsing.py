@@ -144,6 +144,11 @@ class InstrumentationOutputParser(LineParser):
         def __repr__(self) -> str:
             return self.__class__.__name__ + str(self.__dict__)
 
+    class TestRunError(Exception):
+
+        def __init__(self, msg):
+            super().__init__(msg)
+
     def __init__(self, test_run_name: str, test_run_listener: Optional[TestExecutionListener] = None,
                  include_instrumentation_output: bool = False) -> None:
         super().__init__()
@@ -176,8 +181,8 @@ class InstrumentationOutputParser(LineParser):
 
     def __exit__(self, *args: Any) -> None:
         self.close()
-        if self._test_run_failure_msgs:
-            raise self.TestRunError(self._test_run_failure_msgs)
+        #if self._test_run_failure_msgs:
+        #    raise self.TestRunError(self._test_run_failure_msgs)
 
     @property
     def execution_time(self) -> float:

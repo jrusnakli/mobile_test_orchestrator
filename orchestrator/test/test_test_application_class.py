@@ -18,7 +18,8 @@ log = logging.getLogger(__name__)
 # noinspection PyShadowingNames
 class TestTestApplication(object):
 
-    def test_run(self, install_app, support_app: str, support_test_app: str):
+    @pytest.mark.asyncio
+    async def test_run(self, install_app, support_app: str, support_test_app: str):
         install_app(Application, support_app)
         test_app = install_app(TestApplication, support_test_app)
 
@@ -29,10 +30,7 @@ class TestTestApplication(object):
                 async for line in proc.output(unresponsive_timeout=120):
                     log.debug(line)
 
-        async def timer():
-            await asyncio.wait_for(parse_output(), timeout=30)
-
-        asyncio.get_event_loop().run_until_complete(timer())  # no Exception thrown
+        await asyncio.wait_for(parse_output(), timeout=30)
 
     def test_list_runners(self, install_app, support_test_app):
         test_app = install_app(TestApplication, support_test_app)

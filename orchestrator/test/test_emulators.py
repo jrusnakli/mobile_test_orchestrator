@@ -65,23 +65,20 @@ class TestEmulator:
 
     @pytest.mark.skipif(getpass.getuser() == 'circleci' or True,
                         reason="Unable to run multiple emulators in circleci without upgrading machine")
-    def test_launch(self):
-        async def launch():
-            emulator = await Emulator.launch(5584, self.AVD, self.EMULATOR_CONFIG, *self.ARGS)
-            assert emulator.is_alive
-            emulator.kill()
-            if emulator.is_alive:
-                # adb command to kill emulator is asynchronous, so may have to wait
-                await asyncio.sleep(5)
-            assert not emulator.is_alive
-        asyncio.get_event_loop().run_until_complete(launch())
+    @pytest.mark.asyncio
+    async def test_launch(self):
+        emulator = await Emulator.launch(5584, self.AVD, self.EMULATOR_CONFIG, *self.ARGS)
+        assert emulator.is_alive
+        emulator.kill()
+        if emulator.is_alive:
+            # adb command to kill emulator is asynchronous, so may have to wait
+            await asyncio.sleep(5)
+        assert not emulator.is_alive
 
-    def test_launch_bad_port(self):
-        async def launch():
-            await Emulator.launch(2345, self.AVD, self.EMULATOR_CONFIG, *self.ARGS)
-
+    @pytest.mark.asyncio
+    async def test_launch_bad_port(self):
         with pytest.raises(ValueError):
-            asyncio.get_event_loop().run_until_complete(launch())
+            await Emulator.launch(2345, self.AVD, self.EMULATOR_CONFIG, *self.ARGS)
 
 
 class TestEmulatorPool:

@@ -30,8 +30,6 @@ from typing import (
     Type,
     Tuple, TypeVar)
 
-from apk_bitminer.parsing import AXMLParser  # type: ignore
-
 log = logging.getLogger("MTO")
 log.setLevel(logging.WARNING)
 
@@ -54,12 +52,14 @@ async def _device_lock(device: "Device") -> AsyncIterator["Device"]:
 
     :return: device
     """
-    DeviceLock.locks.setdefault(device.device_id, asyncio.Semaphore())
-    await DeviceLock.locks[device.device_id].acquire()
+    pid = os.getpid()
+    key = f"{device.device_id}-{pid}"
+    DeviceLock.locks.setdefault(key, asyncio.Semaphore())
+    await DeviceLock.locks[key].acquire()
     try:
         yield device
     finally:
-        DeviceLock.locks[device.device_id].release()
+        DeviceLock.locks[key].release()
 
 
 class Device:
@@ -249,6 +249,10 @@ class Device:
         self._ext_storage = Device.override_ext_storage.get(self.model)
         self._device_server_datetime_offset: Optional[datetime.timedelta] = None
         self._api_level: Optional[int] = None
+
+    def __del__(self):
+        with suppress(Exception):
+            del DeviceLock.locks[f"{self.device_id}-{os.getpid()}"]
 
     @property
     def api_level(self) -> int:
@@ -468,7 +472,7 @@ class Device:
         proc = await asyncio.subprocess.create_subprocess_exec(*cmd,
                                                                stdout=asyncio.subprocess.PIPE,
                                                                stderr=asyncio.subprocess.STDOUT,
-                                                               loop=loop or asyncio.events.get_event_loop(),
+                                                               loop=loop or asyncio.events.get_running_loop(),
                                                                bufsize=0)  # noqa
         return self._Process(proc)
 
@@ -661,155 +665,11 @@ class Device:
                                     stdout_redirect=f.fileno(),
                                     timeout=timeout or Device.TIMEOUT_SCREEN_CAPTURE)
 
-    async def check_network_connection(self, domain: str, count: int = 3) -> int:
-        """
-        Check network connection to domain
-
-        :param domain: domain to ping
-        :param count: how many times to ping domain
-
-        :return: 0 on success, number of failed packets otherwise
-        """
-        try:
-            async with await self.monitor_remote_cmd("shell", "ping", "-c", str(count), domain) as proc:
-                async for line in proc.output(unresponsive_timeout=5):
-                    if "64 bytes" in str(line):
-                        count -= 1
-                    if count <= 0:
-                        break
-            return count
-        except subprocess.TimeoutExpired:
-            log.error("ping is hanging and not yielding any results. Returning error code.")
-            raise
-
-    #################
-    # Raw install API
-    #################
-
-    def _verify_install(self, appl_path: str, package: str, screenshot_dir: Optional[str] = None) -> None:
-        """
-        Verify installation of an app, taking a screenshot on failure
-
-        :param appl_path: For logging which apk failed to install (upon any failure)
-        :param package: package name of app
-        :param screenshot_dir: if not None, where to capture screenshot on failure
-
-        :raises Exception: if failure to verify
-        """
-        packages = self.list_installed_packages()
-        if package not in packages:
-            # some devices (may??) need time for package install to be detected by system
-            time.sleep(self.SLEEP_PKG_INSTALL)
-            packages = self.list_installed_packages()
-        if package not in packages:
-            if package is not None:
-                try:
-                    if screenshot_dir:
-                        os.makedirs(screenshot_dir, exist_ok=True)
-                        self.take_screenshot(os.path.join(screenshot_dir, f"install_failure-{package}.png"))
-                except Exception as e:
-                    log.warning(f"Unable to take screenshot of installation failure: {e}")
-                log.error("Did not find installed package %s;  found: %s" % (package, packages))
-                log.error("Device failure to install %s on model %s;  install status succeeds,"
-                          "but package not found on device" %
-                          (appl_path, self.model))
-            raise Exception("Failed to verify installation of app '%s', event though output indicated otherwise" %
-                            package)
-        else:
-            log.info("Package %s installed" % str(package))
-
-    def install_synchronous(self, apk_path: str, as_upgrade: bool) -> None:
-        """
-        Install the given bundle, blocking until complete
-        Preference should be to use `Application.from_apk_async` method.
-
-        :param apk_path: local path to the apk to be installed
-        :param as_upgrade: install as upgrade or not
-        """
-        if as_upgrade:
-            cmd: Tuple[str, ...] = ("install", "-r", apk_path)
-        else:
-            cmd = ("install", apk_path)
-
-        self.execute_remote_cmd(*cmd, timeout=Device.TIMEOUT_LONG_ADB_CMD)
-
-    async def install(self, apk_path: str, as_upgrade: bool,
-                      conditions: Optional[List[str]] = None,
-                      on_full_install: Optional[Callable[[], None]] = None,
-                      screenshot_dir: Optional[str] = None) -> None:
-        """
-        Install given apk asynchronously, monitoring output for messages containing any of the given conditions,
-        executing a callback if given when any such condition is met.
-        Preference should be to use `Application.from_apk_async` method.
-
-        :param apk_path: bundle to install
-        :param as_upgrade: whether as upgrade or not
-        :param conditions: list of strings to look for in stdout as a trigger for callback. Some devices are
-            non-standard and will provide a pop-up request explicit user permission for install once the apk is fully
-            uploaded and prepared. This param defaults to ["100%", "pkg:", "Success"] as indication that bundle was
-            fully prepared (pre-pop-up).
-        :param on_full_install: if not None the callback to be called
-        :param screenshot_dir: if not None, where to capture a screenshot on failure; if None, no verification of
-           install will be performed
-
-        :raises Device.InsufficientStorageError: if there is not enough space on device
-        """
-        conditions = conditions or ["100%", "pkg:", "Success"]
-        parser = AXMLParser.parse(apk_path)
-        package = parser.package_name
-        remote_data_path = f"/data/local/tmp/{package}"
-        if not as_upgrade:
-            # avoid unnecessary conflicts with older certs and crap:
-            # TODO: client should handle clean install -- this code really shouldn't be here??
-            with suppress(Exception):
-                self.execute_remote_cmd("uninstall", package, capture_stdout=False)
-
-        # We try Android Studio's method of pushing to device and installing from there, but if push is
-        # unsuccessful, we fallback to plain adb install
-        try:
-            push_cmd = ("push", apk_path, remote_data_path)
-            self.execute_remote_cmd(*push_cmd, timeout=Device.TIMEOUT_LONG_ADB_CMD)
-            push_successful = True
-        except Exception:
-            log.warning("Unable to push apk to install from device, will attempt direct install from local apk")
-            push_successful = False
-
-        try:
-            # Execute the installation of the app, monitoring output for completion in order to invoke any extra
-            # commands or detect insufficient storage issues
-            cmd: List[str] = ["shell", "pm", "install"] if push_successful else ["install"]
-            source = remote_data_path if push_successful else apk_path
-            if as_upgrade:
-                cmd.append("-r")
-            cmd.append(source)
-            # Do not allow more than one install at a time on a specific device, as this can be problematic
-            async with _device_lock(self), await self.monitor_remote_cmd(*cmd) as proc:
-                async for msg in proc.output(unresponsive_timeout=Device.TIMEOUT_LONG_ADB_CMD):
-                    if self.ERROR_MSG_INSUFFICIENT_STORAGE in msg:
-                        raise self.InsufficientStorageError("Insufficient storage for install of %s" %
-                                                            apk_path)
-                    # Some devices have non-standard pop-ups that must be cleared by accepting usb installs
-                    # (non-standard Android):
-                    if on_full_install and msg and any([condition in msg for condition in conditions]):
-                        on_full_install()
-                await proc.wait(Device.TIMEOUT_LONG_ADB_CMD)
-
-            # On some devices, a pop-up may prevent successful install even if return code from adb install
-            # showed success, so must explicitly verify the install was successful:
-            log.info("Verifying install...")
-            if screenshot_dir:
-                self._verify_install(apk_path, package, screenshot_dir)  # raises exception on failure to verify
-        finally:
-            if push_successful:
-                with suppress(Exception):
-                    rm_cmd = ("shell", "rm", remote_data_path)
-                    self.execute_remote_cmd(*rm_cmd, timeout=self.TIMEOUT_ADB_CMD)
-
     ####################
     # Navigation related
     ####################
 
-    def _activity_stack_top(self, filter: Callable[[str], bool] = lambda x: True) -> Optional[str]:
+    def _activity_stack_top(self, filt: Callable[[str], bool] = lambda x: True) -> Optional[str]:
         """
         :return: List of the app packages in the activities stack, with the first item being at the top of the stack
         """
@@ -822,7 +682,7 @@ class Device:
         for line in stdout.splitlines():
             matches = app_record_pattern.match(line.strip())
             app_package = matches.group(1) if matches else None
-            if app_package and filter(app_package):
+            if app_package and filt(app_package):
                 return app_package
         return None  # to be explicit
 
@@ -835,7 +695,7 @@ class Device:
         :return: package name of current foreground activity
         """
         ignored = self.SILENT_RUNNING_PACKAGES if ignore_silent_apps else []
-        return self._activity_stack_top(filter=lambda x: x.lower() not in ignored)
+        return self._activity_stack_top(filt=lambda x: x.lower() not in ignored)
 
     def get_activity_stack(self) -> List[str]:
         output = self.execute_remote_cmd("shell", "dumpsys", "activity", "activities", timeout=10)
@@ -851,121 +711,6 @@ class Device:
                 app_package = matches.group(1)
                 activity_list.append(app_package)
         return activity_list
-
-    def go_home(self) -> None:
-        """
-        Equivalent to hitting home button to go to home screen
-        """
-        self.input("KEYCODE_HOME")
-
-    def home_screen_active(self) -> bool:
-        """
-        :return: True if the home screen is currently in the foreground. Note that system pop-ups will result in this
-            function returning False.
-        :raises Exception: if unable to make determination
-        """
-
-        found_potential_stack_match = False
-        stdout = self.execute_remote_cmd("shell", "dumpsys", "activity", "activities", capture_stdout=True,
-                                         timeout = Device.TIMEOUT_ADB_CMD)
-        # Find lines that look like this:
-        # Stack #0:
-        # or
-        # Stack #0: type=home mode=fullscreen
-        app_stack_pattern = re.compile(r'^Stack #(\d*):')
-        for line in stdout.splitlines():
-            matches = app_stack_pattern.match(line.strip())
-            if matches:
-                if matches.group(1) == "0":
-                    return True
-                else:
-                    found_potential_stack_match = True
-                    break
-
-        # Went through entire activities stack, but no line matched expected format for displaying activity
-        if not found_potential_stack_match:
-            raise Exception(
-                f"Could not determine if home screen is in foreground because no lines matched expected "
-                f"format of \"dumpsys activity activities\" pattern. Please check that the format did not change:\n"
-                f"{stdout_lines}")
-        # Format of activities was fine, but detected home screen was not in foreground. But it is possible this is a
-        # Samsung device with silent packages in foreground. Need to check if that's the case, and app after them
-        # is the launcher/home screen.
-        foreground_activity = self.foreground_activity(ignore_silent_apps=True)
-        return bool(foreground_activity and foreground_activity.lower() == "com.sec.android.app.launcher")
-
-    def input(self, subject: str, source: Optional[str] = None) -> None:
-        """
-        Send event subject through given source
-
-        :param subject: event to send
-        :param source: source of event, or None to default to "keyevent"
-        """
-        self.execute_remote_cmd("shell", "input", source or "keyevent", subject, capture_stdout=False)
-
-    ################
-    # Screen related
-    ################
-
-    def is_screen_on(self) -> bool:
-        """
-        :return: whether device's screen is on
-        """
-        lines = self.execute_remote_cmd("shell", "dumpsys", "activity", "activities", timeout=10).splitlines()
-        for msg in lines:
-            if 'mInteractive=false' in msg or 'mScreenOn=false' in msg or 'isSleeping=true' in msg:
-                return False
-        return True
-
-    def toggle_screen_on(self) -> None:
-        """
-        Toggle device's screen on/off
-        """
-        self.execute_remote_cmd("shell", "input", "keyevent", "KEYCODE_POWER", timeout=10)
-
-    ###############
-    # host-to-device port configurations
-    ###############
-
-    def port_forward(self, local_port: int, device_port: int) -> None:
-        """
-        forward traffic from local port to remote device port
-
-        :param local_port: port to forward from
-        :param device_port: port to forward to
-        """
-        self.execute_remote_cmd("forward", f"tcp:{device_port}", f"tcp:{local_port}")
-
-    def remove_port_forward(self, port: Optional[int] = None) -> None:
-        """
-        Remove reverse port forwarding
-
-        :param port: port to remove or None to remove all reverse forwarded ports
-        """
-        if port is not None:
-            self.execute_remote_cmd("forward", "--remove", f"tcp:{port}")
-        else:
-            self.execute_remote_cmd("forward", "--remove-all")
-
-    def reverse_port_forward(self, device_port: int, local_port: int) -> None:
-        """
-        reverse forward traffic on remote port to local port
-
-        :param device_port: remote device port to forward
-        :param local_port: port to forward to
-        """
-        self.execute_remote_cmd("reverse", f"tcp:{device_port}", f"tcp:{local_port}")
-
-    def remove_reverse_port_forward(self, port: Optional[int] = None) -> None:
-        """
-        Remove reverse port forwarding
-
-        :param port: port to remove or None to remove all reverse forwarded ports
-        """
-        if port is not None:
-            self.execute_remote_cmd("reverse", "--remove", f"tcp:{port}")
-        else:
-            self.execute_remote_cmd("reverse", "--remove-all")
 
     ################
     # device control
@@ -1016,6 +761,7 @@ class Device:
         def device(self):
             return self._device
 
+    # class _Leased:
     @classmethod
     def _Leased(cls) -> TypeVar('D', bound="Device", covariant=False):
         """
@@ -1073,7 +819,7 @@ class Device:
         return LeasedDevice
 
 
-class DeviceBased(object):
+class DeviceBased:
     """
     Convenience base class for subclasses that  are associated
     with an underlying single device.  Prevents duplication by
@@ -1092,3 +838,147 @@ class DeviceBased(object):
         :return: the device associated with this instance
         """
         return self._device
+
+
+class DeviceNetwork(DeviceBased):
+    """
+    Provides API for checking external network and configuring host-to-device network ports
+
+    :param device: which device is associated with this instance
+    """
+
+    async def check_network_connection(self, domain: str, count: int = 3) -> int:
+        """
+        Check network connection to domain
+
+        :param domain: domain to ping
+        :param count: how many times to ping domain
+
+        :return: 0 on success, number of failed packets otherwise
+        """
+        try:
+            async with await self.device.monitor_remote_cmd("shell", "ping", "-c", str(count), domain) as proc:
+                async for line in proc.output(unresponsive_timeout=5):
+                    if "64 bytes" in str(line):
+                        count -= 1
+                    if count <= 0:
+                        break
+            return count
+        except subprocess.TimeoutExpired:
+            log.error("ping is hanging and not yielding any results. Returning error code.")
+            raise
+
+    def port_forward(self, local_port: int, device_port: int) -> None:
+        """
+        forward traffic from local port to remote device port
+
+        :param local_port: port to forward from
+        :param device_port: port to forward to
+        """
+        self.device.execute_remote_cmd("forward", f"tcp:{device_port}", f"tcp:{local_port}")
+
+    def remove_port_forward(self, port: Optional[int] = None) -> None:
+        """
+        Remove reverse port forwarding
+
+        :param port: port to remove or None to remove all reverse forwarded ports
+        """
+        if port is not None:
+            self.device.execute_remote_cmd("forward", "--remove", f"tcp:{port}")
+        else:
+            self.device.execute_remote_cmd("forward", "--remove-all")
+
+    def reverse_port_forward(self, device_port: int, local_port: int) -> None:
+        """
+        reverse forward traffic on remote port to local port
+
+        :param device_port: remote device port to forward
+        :param local_port: port to forward to
+        """
+        self.device.execute_remote_cmd("reverse", f"tcp:{device_port}", f"tcp:{local_port}")
+
+    def remove_reverse_port_forward(self, port: Optional[int] = None) -> None:
+        """
+        Remove reverse port forwarding
+
+        :param port: port to remove or None to remove all reverse forwarded ports
+        """
+        if port is not None:
+            self.device.execute_remote_cmd("reverse", "--remove", f"tcp:{port}")
+        else:
+            self.device.execute_remote_cmd("reverse", "--remove-all")
+
+
+class DeviceNavigation(DeviceBased):
+    """
+    Provides API for navigating (going home, querying whether home screen is active, screen is on, ...)
+
+    :param device: which device is associated with this instance
+    """
+
+    def go_home(self) -> None:
+        """
+        Equivalent to hitting home button to go to home screen
+        """
+        self.input("KEYCODE_HOME")
+
+    def home_screen_active(self) -> bool:
+        """
+        :return: True if the home screen is currently in the foreground. Note that system pop-ups will result in this
+            function returning False.
+        :raises Exception: if unable to make determination
+        """
+
+        found_potential_stack_match = False
+        stdout = self.device.execute_remote_cmd("shell", "dumpsys", "activity", "activities", capture_stdout=True,
+                                                timeout = Device.TIMEOUT_ADB_CMD)
+        # Find lines that look like this:
+        # Stack #0:
+        # or
+        # Stack #0: type=home mode=fullscreen
+        app_stack_pattern = re.compile(r'^Stack #(\d*):')
+        for line in stdout.splitlines():
+            matches = app_stack_pattern.match(line.strip())
+            if matches:
+                if matches.group(1) == "0":
+                    return True
+                else:
+                    found_potential_stack_match = True
+                    break
+
+        # Went through entire activities stack, but no line matched expected format for displaying activity
+        if not found_potential_stack_match:
+            raise Exception(
+                f"Could not determine if home screen is in foreground because no lines matched expected "
+                f"format of \"dumpsys activity activities\" pattern. Please check that the format did not change:\n"
+                f"{stdout}")
+        # Format of activities was fine, but detected home screen was not in foreground. But it is possible this is a
+        # Samsung device with silent packages in foreground. Need to check if that's the case, and app after them
+        # is the launcher/home screen.
+        foreground_activity = self.device.foreground_activity(ignore_silent_apps=True)
+        return bool(foreground_activity and foreground_activity.lower() == "com.sec.android.app.launcher")
+
+    def input(self, subject: str, source: Optional[str] = None) -> None:
+        """
+        Send event subject through given source
+
+        :param subject: event to send
+        :param source: source of event, or None to default to "keyevent"
+        """
+        self.device.execute_remote_cmd("shell", "input", source or "keyevent", subject, capture_stdout=False)
+
+    def is_screen_on(self) -> bool:
+        """
+        :return: whether device's screen is on
+        """
+        lines = self.device.execute_remote_cmd("shell", "dumpsys", "activity", "activities", timeout=10).splitlines()
+        for msg in lines:
+            if 'mInteractive=false' in msg or 'mScreenOn=false' in msg or 'isSleeping=true' in msg:
+                return False
+        return True
+
+    def toggle_screen_on(self) -> None:
+        """
+        Toggle device's screen on/off
+        """
+        self.device.execute_remote_cmd("shell", "input", "keyevent", "KEYCODE_POWER", timeout=10)

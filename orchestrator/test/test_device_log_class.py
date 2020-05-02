@@ -11,15 +11,17 @@ from androidtestorchestrator.devicelog import DeviceLog
 
 class TestDeviceLog:
 
-    def test_set_get_logcat_buffer_size(self, device: Device):
+    @pytest.mark.asyncio
+    async def test_set_get_logcat_buffer_size(self, device: Device):
         log = DeviceLog(device)
         log.set_logcat_buffer_size("20M")
         assert log.logcat_buffer_size == '20Mb'
         log.set_logcat_buffer_size(DeviceLog.DEFAULT_LOGCAT_BUFFER_SIZE)
         assert log.logcat_buffer_size == '5Mb'
 
+    @pytest.mark.asyncio
     @pytest.mark.localonly
-    def test_logcat_and_clear(self, device: Device, android_service_app: ServiceApplication):
+    async def test_logcat_and_clear(self, device: Device, android_service_app: ServiceApplication):
         output = []
         # call here waits for emulator startup, allowing other fixtures to complete in parallel
         device_log = DeviceLog(device)
@@ -49,7 +51,7 @@ class TestDeviceLog:
             android_service_app.broadcast(".MTOBroadcastReceiver", "--es", "command", "old_line",
                                           action="com.linkedin.mto.FOR_TEST_ONLY_SEND_CMD")
             time.sleep(2)
-        asyncio.get_event_loop().run_until_complete(timer())
+        await timer()
         for line in output:
             assert "old_line" in line
         assert logcat_proc.returncode is not None  # proc is terminated/completed
@@ -72,7 +74,7 @@ class TestDeviceLog:
                                           action="com.linkedin.mto.FOR_TEST_ONLY_SEND_CMD")
             time.sleep(1)
 
-        asyncio.get_event_loop().run_until_complete(timer())
+        await timer()
         for line in output:
             assert "new_line" in line
             assert line not in output_before
