@@ -193,6 +193,7 @@ class Device:
     ]
 
     WRITE_EXTERNAL_STORAGE_PERMISSION = "android.permission.WRITE_EXTERNAL_STORAGE"
+    APP_RECORD_PATTERN = re.compile(r'^\* TaskRecord\{[a-f0-9-]* #\d* [AI]=([a-zA-Z].[a-zA-Z0-9.]*)[ /].*')
 
     class CommandExecutionFailureException(Exception):
 
@@ -243,9 +244,8 @@ class Device:
         #  * TaskRecord{133fbae #1340 I=com.google.android.apps.nexuslauncher/.NexusLauncherActivity U=0 StackId=0 sz=1}
         # or
         #  * TaskRecord{94c8098 #1791 A=com.android.chrome U=0 StackId=454 sz=1}
-        app_record_pattern = re.compile(r'^\* TaskRecord\{[a-f0-9-]* #\d* [AI]=([a-zA-Z].[a-zA-Z0-9.]*)[ /].*')
         for line in stdout.splitlines():
-            matches = app_record_pattern.match(line.strip())
+            matches = self.APP_RECORD_PATTERN.match(line.strip())
             app_package = matches.group(1) if matches else None
             if app_package and filter(app_package):
                 return app_package
@@ -674,9 +674,8 @@ class Device:
         #  * TaskRecord{133fbae #1340 I=com.google.android.apps.nexuslauncher/.NexusLauncherActivity U=0 StackId=0 sz=1}
         # or
         #  * TaskRecord{94c8098 #1791 A=com.android.chrome U=0 StackId=454 sz=1}
-        app_record_pattern = re.compile(r'^\* TaskRecord\{[a-f0-9-]* #\d* [AI]=(com\.[a-zA-Z0-9.]*)[ /].*')
         for line in output.splitlines():
-            matches = app_record_pattern.match(line.strip())
+            matches = self.APP_RECORD_PATTERN.match(line.strip())
             if matches:
                 app_package = matches.group(1)
                 activity_list.append(app_package)
@@ -965,8 +964,8 @@ class Device:
                             on_full_install()
                     await proc.wait(Device.TIMEOUT_LONG_ADB_CMD)
 
-            # On some devices, a pop-up may prevent successful install even if return code from adb install showed success,
-            # so must explicitly verify the install was successful:
+            # On some devices, a pop-up may prevent successful install even if return code from adb install showed
+            # success, so must explicitly verify the install was successful:
             if screenshot_dir:
                 log.info("Verifying install...")
                 self._verify_install(apk_path, package, screenshot_dir)  # raises exception on failure to verify
