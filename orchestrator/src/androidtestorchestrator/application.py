@@ -8,7 +8,7 @@ from asyncio import AbstractEventLoop
 from apk_bitminer.parsing import AXMLParser  # type: ignore
 from typing import List, TypeVar, Type, Optional, AsyncContextManager, Dict, Union, Any, Set, Iterable, Tuple, Callable
 
-from .device import Device, RemoteDeviceBased, _device_lock
+from .device import Device, RemoteDeviceBased, _device_lock, DeviceNavigation
 
 log = logging.getLogger(__name__)
 
@@ -327,7 +327,7 @@ class Application(RemoteDeviceBased):
         # Sleep for a second to allow for app to be backgrounded
         # TODO: Get rid of sleep call as this is bad practice.
         time.sleep(1)
-        if not self.device.home_screen_active:
+        if not DeviceNavigation(self.device).home_screen_active():
             raise Exception(f"Failed to background current foreground app. Cannot complete app closure.")
         self.device.execute_remote_cmd("shell", "am", "kill", self.package_name)
         if self.pid is not None:

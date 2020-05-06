@@ -803,8 +803,50 @@ class Device:
         """
         self.input("KEYCODE_HOME")
 
-    # todo: why this is a property instead of a function?
+    def input(self, subject: str, source: Optional[str] = None) -> None:
+        """
+        Send event subject through given source
+
+        :param subject: event to send
+        :param source: source of event, or None to default to "keyevent"
+        """
+        self.execute_remote_cmd("shell", "input", source or "keyevent", subject, capture_stdout=False)
+
+    def is_screen_on(self) -> bool:
+        """
+        :return: whether device's screen is on
+        """
+        lines = self.execute_remote_cmd("shell", "dumpsys", "activity", "activities", timeout=10).splitlines()
+        for msg in lines:
+            if 'mInteractive=false' in msg or 'mScreenOn=false' in msg or 'isSleeping=true' in msg:
+                return False
+        return True
+
+
+class RemoteDeviceBased(object):
+    """
+    Classes that are based on the context of a remote device
+    """
+
+    def __init__(self, device: Device) -> None:
+        """
+        :param device: which device is associated with this instance
+        """
+        self._device = device
+
     @property
+    def device(self) -> Device:
+        """
+        :return: the device associated with this instance
+        """
+        return self._device
+
+
+class DeviceNavigation(RemoteDeviceBased):
+    """
+    Provides API for equvialent of user-navigation along with related device queries
+    """
+
     def home_screen_active(self) -> bool:
         """
         :return: True if the home screen is currently in the foreground. Note that system pop-ups will result in this
@@ -813,8 +855,8 @@ class Device:
         :raises Exception: if unable to make determination
         """
         found_potential_stack_match = False
-        stdout = self.execute_remote_cmd("shell", "dumpsys", "activity", "activities", capture_stdout=True,
-                                         timeout=Device.TIMEOUT_ADB_CMD)
+        stdout = self._device.execute_remote_cmd("shell", "dumpsys", "activity", "activities", capture_stdout=True,
+                                                 timeout=Device.TIMEOUT_ADB_CMD)
         # Find lines that look like this:
         #   Stack #0:
         # or
@@ -840,27 +882,8 @@ class Device:
         # Format of activities was fine, but detected home screen was not in foreground. But it is possible this is a
         # Samsung device with silent packages in foreground. Need to check if that's the case, and app after them
         # is the launcher/home screen.
-        foreground_activity = self.foreground_activity(ignore_silent_apps=True)
+        foreground_activity = self._device.foreground_activity(ignore_silent_apps=True)
         return bool(foreground_activity and foreground_activity.lower() == "com.sec.android.app.launcher")
-
-    def input(self, subject: str, source: Optional[str] = None) -> None:
-        """
-        Send event subject through given source
-
-        :param subject: event to send
-        :param source: source of event, or None to default to "keyevent"
-        """
-        self.execute_remote_cmd("shell", "input", source or "keyevent", subject, capture_stdout=False)
-
-    def is_screen_on(self) -> bool:
-        """
-        :return: whether device's screen is on
-        """
-        lines = self.execute_remote_cmd("shell", "dumpsys", "activity", "activities", timeout=10).splitlines()
-        for msg in lines:
-            if 'mInteractive=false' in msg or 'mScreenOn=false' in msg or 'isSleeping=true' in msg:
-                return False
-        return True
 
     def return_home(self, keycode_back_limit: int = 10) -> None:
         """
@@ -879,14 +902,14 @@ class Device:
 
         while back_button_attempt <= keycode_back_limit:
             back_button_attempt += 1
-            self.input("KEYCODE_BACK")
+            self._device.input("KEYCODE_BACK")
             if self.home_screen_active:
                 return
             # Sleep for a second to allow for complete activity destruction.
             # TODO: ouch!! almost a 10 second overhead if we reach limit
             time.sleep(1)
 
-        foreground_activity = self.foreground_activity(ignore_silent_apps=True)
+        foreground_activity = self._device.foreground_activity(ignore_silent_apps=True)
 
         raise Exception(f"Max number of back button presses ({keycode_back_limit}) to get to Home screen has "
                         f"been reached. Found foreground activity {foreground_activity}. App closure failed.")
@@ -895,23 +918,4 @@ class Device:
         """
         Toggle device's screen on/off
         """
-        self.execute_remote_cmd("shell", "input", "keyevent", "KEYCODE_POWER", timeout=10)
-
-
-class RemoteDeviceBased(object):
-    """
-    Classes that are based on the context of a remote device
-    """
-
-    def __init__(self, device: Device) -> None:
-        """
-        :param device: which device is associated with this instance
-        """
-        self._device = device
-
-    @property
-    def device(self) -> Device:
-        """
-        :return: the device associated with this instance
-        """
-        return self._device
+        self._device.execute_remote_cmd("shell", "input", "keyevent", "KEYCODE_POWER", timeout=10)
