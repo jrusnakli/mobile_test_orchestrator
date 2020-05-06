@@ -170,7 +170,7 @@ class EmulatorQueue:
 
     async def start_async(self, avd: str, config: EmulatorBundleConfiguration, *args: str) -> None:
         """
-        Aynchronous start of an emaulator
+        Aynchronous start of an emulator
 
         :param avd: namd of avd to launch
         :param config: emulator bundle config

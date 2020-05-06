@@ -282,7 +282,7 @@ class Application(RemoteDeviceBased):
         :param options: string list of options to pass on to the "am start" command on the remote device, or None
 
         """
-        if activity.startswith("."):
+        if activity and activity.startswith("."):
             activity = f"{self.package_name}{activity}"
         # embellish to fully qualified name as Android expects
         activity = f"{self.package_name}/{activity}" if activity else f"{self.package_name}/{self.package_name}.MainActivity"
@@ -378,9 +378,11 @@ class ServiceApplication(Application):
         # TODO: This is bad. Breaks liskov substitution principle.
         if not activity:
             raise Exception("Must provide an activity for ServiceApplication")
-        if activity.startswith("."):
+
+        if activity and activity.startswith("."):
             activity = f"{self.package_name}{activity}"
-        activity = f"{self.package_name}/{activity}"
+        # embellish to fully qualified name as Android expects
+        activity = f"{self.package_name}/{activity}" if activity else f"{self.package_name}/{self.package_name}.MainActivity"
         options = tuple(f'"{item}"' for item in options)
         if intent:
             options = ("-a", intent) + options

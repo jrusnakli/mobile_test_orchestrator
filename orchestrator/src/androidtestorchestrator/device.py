@@ -24,8 +24,6 @@ from typing import (
     Type,
 )
 
-from apk_bitminer.parsing import AXMLParser  # type: ignore
-
 log = logging.getLogger("MTO")
 log.setLevel(logging.ERROR)
 
