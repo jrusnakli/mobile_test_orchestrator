@@ -793,35 +793,6 @@ class Device:
         """
         self.execute_remote_cmd("reverse", f"tcp:{device_port}", f"tcp:{local_port}")
 
-    ##############
-    # Navigation : TODO: Move to DeviceNavigation class
-    ##############
-
-    def go_home(self) -> None:
-        """
-        Equivalent to hitting home button to go to home screen
-        """
-        self.input("KEYCODE_HOME")
-
-    def input(self, subject: str, source: Optional[str] = None) -> None:
-        """
-        Send event subject through given source
-
-        :param subject: event to send
-        :param source: source of event, or None to default to "keyevent"
-        """
-        self.execute_remote_cmd("shell", "input", source or "keyevent", subject, capture_stdout=False)
-
-    def is_screen_on(self) -> bool:
-        """
-        :return: whether device's screen is on
-        """
-        lines = self.execute_remote_cmd("shell", "dumpsys", "activity", "activities", timeout=10).splitlines()
-        for msg in lines:
-            if 'mInteractive=false' in msg or 'mScreenOn=false' in msg or 'isSleeping=true' in msg:
-                return False
-        return True
-
 
 class RemoteDeviceBased(object):
     """
@@ -846,6 +817,12 @@ class DeviceNavigation(RemoteDeviceBased):
     """
     Provides API for equvialent of user-navigation along with related device queries
     """
+
+    def go_home(self) -> None:
+        """
+        Equivalent to hitting home button to go to home screen
+        """
+        self.input("KEYCODE_HOME")
 
     def home_screen_active(self) -> bool:
         """
@@ -885,6 +862,25 @@ class DeviceNavigation(RemoteDeviceBased):
         foreground_activity = self._device.foreground_activity(ignore_silent_apps=True)
         return bool(foreground_activity and foreground_activity.lower() == "com.sec.android.app.launcher")
 
+    def input(self, subject: str, source: Optional[str] = None) -> None:
+        """
+        Send event subject through given source
+
+        :param subject: event to send
+        :param source: source of event, or None to default to "keyevent"
+        """
+        self._device.execute_remote_cmd("shell", "input", source or "keyevent", subject, capture_stdout=False)
+
+    def is_screen_on(self) -> bool:
+        """
+        :return: whether device's screen is on
+        """
+        lines = self._device.execute_remote_cmd("shell", "dumpsys", "activity", "activities", timeout=10).splitlines()
+        for msg in lines:
+            if 'mInteractive=false' in msg or 'mScreenOn=false' in msg or 'isSleeping=true' in msg:
+                return False
+        return True
+
     def return_home(self, keycode_back_limit: int = 10) -> None:
         """
         Return to home screen as though the user did so via one or many taps on the back button.
@@ -902,7 +898,7 @@ class DeviceNavigation(RemoteDeviceBased):
 
         while back_button_attempt <= keycode_back_limit:
             back_button_attempt += 1
-            self._device.input("KEYCODE_BACK")
+            self.input("KEYCODE_BACK")
             if self.home_screen_active:
                 return
             # Sleep for a second to allow for complete activity destruction.

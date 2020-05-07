@@ -41,6 +41,7 @@ else:
         "brand": device.get_system_property("ro.product.brand"),
     }
 
+
 # noinspection PyShadowingNames
 class TestAndroidDevice:
 
@@ -174,6 +175,27 @@ class TestAndroidDevice:
         assert not device_nav.home_screen_active()
         assert device.foreground_activity() == app.package_name
 
+    def test_verify_install_on_non_installed_app(self, device: Device, in_tmp_dir: Path):
+        with pytest.raises(expected_exception=Exception) as excinfo:
+            device._verify_install("fake/app/path", "com.linkedin.fake.app", "test_screenshots")
+        assert "Failed to verify installation of app 'com.linkedin.fake.app'" in str(excinfo.value)
+        assert (in_tmp_dir / "test_screenshots" / "install_failure-com.linkedin.fake.app.png").is_file()
+
+
+class TestDeviceNavigation:
+
+    def test_is_screen_on(self, device: Device):
+        device_nav = DeviceNavigation(device)
+        is_screen_on = device_nav.is_screen_on()
+        DeviceNavigation(device).toggle_screen_on()
+        retries = 3
+        new_is_screen_on = is_screen_on
+        while retries > 0 and new_is_screen_on == is_screen_on:
+            time.sleep(3)
+            new_is_screen_on = device_nav.is_screen_on()
+            retries -= 1
+        assert is_screen_on != new_is_screen_on
+
     def test_return_home_succeeds(self, install_app, device: Device, support_app: str):
         app = install_app(Application, support_app)
         with patch('androidtestorchestrator.device.DeviceNavigation.home_screen_active',
@@ -195,20 +217,3 @@ class TestAndroidDevice:
             # need to pass -1 to force the function to reach its back button key-press limit
             DeviceNavigation(device).return_home(keycode_back_limit=-1)
         assert "Max number of back button presses" in str(excinfo.value)
-
-    def test_verify_install_on_non_installed_app(self, device: Device, in_tmp_dir: Path):
-        with pytest.raises(expected_exception=Exception) as excinfo:
-            device._verify_install("fake/app/path", "com.linkedin.fake.app", "test_screenshots")
-        assert "Failed to verify installation of app 'com.linkedin.fake.app'" in str(excinfo.value)
-        assert (in_tmp_dir / "test_screenshots" / "install_failure-com.linkedin.fake.app.png").is_file()
-
-    def test_is_screen_on(self, device: Device):
-        is_screen_on = device.is_screen_on()
-        DeviceNavigation(device).toggle_screen_on()
-        retries = 3
-        new_is_screen_on = is_screen_on
-        while retries > 0 and new_is_screen_on == is_screen_on:
-            time.sleep(3)
-            new_is_screen_on = device.is_screen_on()
-            retries -= 1
-        assert is_screen_on != new_is_screen_on

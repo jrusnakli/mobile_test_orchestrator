@@ -30,46 +30,8 @@ else:
 # (hence once a test needs that fixture, it would block until the dependent task(s) are complete, but only then)
 
 
-def _start_queues() -> Tuple[Union[Emulator, EmulatorQueue], str, str]:
-    """
-    start the emulator queue and the queues for the app/test app compiles running in parallel
-
-    :return: Tuple of Emulator(if only one in queue)/EmulatorQueue and two string names of app & test_app apks
-    TODO: just return Application and TestApplication and do the install here
-    """
-    AVD = "MTO_emulator"
-    CONFIG = EmulatorBundleConfiguration(
-        sdk=Path(support.find_sdk()),
-        boot_timeout=10 * 60  # seconds
-    )
-    ARGS = [
-        "-no-window",
-        "-no-audio",
-        "-wipe-data",
-        "-gpu", "off",
-        "-no-boot-anim",
-        "-skin", "320x640",
-        "-partition-size", "1024"
-    ]
-    support.ensure_avd(str(CONFIG.sdk), AVD)
-    if IS_CIRCLECI or TAG_MTO_DEVICE_ID in os.environ:
-        Device.TIMEOUT_ADB_CMD *= 10  # slow machine
-        ARGS.append("-no-accel")
-        # on circleci, do build first to not take up too much
-        # memory if emulator were started first
-        app_queue, test_app_queue = support.compile_all()
-        emulator = asyncio.get_event_loop().run_until_complete(Emulator.launch(Emulator.PORTS[0], AVD, CONFIG, *ARGS))
-        return emulator, app_queue, test_app_queue
-    max_count = min(multiprocessing.cpu_count(), 6)
-    count = int(os.environ.get("MTO_EMULATOR_COUNT", f"{max_count}"))
-    queue = EmulatorQueue.start(count, AVD, CONFIG, *ARGS)
-    app_queue, test_app_queue = support.compile_all()
-    return queue, app_queue, test_app_queue
-
-
-@pytest_mproc.utils.global_session_context("device")  # only use if device fixture is needed
 class TestEmulatorQueue:
-    _queue, _app_queue, _test_app_queue = _start_queues()
+    _app_queue, _test_app_queue = support.compile_all()
     # place to cache the app and test app once they are gotten from the Queue
     _app: Optional[str] = None
     _test_app: Optional[str] = None
@@ -96,20 +58,58 @@ class TestEmulatorQueue:
             cls._app = cls._app_queue.get()
         return cls._app
 
+@pytest.fixture(scope='node')
+def device_queue():
+    m = multiprocessing.Manager()
+    AVD = "MTO_emulator"
+    CONFIG = EmulatorBundleConfiguration(
+        sdk=Path(support.find_sdk()),
+        boot_timeout=10 * 60  # seconds
+    )
+    ARGS = [
+        "-no-window",
+        "-no-audio",
+        "-wipe-data",
+        "-gpu", "off",
+        "-no-boot-anim",
+        "-skin", "320x640",
+        "-partition-size", "1024"
+    ]
+    support.ensure_avd(str(CONFIG.sdk), AVD)
+    if IS_CIRCLECI or TAG_MTO_DEVICE_ID in os.environ:
+        Device.TIMEOUT_ADB_CMD *= 10  # slow machine
+        ARGS.append("-no-accel")
+        # on circleci, do build first to not take up too much
+        # memory if emulator were started first
+        count = 1
+    else:
+        max_count = min(multiprocessing.cpu_count(), 6)
+        count = int(os.environ.get("MTO_EMULATOR_COUNT", f"{max_count}"))
+
+    # launch emulators in parallel and wait for all to boot:
+    async def launch(index: int):
+        if index:
+            await asyncio.sleep(index*2)  # stabilizes the launches spacing them out (otherwise, intermittend fail to boot)
+        return await Emulator.launch(Emulator.PORTS[index], AVD, CONFIG,*ARGS)
+    ems = asyncio.get_event_loop().run_until_complete(
+        asyncio.gather(*[launch(index) for index in range(count)]))
+    queue = m.Queue(count)
+    try:
+        for em in ems:
+            queue.put(em)
+        yield queue
+    finally:
+        for em in ems:
+            em.kill()
+
 
 @pytest.fixture()
-def device(request):
-    if isinstance(TestEmulatorQueue._queue, Emulator):
-        emulator = TestEmulatorQueue._queue  # queue of 1 == an emulator
-        assert emulator.get_state() == 'device'
+def device(device_queue: multiprocessing.Queue):
+    emulator = device_queue.get(timeout=10*60)
+    try:
         yield emulator
-    else:
-        queue = TestEmulatorQueue._queue
-        emulator = queue.reserve(timeout=10*60)
-        try:
-            yield emulator
-        finally:
-            queue.relinquish(emulator)
+    finally:
+        device_queue.put(emulator)
 
 
 # noinspection PyShadowingNames

@@ -46,6 +46,7 @@ class Application(RemoteDeviceBased):
         >>> app.grant_permissions(["android.permission.WRITE_EXTERNAL_STORAGE"])
         """
         super().__init__(device)
+        self._device_navigation = DeviceNavigation(device)
         self._version: Optional[str] = None  # loaded on-demand first time self.version called
         self._package_name: str = manifest.package_name if isinstance(manifest, AXMLParser) else manifest.get("package_name", None)
         if self._package_name is None:
@@ -306,7 +307,7 @@ class Application(RemoteDeviceBased):
         """
         try:
             if force:
-                self.device.go_home()
+                self._device_navigation.go_home()
                 self.device.execute_remote_cmd("shell", "am", "force-stop", self.package_name, capture_stdout=False)
             else:
                 self.device.execute_remote_cmd("shell", "am", "stop", self.package_name, capture_stdout=False)
@@ -323,11 +324,11 @@ class Application(RemoteDeviceBased):
         cold app launch.
         NOTE: Currently appears to only work with Android 9.0 devices
         """
-        self.device.input("KEYCODE_HOME")
+        self._device_navigation.input("KEYCODE_HOME")
         # Sleep for a second to allow for app to be backgrounded
         # TODO: Get rid of sleep call as this is bad practice.
         time.sleep(1)
-        if not DeviceNavigation(self.device).home_screen_active():
+        if not self._device_navigation.home_screen_active():
             raise Exception(f"Failed to background current foreground app. Cannot complete app closure.")
         self.device.execute_remote_cmd("shell", "am", "kill", self.package_name)
         if self.pid is not None:
