@@ -13,7 +13,7 @@ from androidtestorchestrator.application import Application, TestApplication, Se
 from androidtestorchestrator.device import Device
 from androidtestorchestrator.emulators import EmulatorQueue, EmulatorBundleConfiguration, Emulator
 from . import support
-from .support import uninstall_apk
+from .support import uninstall_apk, find_sdk
 
 TAG_MTO_DEVICE_ID = "MTO_DEVICE_ID"
 IS_CIRCLECI = getpass.getuser() == 'circleci' or "CIRCLECI" in os.environ
@@ -30,21 +30,11 @@ else:
 # (hence once a test needs that fixture, it would block until the dependent task(s) are complete, but only then)
 
 
-class TestEmulatorQueue:
+class TestAppManager:
     _app_queue, _test_app_queue = support.compile_all()
     # place to cache the app and test app once they are gotten from the Queue
     _app: Optional[str] = None
     _test_app: Optional[str] = None
-
-    def __enter__(self):
-        if isinstance(self._queue, EmulatorQueue):
-            self._queue.__enter__()
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        if isinstance(self._queue, EmulatorQueue):
-            self._queue.__exit__(exc_type, exc_val, exc_tb)
-        else:
-            self._queue.kill()
 
     @classmethod
     def test_app(cls):
@@ -57,6 +47,7 @@ class TestEmulatorQueue:
         if cls._app is None:
             cls._app = cls._app_queue.get()
         return cls._app
+
 
 @pytest.fixture(scope='node')
 def device_queue():
@@ -76,27 +67,31 @@ def device_queue():
         "-partition-size", "1024"
     ]
     support.ensure_avd(str(CONFIG.sdk), AVD)
-    if IS_CIRCLECI or TAG_MTO_DEVICE_ID in os.environ:
-        Device.TIMEOUT_ADB_CMD *= 10  # slow machine
-        ARGS.append("-no-accel")
-        # on circleci, do build first to not take up too much
-        # memory if emulator were started first
-        count = 1
+    if TAG_MTO_DEVICE_ID in os.environ:
+        queue = m.Queue(1)
+        queue.put(Device(TAG_MTO_DEVICE_ID, adb_path=find_sdk()))
     else:
-        max_count = min(multiprocessing.cpu_count(), 6)
-        count = int(os.environ.get("MTO_EMULATOR_COUNT", f"{max_count}"))
+        if IS_CIRCLECI or TAG_MTO_DEVICE_ID in os.environ:
+            Device.TIMEOUT_ADB_CMD *= 10  # slow machine
+            ARGS.append("-no-accel")
+            # on circleci, do build first to not take up too much
+            # memory if emulator were started first
+            count = 1
+        else:
+            max_count = min(multiprocessing.cpu_count(), 6)
+            count = int(os.environ.get("MTO_EMULATOR_COUNT", f"{max_count}"))
 
-    # launch emulators in parallel and wait for all to boot:
-    async def launch(index: int):
-        if index:
-            await asyncio.sleep(index*2)  # stabilizes the launches spacing them out (otherwise, intermittend fail to boot)
-        return await Emulator.launch(Emulator.PORTS[index], AVD, CONFIG,*ARGS)
-    ems = asyncio.get_event_loop().run_until_complete(
-        asyncio.gather(*[launch(index) for index in range(count)]))
-    queue = m.Queue(count)
-    try:
+        queue = m.Queue(count)
+        # launch emulators in parallel and wait for all to boot:
+        async def launch(index: int):
+            if index:
+                await asyncio.sleep(index*2)  # stabilizes the launches spacing them out (otherwise, intermittend fail to boot)
+            return await Emulator.launch(Emulator.PORTS[index], AVD, CONFIG,*ARGS)
+        ems = asyncio.get_event_loop().run_until_complete(
+            asyncio.gather(*[launch(index) for index in range(count)]))
         for em in ems:
             queue.put(em)
+    try:
         yield queue
     finally:
         for em in ems:
@@ -153,7 +148,7 @@ def android_service_app(device,
 
 @pytest.fixture(scope='session')
 def support_test_app():
-    test_app = TestEmulatorQueue.test_app()
+    test_app = TestAppManager.test_app()
     if test_app is None:
         raise Exception("Failed to build test app")
     return test_app
@@ -161,7 +156,7 @@ def support_test_app():
 
 @pytest.fixture(scope='session')
 def support_app():
-    support_app = TestEmulatorQueue.app()
+    support_app = TestAppManager.app()
     if isinstance(support_app, Exception) or support_app is None:
         raise Exception("Failed to build support app")
     return support_app
