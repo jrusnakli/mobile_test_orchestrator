@@ -3,11 +3,10 @@ import multiprocessing
 import asyncio
 import getpass
 import os
-import pytest_mproc
 from pathlib import Path
 
 import pytest
-from typing import Optional, Union, Tuple
+from typing import Optional
 
 from androidtestorchestrator.application import Application, TestApplication, ServiceApplication
 from androidtestorchestrator.device import Device
@@ -71,7 +70,7 @@ def device_queue():
         queue = m.Queue(1)
         queue.put(Device(TAG_MTO_DEVICE_ID, adb_path=find_sdk()))
     else:
-        if IS_CIRCLECI or TAG_MTO_DEVICE_ID in os.environ:
+        if IS_CIRCLECI:
             Device.TIMEOUT_ADB_CMD *= 10  # slow machine
             ARGS.append("-no-accel")
             # on circleci, do build first to not take up too much
@@ -117,15 +116,11 @@ def android_test_app(device,
     uninstall_apk(support_test_app, device)
     app_for_test = TestApplication.from_apk(support_test_app, device)
     support_app = Application.from_apk(support_app, device)
-
-    def fin():
-        """
-        Leave the campground as clean as you found it:
-        """
+    try:
+        yield app_for_test
+    finally:
         app_for_test.uninstall()
         support_app.uninstall()
-    request.addfinalizer(fin)
-    return app_for_test
 
 
 @pytest.fixture()
@@ -135,15 +130,10 @@ def android_service_app(device,
     # the support app is created to act as a service app as well
     uninstall_apk(support_app, device)
     service_app = ServiceApplication.from_apk(support_app, device)
-
-    def fin():
-        """
-        Leave the campground as clean as you found it:
-        """
+    try:
+        yield service_app
+    finally:
         service_app.uninstall()
-
-    request.addfinalizer(fin)
-    return service_app
 
 
 @pytest.fixture(scope='session')

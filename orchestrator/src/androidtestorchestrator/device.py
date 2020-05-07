@@ -486,7 +486,8 @@ class Device:
 
         :return: AsyncGenerator iterating over lines of output from command
 
-        >>> async with await device.execute_remote_cmd_async("some_cmd", "with", "args",
+        >>> device = Device("someid")
+        ... async with await device.execute_remote_cmd_async("some_cmd", "with", "args",
         ...                                                  unresponsive_timeout=10) as proc:
         ...     async for line in proc.output():
         ...         process(line)
