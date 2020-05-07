@@ -7,6 +7,7 @@ from typing import Dict, List, Optional, Type, Tuple
 from types import TracebackType
 from androidtestorchestrator import Device, DeviceStorage
 from androidtestorchestrator.application import Application, TestApplication
+from androidtestorchestrator.device import DeviceNetwork
 
 log = logging.getLogger()
 
@@ -28,7 +29,8 @@ class DevicePreparation:
         """
         :param device:  device to install and run test app on
         """
-        self._device: Device = device
+        self._device = device
+        self._device_network = DeviceNetwork(device)
         self._restoration_settings: Dict[Tuple[str, str], Optional[str]] = {}
         self._restoration_properties: Dict[str, Optional[str]] = {}
         self._reverse_forwarded_ports: List[int] = []
@@ -51,7 +53,7 @@ class DevicePreparation:
         :param count: number of packets to test
         :raises: IOError on failure to successfully ping given number of packets
         """
-        lost_packet_count = self._device.check_network_connection(domain, count)
+        lost_packet_count = self._device_network.check_network_connection(domain, count)
         if lost_packet_count > acceptable_loss:
             raise IOError(
                 f"Connection to {domain} failed; expected {count} packets but got {count - lost_packet_count}")
@@ -63,7 +65,7 @@ class DevicePreparation:
         :param device_port: remote device port to forward
         :param local_port: port to forward to
         """
-        self._device.reverse_port_forward(device_port=device_port, local_port=local_port)
+        self._device_network.reverse_port_forward(device_port=device_port, local_port=local_port)
         self._reverse_forwarded_ports.append(device_port)
 
     def port_forward(self, local_port: int, device_port: int) -> None:
@@ -73,7 +75,7 @@ class DevicePreparation:
         :param local_port: port to forward from
         :param device_port: port to forward to
         """
-        self._device.port_forward(local_port=local_port, device_port=device_port)
+        self._device_network.port_forward(local_port=local_port, device_port=device_port)
         self._forwarded_ports.append(device_port)
 
     def cleanup(self) -> None:
@@ -89,10 +91,10 @@ class DevicePreparation:
                 self._device.set_system_property(prop, self._restoration_properties[prop] or '\"\"')
         self._restoration_properties = {}
         for port in self._forwarded_ports:
-            self._device.remove_port_forward(port)
+            self._device_network.remove_port_forward(port)
         self._forwarded_ports = []
         for port in self._reverse_forwarded_ports:
-            self._device.remove_reverse_port_forward(port)
+            self._device_network.remove_reverse_port_forward(port)
         self._reverse_forwarded_ports = []
 
     def __enter__(self) -> "DevicePreparation":

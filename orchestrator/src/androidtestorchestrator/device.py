@@ -725,75 +725,6 @@ class Device:
                                     stdout_redirect=f.fileno(),
                                     timeout=timeout or Device.TIMEOUT_SCREEN_CAPTURE)
 
-    #################
-    # Device network connectivity: TODO move to DeviceNetwork class
-    ################
-
-    def check_network_connection(self, domain: str, count: int = 3) -> int:
-        """
-        Check network connection to domain
-
-        :param domain: domain to ping
-        :param count: how many times to ping domain
-
-        :return: 0 on success, number of failed packets otherwise
-        """
-        try:
-            output = self.execute_remote_cmd("shell", "ping", "-c", str(count), domain, timeout=Device.TIMEOUT_LONG_ADB_CMD)
-            for msg in output.splitlines():
-                if "64 bytes" in str(msg):
-                    count -= 1
-                if count <= 0:
-                    break
-            if count > 0:
-                log.error("Output from ping was: \n%s", output)
-            return count
-        except subprocess.TimeoutExpired:
-            log.error("ping is hanging and not yielding any results. Returning error code.")
-            return -1
-        except self.CommandExecutionFailureException:
-            return -1
-
-    def port_forward(self, local_port: int, device_port: int) -> None:
-        """
-        forward traffic from local port to remote device port
-
-        :param local_port: port to forward from
-        :param device_port: port to forward to
-        """
-        self.execute_remote_cmd("forward", f"tcp:{device_port}", f"tcp:{local_port}")
-
-    def remove_port_forward(self, port: Optional[int] = None) -> None:
-        """
-        Remove reverse port forwarding
-
-        :param port: port to remove or None to remove all reverse forwarded ports
-        """
-        if port is not None:
-            self.execute_remote_cmd("forward", "--remove", f"tcp:{port}")
-        else:
-            self.execute_remote_cmd("forward", "--remove-all")
-
-    def remove_reverse_port_forward(self, port: Optional[int] = None) -> None:
-        """
-        Remove reverse port forwarding
-
-        :param port: port to remove or None to remove all reverse forwarded ports
-        """
-        if port is not None:
-            self.execute_remote_cmd("reverse", "--remove", f"tcp:{port}")
-        else:
-            self.execute_remote_cmd("reverse", "--remove-all")
-
-    def reverse_port_forward(self, device_port: int, local_port: int) -> None:
-        """
-        reverse forward traffic on remote port to local port
-
-        :param device_port: remote device port to forward
-        :param local_port: port to forward to
-        """
-        self.execute_remote_cmd("reverse", f"tcp:{device_port}", f"tcp:{local_port}")
-
 
 class RemoteDeviceBased(object):
     """
@@ -916,3 +847,75 @@ class DeviceNavigation(RemoteDeviceBased):
         Toggle device's screen on/off
         """
         self._device.execute_remote_cmd("shell", "input", "keyevent", "KEYCODE_POWER", timeout=10)
+
+
+class DeviceNetwork(RemoteDeviceBased):
+    """
+    API for network communications configuration/queries, including host-to-device communications
+    """
+
+    def check_network_connection(self, domain: str, count: int = 3) -> int:
+        """
+        Check network connection to domain
+
+        :param domain: domain to ping
+        :param count: how many times to ping domain
+
+        :return: 0 on success, number of failed packets otherwise
+        """
+        try:
+            output = self._device.execute_remote_cmd("shell", "ping", "-c", str(count), domain,
+                                                     timeout=Device.TIMEOUT_LONG_ADB_CMD)
+            for msg in output.splitlines():
+                if "64 bytes" in str(msg):
+                    count -= 1
+                if count <= 0:
+                    break
+            if count > 0:
+                log.error("Output from ping was: \n%s", output)
+            return count
+        except subprocess.TimeoutExpired:
+            log.error("ping is hanging and not yielding any results. Returning error code.")
+            return -1
+        except Device.CommandExecutionFailureException:
+            return -1
+
+    def port_forward(self, local_port: int, device_port: int) -> None:
+        """
+        forward traffic from local port to remote device port
+
+        :param local_port: port to forward from
+        :param device_port: port to forward to
+        """
+        self._device.execute_remote_cmd("forward", f"tcp:{device_port}", f"tcp:{local_port}")
+
+    def remove_port_forward(self, port: Optional[int] = None) -> None:
+        """
+        Remove reverse port forwarding
+
+        :param port: port to remove or None to remove all reverse forwarded ports
+        """
+        if port is not None:
+            self._device.execute_remote_cmd("forward", "--remove", f"tcp:{port}")
+        else:
+            self._device.execute_remote_cmd("forward", "--remove-all")
+
+    def remove_reverse_port_forward(self, port: Optional[int] = None) -> None:
+        """
+        Remove reverse port forwarding
+
+        :param port: port to remove or None to remove all reverse forwarded ports
+        """
+        if port is not None:
+            self._device.execute_remote_cmd("reverse", "--remove", f"tcp:{port}")
+        else:
+            self._device.execute_remote_cmd("reverse", "--remove-all")
+
+    def reverse_port_forward(self, device_port: int, local_port: int) -> None:
+        """
+        reverse forward traffic on remote port to local port
+
+        :param device_port: remote device port to forward
+        :param local_port: port to forward to
+        """
+        self._device.execute_remote_cmd("reverse", f"tcp:{device_port}", f"tcp:{local_port}")

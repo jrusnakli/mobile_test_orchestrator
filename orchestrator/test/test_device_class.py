@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from androidtestorchestrator.application import Application, TestApplication
-from androidtestorchestrator.device import Device, DeviceNavigation
+from androidtestorchestrator.device import Device, DeviceNavigation, DeviceNetwork
 from androidtestorchestrator.devicestorage import DeviceStorage
 from . import support
 from .conftest import TAG_MTO_DEVICE_ID
@@ -152,9 +152,6 @@ class TestAndroidDevice:
     def test_get_locale(self, device: Device):
         locale = device.get_locale()
         assert locale == "en_US"
-
-    def test_check_network_connect(self, device: Device):
-        assert device.check_network_connection("localhost", count=3) == 0
 
     def test_get_device_properties(self, device: Device):
         device_properties = device.get_device_properties()
