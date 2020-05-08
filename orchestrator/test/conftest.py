@@ -63,7 +63,7 @@ def device_queue():
         "-gpu", "off",
         "-no-boot-anim",
         "-skin", "320x640",
-        "-partition-size", "1024"
+        "-partition-size", "1024",
     ]
     support.ensure_avd(str(CONFIG.sdk), AVD)
     if TAG_MTO_DEVICE_ID in os.environ:
