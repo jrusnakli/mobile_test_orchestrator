@@ -86,16 +86,21 @@ class Device:
 
         async def __aexit__(self, exc_type: Optional[Type[BaseException]], exc_val: Optional[BaseException],
                             exc_tb: Optional[TracebackType]) -> None:
+            if self._proc.returncode != 0 and exc_type is not None:
+                raise Device.CommandExecutionFailure(self._proc.returncode, "Remote command failed on device")
             if self._proc.returncode is None:
                 log.info("Terminating process %d", self._proc.pid)
                 with suppress(Exception):
                     await self.stop(timeout=3)
             if self._proc.returncode is None:
+                # Second try, force-stop
                 with suppress(Exception):
                     try:
                         await self.stop(timeout=3, force=True)
                     except TimeoutError:
                         log.error("Failed to kill subprocess while exiting its context")
+            if exc_type is not None:
+                raise exc_val from exc_val
 
         @property
         def returncode(self) -> Optional[int]:
@@ -104,6 +109,7 @@ class Device:
         async def output(self,  unresponsive_timeout: Optional[float] = None) -> AsyncIterator[str]:
             """
             Async iterator over lines of output from process
+
             :param unresponsive_timeout: raise TimeoutException if not None and time to receive next line exceeds this
             """
             if self._proc.stdout is None:
@@ -122,6 +128,7 @@ class Device:
         async def stop(self, force: bool = False, timeout: Optional[float] = None) -> None:
             """
             Signal process to terminate, and wait for process to end
+
             :param force: whether to kill (harsh) or simply terminate
             :param timeout: raise TimeoutException if process fails to truly terminate in timeout seconds
             """
@@ -134,6 +141,7 @@ class Device:
         async def wait(self, timeout: Optional[float] = None) -> None:
             """
             Wait for process to end
+
             :param timeout: raise TimeoutException if waiting beyond this many seconds
             """
             if timeout is None:
@@ -191,9 +199,15 @@ class Device:
     ]
 
     WRITE_EXTERNAL_STORAGE_PERMISSION = "android.permission.WRITE_EXTERNAL_STORAGE"
+    UNKNOWN_API_LEVEL = -1
+
+    # Find lines that look like this:
+    #  * TaskRecord{133fbae #1340 I=com.google.android.apps.nexuslauncher/.NexusLauncherActivity U=0 StackId=0 sz=1}
+    # or
+    #  * TaskRecord{94c8098 #1791 A=com.android.chrome U=0 StackId=454 sz=1}
     APP_RECORD_PATTERN = re.compile(r'^\* TaskRecord\{[a-f0-9-]* #\d* [AI]=([a-zA-Z].[a-zA-Z0-9.]*)[ /].*')
 
-    class CommandExecutionFailureException(Exception):
+    class CommandExecutionFailure(Exception):
 
         def __init__(self, return_code: int, msg: str):
             super().__init__(msg)
@@ -237,11 +251,8 @@ class Device:
         """
         :return: List of the app packages in the activities stack, with the first item being at the top of the stack
         """
-        stdout = self.execute_remote_cmd("shell", "dumpsys", "activity", "activities", capture_stdout=True)
-        # Find lines that look like this:
-        #  * TaskRecord{133fbae #1340 I=com.google.android.apps.nexuslauncher/.NexusLauncherActivity U=0 StackId=0 sz=1}
-        # or
-        #  * TaskRecord{94c8098 #1791 A=com.android.chrome U=0 StackId=454 sz=1}
+        stdout, _ = self._execute_remote_cmd("shell", "dumpsys", "activity", "activities",
+                                             stdout=subprocess.PIPE)
         for line in stdout.splitlines():
             matches = self.APP_RECORD_PATTERN.match(line.strip())
             app_package = matches.group(1) if matches else None
@@ -276,43 +287,34 @@ class Device:
             time.sleep(self.SLEEP_PKG_INSTALL)
             packages = self.list_installed_packages()
         if package not in packages:
-            if package is not None:
-                try:
-                    if verify_screenshot_dir:
-                        os.makedirs(verify_screenshot_dir, exist_ok=True)
-                        self.take_screenshot(os.path.join(verify_screenshot_dir, f"install_failure-{package}.png"))
-                except Exception as e:
-                    log.warning(f"Unable to take screenshot of installation failure: {e}")
-                log.error("Did not find installed package %s;  found: %s" % (package, packages))
-                log.error("Device failure to install %s on model %s;  install status succeeds,"
-                          "but package not found on device" %
-                          (appl_path, self.model))
+            try:
+                if verify_screenshot_dir:
+                    os.makedirs(verify_screenshot_dir, exist_ok=True)
+                    self.take_screenshot(os.path.join(verify_screenshot_dir, f"install_failure-{package}.png"))
+            except Exception as e:
+                log.warning(f"Unable to take screenshot of installation failure: {e}")
+            log.error("Did not find installed package %s;  found: %s" % (package, packages))
+            log.error("Device failure to install %s on model %s;  install status succeeds,"
+                      "but package not found on device" %
+                      (appl_path, self.model))
             raise Exception("Failed to verify installation of app '%s', event though output indicated otherwise" %
                             package)
-        else:
-            log.info("Package %s installed" % str(package))
+        log.info("Package %s installed", str(package))
 
     #################
     # Properties
     #################
 
     @property
-    def api_level(self) -> int:
+    def api_level(self) -> Optional[int]:
         """
-        :return: api level of device
+        :return: api level of device, or None if not discoverable
         """
         if self._api_level:
-            return self._api_level
+            return self._api_level if self._api_level != Device.UNKNOWN_API_LEVEL else None
 
         device_api_level = self.get_system_property("ro.build.version.sdk")
-
-        if device_api_level:
-            self._api_level = int(device_api_level)
-        else:
-            # assume default setting of 28 :-(
-            log.warning("Unable to determine api level, assuming 28")
-            self._api_level = 28
-
+        self._api_level = int(device_api_level) if device_api_level else Device.UNKNOWN_API_LEVEL
         return self._api_level
 
     @property
@@ -333,23 +335,21 @@ class Device:
         if self._device_server_datetime_offset is not None:
             return self._device_server_datetime_offset
 
-        # compute offset of clocks between host and device (roughly)
-        def _device_datetime() -> Optional[datetime.datetime]:
-            # There is a variable on Android devices that holds the current epoch time of the device. We use that to
-            # retrieve the device's datetime so we can easily calculate the difference of the start time from
-            # other times during the test.
-            with suppress(Exception):
-                output = self.execute_remote_cmd("shell", "echo", "$EPOCHREALTIME", capture_stdout=True)
-                for msg_ in output.splitlines():
-                    if re.search(r"^\d+\.\d+$", msg_):
-                        return datetime.datetime.fromtimestamp(float(msg_.strip()))
-
+        self._device_server_datetime_offset = datetime.timedelta()
+        is_valid = False
+        # There is a variable on Android devices that holds the current epoch time of the device. We use that to
+        # retrieve the device's datetime so we can easily calculate the difference of the start time from
+        # other times during the test.
+        with suppress(Exception):
+            output, _ = self._execute_remote_cmd("shell", "echo", "$EPOCHREALTIME", stdout=subprocess.PIPE)
+            for msg_ in output.splitlines():
+                if re.search(r"^\d+\.\d+$", msg_):
+                    device_datetime = datetime.datetime.fromtimestamp(float(msg_.strip()))
+                    self._device_server_datetime_offset = datetime.datetime.now() - device_datetime
+                    is_valid = True
+                    break
+        if not is_valid:
             log.error("Unable to get datetime from device. No offset will be computed for timestamps")
-            return None
-
-        device_datetime = _device_datetime()
-        self._device_server_datetime_offset = datetime.datetime.now() - \
-            device_datetime if device_datetime is not None else datetime.timedelta()
         return self._device_server_datetime_offset
 
     @property
@@ -374,7 +374,7 @@ class Device:
         :return: location on remote device of external storage
         """
         if not self._ext_storage:
-            output = self.execute_remote_cmd("shell", "echo", "$EXTERNAL_STORAGE")
+            output, _ = self._execute_remote_cmd("shell", "echo", "$EXTERNAL_STORAGE", stdout=subprocess.PIPE)
             for msg in output.splitlines():
                 if msg:
                     self._ext_storage = msg.strip()
@@ -404,10 +404,9 @@ class Device:
 
     # PyCharm detects erroneously that parens below are not required when they are
     # noinspection PyRedundantParentheses
-    def formulate_adb_cmd(self, *args: str) -> Tuple[str, ...]:
+    def _formulate_adb_cmd(self, *args: str) -> Tuple[str, ...]:
         """
         :param args: args to the adb command
-
         :return: the adb command that executes the given arguments on the remote device from this host
         """
         if self.device_id:
@@ -415,44 +414,41 @@ class Device:
         else:
             return (self._adb_path, *args)
 
-    def execute_remote_cmd(self, *args: str,
-                           timeout: Optional[float] = None,
-                           capture_stdout: bool = True,
-                           stdout_redirect: Union[None, int, IO[AnyStr]] = subprocess.DEVNULL,
-                           fail_on_presence_of_stderr: bool = False,
-                           fail_on_error_code: Callable[[int], bool] = lambda x: x != 0) -> str:
-        # TODO: remove capture_stdout argument
-        # TODO: return type is really Optional[str], dependent on capture_stdout or stdout_redirect arg...
+    def _execute_remote_cmd(self, *args: str,
+                            timeout: Optional[float] = None,
+                            stdout: Union[None, int, IO[AnyStr]] = None,
+                            stderr: Union[None, int, IO[AnyStr]] = subprocess.PIPE,
+                            fail_on_error_code: Callable[[int], bool] = lambda x: x != 0) \
+            -> Tuple[Optional[str], Optional[str]]:
         """
         Execute a command on this device (via adb)
 
         :param args: args to be executed (via adb command)
         :param timeout: raise asyncio.TimeoutError if command fails to execute in specified time (in seconds)
-        :param capture_stdout: whether to capture and return stdout output (otherwise return None)
-        :param stdout_redirect: where to redirect stdout, defaults to subprocess.DEVNULL
-        :param fail_on_presence_of_stderr: Some commands return code 0 and still fail, so must check stderr
-            (NOTE however that some commands like monkey return 0 and use stderr as though it was stdout :-( )
-        :param fail_on_error_code: optional function that takes an error code and returns true if it represents an
-            error, False otherwise
-
-        :return: None if no stdout output requested, otherwise a string containing the stdout output of the command
-
+        :param stdout: how to pipe stdout, per subprocess.Popen like argument
+        :param stderr: how to pipe stderr, per subprocess.Popen like argument
+        :param fail_on_error_code: optional function that takes an error code that returns True if it represents an
+            error, False otherwise;  if None, any non-zero error code is treated as a failure
+        :return:tuple of stdout, stderr output as requested (None for an output that is not directed as subprocess.PIPE)
         :raises CommandExecutionFailureException: if command fails to execute on remote device
         """
+        # protected methjod: OK to access by subclasses
         timeout = timeout or Device.TIMEOUT_ADB_CMD
-        log.debug(f"Executing remote command: {self.formulate_adb_cmd(*args)}")
-        completed = subprocess.run(self.formulate_adb_cmd(*args), timeout=timeout,
-                                   stderr=subprocess.PIPE,
-                                   stdout=subprocess.PIPE if capture_stdout and stdout_redirect == subprocess.DEVNULL else stdout_redirect,
+        log.debug(f"Executing remote command: {self._formulate_adb_cmd(*args)} with timeout {timeout}")
+        completed = subprocess.run(self._formulate_adb_cmd(*args),
+                                   timeout=timeout,
+                                   stderr=stderr or subprocess.DEVNULL,
+                                   stdout=stdout or subprocess.DEVNULL,
                                    encoding='utf-8', errors='ignore')
-        if fail_on_error_code(completed.returncode) or (fail_on_presence_of_stderr and completed.stderr):
-            raise self.CommandExecutionFailureException(completed.returncode,
-                                                        f"Failed to execute '{' '.join(args)}' on device {self.device_id} [{completed.stderr}]")
-        ret: str = completed.stdout
-        return ret
+        if fail_on_error_code(completed.returncode):
+            raise self.CommandExecutionFailure(
+                completed.returncode,
+                f"Failed to execute '{' '.join(args)}' on device {self.device_id}:"
+                + f"\n{completed.stdout or ''}\n{completed.stderr or ''}")
+        return completed.stdout, completed.stderr
 
-    def execute_remote_cmd_background(self, *args: str, stdout: Union[None, int, IO[AnyStr]] = subprocess.PIPE,
-                                      **kwargs: Any) -> subprocess.Popen:  # noqa
+    def _execute_remote_cmd_background(self, *args: str, stdout: Union[None, int, IO[AnyStr]] = subprocess.PIPE,
+                                       **kwargs: Any) -> subprocess.Popen:  # noqa
         """
         Run the given command args in the background.
 
@@ -460,9 +456,9 @@ class Device:
         :param stdout: an optional file-like objection to which stdout is to be redirected (piped).
             defaults to subprocess.PIPE. If None, stdout is redirected to /dev/null
         :param kargs: dict arguments passed to subprocess.Popen
-
         :return: subprocess.Open
         """
+        # protected methjod: OK to access by subclasses
         args = (self._adb_path, "-s", self.device_id, *args)
         log.debug(f"Executing: {' '.join(args)} in background")
         if 'encoding' not in kwargs:
@@ -473,8 +469,8 @@ class Device:
                                 stderr=subprocess.PIPE,
                                 **kwargs)
 
-    async def execute_remote_cmd_async(self, *args: str,
-                                       loop: Optional[AbstractEventLoop] = None) -> AsyncContextManager[Any]:
+    async def _execute_remote_cmd_async(self, *args: str,
+                                        loop: Optional[AbstractEventLoop] = None) -> AsyncContextManager["Device.Process"]:
         """
         Coroutine for executing a command on this remote device asynchronously, allowing the client to iterate over
         lines of output.
@@ -485,23 +481,21 @@ class Device:
         :return: AsyncGenerator iterating over lines of output from command
 
         >>> device = Device("someid")
-        ... async with await device.execute_remote_cmd_async("some_cmd", "with", "args",
+        ... async with await device._execute_remote_cmd_async("some_cmd", "with", "args",
         ...                                                  unresponsive_timeout=10) as proc:
         ...     async for line in proc.output(unresponsive_timeout=10):
-        ...         process(line)
+        ...         print(line)
 
         """
-        # This is a lower level routine that clients of mdl-integration should not directly call. Other classes will
-        # provide a cleaner and more direct API (e.g. TestApplication.run and DeviceLog.logcat will call this function
-        # to do the heavy lifting, but they provide a clean external-facing interface to perform those functions).
-        cmd = self.formulate_adb_cmd(*args)
+        cmd = self._formulate_adb_cmd(*args)
         log.debug(f"Executing: {' '.join(cmd)}")
-        proc = await asyncio.subprocess.create_subprocess_exec(*cmd,
-                                                               stdout=asyncio.subprocess.PIPE,
-                                                               stderr=asyncio.subprocess.STDOUT,
-                                                               loop=loop or asyncio.events.get_event_loop(),
-                                                               bufsize=0)  # noqa
-
+        proc = await asyncio.subprocess.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+            loop=loop or asyncio.events.get_event_loop(),
+            bufsize=0
+        )
         return self.Process(proc)
 
     ###################
@@ -510,8 +504,8 @@ class Device:
 
     def get_device_datetime(self) -> datetime.datetime:
         """
-        :return: Best estimate of device's current datetime. If device's original datetime could not be computed during
-            init phase, the server's datetime is returned.
+        :return: Best estimate of device's current datetime.
+           If device's original datetime could not be computed, the server's datetime is returned.
         """
         current_device_time = datetime.datetime.utcnow() - self.device_server_datetime_offset
         return current_device_time
@@ -522,11 +516,11 @@ class Device:
 
         :param namespace: android setting namespace
         :param key: which setting to get
-
         :return: value of the requested setting as string, or None if setting could not be found
         """
         try:
-            output = self.execute_remote_cmd("shell", "settings", "get", namespace, key)
+            output, _ = self._execute_remote_cmd("shell", "settings", "get", namespace, key,
+                                                 stdout=subprocess.PIPE)
             if output.startswith("Invalid namespace"):  # some devices output a message with no error return code
                 return None
             return output.rstrip()
@@ -540,7 +534,8 @@ class Device:
         :return: full dict of properties
         """
         results: Dict[str, str] = {}
-        output = self.execute_remote_cmd("shell", "getprop", timeout=Device.TIMEOUT_ADB_CMD,)
+        output, _= self._execute_remote_cmd("shell", "getprop", timeout=Device.TIMEOUT_ADB_CMD,
+                                            stdout=subprocess.PIPE)
         for line in output.splitlines():
             if ':' in line:
                 property_name, property_value = line.split(':', 1)
@@ -561,13 +556,9 @@ class Device:
         if lang and country:
             device_locale: Optional[str] = '_'.join([lang.strip(), country.strip()])
         else:
-            device_locale = self.get_system_property('persist.sys.locale')
-            if not device_locale:
-                device_locale = self.get_system_property("ro.product.locale")
-            if not device_locale:
-                return None  # device does not report locale?
+            device_locale = self.get_system_property('persist.sys.locale') or \
+                self.get_system_property("ro.product.locale")  or None
             device_locale = device_locale.replace('-', '_').strip()
-
         return device_locale
 
     def get_state(self) -> str:
@@ -575,7 +566,8 @@ class Device:
         :return: current state of emulaor ("device", "offline", "non-existent", ...)
         """
         try:
-            return self.execute_remote_cmd("get-state", capture_stdout=True, timeout=10).strip()
+            stdout, _ = self._execute_remote_cmd("get-state", timeout=10, stdout=subprocess.PIPE)
+            return stdout.strip()
         except Exception:
             return "non-existent"
 
@@ -584,12 +576,11 @@ class Device:
         Get version of given package
 
         :param package: package of inquiry
-
         :return: version of given package or None if no such package
         """
         version = None
         try:
-            output = self.execute_remote_cmd("shell", "dumpsys", "package", package)
+            output, _ = self._execute_remote_cmd("shell", "dumpsys", "package", package, stdout=subprocess.PIPE)
             for line in output.splitlines():
                 if line and "versionName" in line and '=' in line:
                     version = line.split('=')[1].strip()
@@ -606,7 +597,7 @@ class Device:
         :return: the property from the device associated with the given key, or None if no such property exists
         """
         try:
-            output = self.execute_remote_cmd("shell", "getprop", key)
+            output, _ = self._execute_remote_cmd("shell", "getprop", key, stdout=subprocess.PIPE)
             return output.rstrip()
         except Exception as e:
             if verbose:
@@ -629,7 +620,7 @@ class Device:
         previous_value = self.get_device_setting(namespace, key)
         if previous_value is not None or key in ["location_providers_allowed"]:
             try:
-                self.execute_remote_cmd("shell", "settings", "put", namespace, key, value, capture_stdout=False)
+                self._execute_remote_cmd("shell", "settings", "put", namespace, key, value)
             except Exception as e:
                 log.error(f"Failed to set device setting {namespace}:{key}. Ignoring error [{str(e)}]")
         else:
@@ -642,11 +633,10 @@ class Device:
 
         :param key: system property key to be set
         :param value: value to set to
-
         :return: previous value, in case client wishes to restore at some point
         """
         previous_value = self.get_system_property(key)
-        self.execute_remote_cmd("shell", "setprop", key, value, capture_stdout=False)
+        self._execute_remote_cmd("shell", "setprop", key, value)
         return previous_value
 
     ###################
@@ -665,12 +655,9 @@ class Device:
         return self._activity_stack_top(filter=lambda x: x.lower() not in ignored)
 
     def get_activity_stack(self) -> List[str]:
-        output = self.execute_remote_cmd("shell", "dumpsys", "activity", "activities", timeout=10)
+        output, _ = self._execute_remote_cmd("shell", "dumpsys", "activity", "activities",
+                                             stdout=subprocess.PIPE, timeout=10)
         activity_list = []
-        # Find lines that look like this:
-        #  * TaskRecord{133fbae #1340 I=com.google.android.apps.nexuslauncher/.NexusLauncherActivity U=0 StackId=0 sz=1}
-        # or
-        #  * TaskRecord{94c8098 #1791 A=com.android.chrome U=0 StackId=454 sz=1}
         for line in output.splitlines():
             matches = self.APP_RECORD_PATTERN.match(line.strip())
             if matches:
@@ -685,7 +672,7 @@ class Device:
 
         :return: list of available items of given kind on the device
         """
-        output = self.execute_remote_cmd("shell", "pm", "list", kind)
+        output, _ = self._execute_remote_cmd("shell", "pm", "list", kind, stdout=subprocess.PIPE)
         return output.splitlines()
 
     def list_installed_packages(self) -> List[str]:
@@ -712,27 +699,25 @@ class Device:
         """
         :param local_screenshot_path: path to store screenshot
         :param timeout: timeout after this many seconds of trying to take screenshot, or None to use default timeout
-
         :raises: TimeoutException if screenshot not captured within timeout (or default timeout) seconds
         :raises: FileExistsError if path to capture screenshot already exists (will not overwrite)
         """
         if os.path.exists(local_screenshot_path):
             raise FileExistsError(f"cannot overwrite screenshot path {local_screenshot_path}")
         with open(local_screenshot_path, 'w+b') as f:
-            self.execute_remote_cmd("shell", "screencap", "-p", capture_stdout=False,
-                                    stdout_redirect=f.fileno(),
-                                    timeout=timeout or Device.TIMEOUT_SCREEN_CAPTURE)
+            self._execute_remote_cmd("shell", "screencap", "-p",
+                                     stdout=f.fileno(),
+                                     timeout=timeout or Device.TIMEOUT_SCREEN_CAPTURE)
 
 
 class RemoteDeviceBased(object):
     """
     Classes that are based on the context of a remote device
+
+    :param device: which device is associated with this instance
     """
 
     def __init__(self, device: Device) -> None:
-        """
-        :param device: which device is associated with this instance
-        """
         self._device = device
 
     @property
@@ -745,7 +730,9 @@ class RemoteDeviceBased(object):
 
 class DeviceInteraction(RemoteDeviceBased):
     """
-    Provides API for equivalent of user-navigation along with related device queries
+    Provides API for equvialent of user-navigation along with related device queries
+
+    :param device: which device is associated with this instance
     """
 
     def go_home(self) -> None:
@@ -758,12 +745,11 @@ class DeviceInteraction(RemoteDeviceBased):
         """
         :return: True if the home screen is currently in the foreground. Note that system pop-ups will result in this
         function returning False.
-
         :raises Exception: if unable to make determination
         """
         found_potential_stack_match = False
-        stdout = self._device.execute_remote_cmd("shell", "dumpsys", "activity", "activities", capture_stdout=True,
-                                                 timeout=Device.TIMEOUT_ADB_CMD)
+        stdout, _ = self._device._execute_remote_cmd("shell", "dumpsys", "activity", "activities",
+                                                     timeout=Device.TIMEOUT_ADB_CMD, stdout=subprocess.PIPE)
         # Find lines that look like this:
         #   Stack #0:
         # or
@@ -799,13 +785,16 @@ class DeviceInteraction(RemoteDeviceBased):
         :param subject: event to send
         :param source: source of event, or None to default to "keyevent"
         """
-        self._device.execute_remote_cmd("shell", "input", source or "keyevent", subject, capture_stdout=False)
+        self._device._execute_remote_cmd("shell", "input", source or "keyevent", subject, timeout=Device.TIMEOUT_ADB_CMD)
 
     def is_screen_on(self) -> bool:
         """
         :return: whether device's screen is on
         """
-        lines = self._device.execute_remote_cmd("shell", "dumpsys", "activity", "activities", timeout=10).splitlines()
+        stdout, _ = self._device._execute_remote_cmd("shell", "dumpsys", "activity", "activities",
+                                                     stdout=subprocess.PIPE,
+                                                     timeout=Device.TIMEOUT_ADB_CMD)
+        lines = stdout.splitlines()
         for msg in lines:
             if 'mInteractive=false' in msg or 'mScreenOn=false' in msg or 'isSleeping=true' in msg:
                 return False
@@ -844,12 +833,14 @@ class DeviceInteraction(RemoteDeviceBased):
         """
         Toggle device's screen on/off
         """
-        self._device.execute_remote_cmd("shell", "input", "keyevent", "KEYCODE_POWER", timeout=10)
+        self._device._execute_remote_cmd("shell", "input", "keyevent", "KEYCODE_POWER", timeout=10)
 
 
 class DeviceConnectivity(RemoteDeviceBased):
     """
     API for network communications configuration/queries, including host-to-device communications
+
+    :param device: which device is associated with this instance
     """
 
     def check_network_connection(self, domain: str, count: int = 3) -> int:
@@ -858,12 +849,12 @@ class DeviceConnectivity(RemoteDeviceBased):
 
         :param domain: domain to ping
         :param count: how many times to ping domain
-
         :return: 0 on success, number of failed packets otherwise
         """
         try:
-            output = self._device.execute_remote_cmd("shell", "ping", "-c", str(count), domain,
-                                                     timeout=Device.TIMEOUT_LONG_ADB_CMD)
+            output, _ = self._device._execute_remote_cmd("shell", "ping", "-c", str(count), domain,
+                                                         timeout=Device.TIMEOUT_LONG_ADB_CMD,
+                                                         stdout=subprocess.PIPE)
             for msg in output.splitlines():
                 if "64 bytes" in str(msg):
                     count -= 1
@@ -875,7 +866,7 @@ class DeviceConnectivity(RemoteDeviceBased):
         except subprocess.TimeoutExpired:
             log.error("ping is hanging and not yielding any results. Returning error code.")
             return -1
-        except Device.CommandExecutionFailureException:
+        except Device.CommandExecutionFailure:
             return -1
 
     def port_forward(self, local_port: int, device_port: int) -> None:
@@ -885,7 +876,7 @@ class DeviceConnectivity(RemoteDeviceBased):
         :param local_port: port to forward from
         :param device_port: port to forward to
         """
-        self._device.execute_remote_cmd("forward", f"tcp:{device_port}", f"tcp:{local_port}")
+        self._device._execute_remote_cmd("forward", f"tcp:{device_port}", f"tcp:{local_port}")
 
     def remove_port_forward(self, port: Optional[int] = None) -> None:
         """
@@ -894,9 +885,9 @@ class DeviceConnectivity(RemoteDeviceBased):
         :param port: port to remove or None to remove all reverse forwarded ports
         """
         if port is not None:
-            self._device.execute_remote_cmd("forward", "--remove", f"tcp:{port}")
+            self._device._execute_remote_cmd("forward", "--remove", f"tcp:{port}")
         else:
-            self._device.execute_remote_cmd("forward", "--remove-all")
+            self._device._execute_remote_cmd("forward", "--remove-all")
 
     def remove_reverse_port_forward(self, port: Optional[int] = None) -> None:
         """
@@ -905,9 +896,9 @@ class DeviceConnectivity(RemoteDeviceBased):
         :param port: port to remove or None to remove all reverse forwarded ports
         """
         if port is not None:
-            self._device.execute_remote_cmd("reverse", "--remove", f"tcp:{port}")
+            self._device._execute_remote_cmd("reverse", "--remove", f"tcp:{port}")
         else:
-            self._device.execute_remote_cmd("reverse", "--remove-all")
+            self._device._execute_remote_cmd("reverse", "--remove-all")
 
     def reverse_port_forward(self, device_port: int, local_port: int) -> None:
         """
@@ -916,4 +907,4 @@ class DeviceConnectivity(RemoteDeviceBased):
         :param device_port: remote device port to forward
         :param local_port: port to forward to
         """
-        self._device.execute_remote_cmd("reverse", f"tcp:{device_port}", f"tcp:{local_port}")
+        self._device._execute_remote_cmd("reverse", f"tcp:{device_port}", f"tcp:{local_port}")
