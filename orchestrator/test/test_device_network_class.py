@@ -1,3 +1,5 @@
+import subprocess
+
 from androidtestorchestrator.device import Device, DeviceNetwork
 
 
@@ -9,19 +11,19 @@ class TestDeviceNetwork:
     def test_port_forward(self, device: Device):
         device_network = DeviceNetwork(device)
         device_network.port_forward(32451, 29323)
-        output = device.execute_remote_cmd("forward", "--list")
+        output, _ = device._execute_remote_cmd("forward", "--list", stdout=subprocess.PIPE)
         assert "32451" in output
         device_network.remove_port_forward(29323)
-        output = device.execute_remote_cmd("forward", "--list")
+        output, _ = device._execute_remote_cmd("forward", "--list", stdout=subprocess.PIPE)
         assert "32451" not in output
         assert "29323" not in output
 
     def test_reverse_port_forward(self, device: Device):
         device_network = DeviceNetwork(device)
         device_network.reverse_port_forward(32451, 29323)
-        output = device.execute_remote_cmd("reverse", "--list")
+        output, _ = device._execute_remote_cmd("reverse", "--list", stdout=subprocess.PIPE)
         assert "29323" in output
         device_network.remove_reverse_port_forward(32451)
-        output = device.execute_remote_cmd("reverse", "--list")
+        output, _ = device._execute_remote_cmd("reverse", "--list", stdout=subprocess.PIPE)
         assert "29323" not in output
         assert "32451" not in output

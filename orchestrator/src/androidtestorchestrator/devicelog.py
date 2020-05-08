@@ -1,5 +1,6 @@
 import os
 import signal
+import subprocess
 from asyncio import AbstractEventLoop
 
 import logging
@@ -50,7 +51,7 @@ class DeviceLog(RemoteDeviceBased):
             start capturing logcat output from device with given id to given output path
             """
             self._markers = {}
-            self._proc = self._device.execute_remote_cmd_background("logcat", stdout=self._output_file)
+            self._proc = self._device._execute_remote_cmd_background("logcat", stdout=self._output_file)
             return self
 
         def _mark(self, marker: str, start_or_end: str) -> int:
@@ -172,7 +173,7 @@ class DeviceLog(RemoteDeviceBased):
 
     def __init__(self, device: Device) -> None:
         super().__init__(device)
-        device.execute_remote_cmd("logcat", "-G", self.DEFAULT_LOGCAT_BUFFER_SIZE)
+        device._execute_remote_cmd("logcat", "-G", self.DEFAULT_LOGCAT_BUFFER_SIZE)
 
     def get_logcat_buffer_size(self, channel: str = 'main') -> Optional[str]:
         """
@@ -180,7 +181,7 @@ class DeviceLog(RemoteDeviceBased):
 
         :return: the logcat buffer size for given channel, or None if not defined
         """
-        output = self.device.execute_remote_cmd("logcat", "-g", capture_stdout=True)
+        output, _= self.device._execute_remote_cmd("logcat", "-g", stdout=subprocess.PIPE)
         for line in output.splitlines():
             if line.startswith(channel):
                 "format is <channel>: ring buffer is <size>"
@@ -193,13 +194,17 @@ class DeviceLog(RemoteDeviceBased):
         """
         :param size_spec: string spec (per adb logcat --help) for size of buffer (e.g. 10M = 10 megabytes)
         """
-        self.device.execute_remote_cmd("logcat", "-G", size_spec)
+        self.device._execute_remote_cmd("logcat", "-G", size_spec)
 
-    def clear(self) -> None:
+    def clear(self, buffer: str = "all") -> None:
         """
         clear device log on the device and start fresh
+
+        NOTE: Android has intermittent failures not clearing the main log. In particaular, this
+        operation seems somehsat asynchronous and can interfere or be interered with if other
+        logcat call are made in a short time window around this call.
         """
-        self.device.execute_remote_cmd("logcat", "-b", "all", "-c", capture_stdout=False)
+        self.device._execute_remote_cmd("logcat", "-b", buffer, "-c")
 
     async def logcat(self, *options: str, loop: Optional[AbstractEventLoop] = None
                      ) -> AsyncContextManager[Any]:
@@ -213,7 +218,7 @@ class DeviceLog(RemoteDeviceBased):
 
         :raises: asyncio.TimeoutError if timeout is not None and timeout is reached
         """
-        return await self.device.execute_remote_cmd_async("logcat", *options, loop=loop)
+        return await self.device._execute_remote_cmd_async("logcat", *options, loop=loop)
 
     def capture_to_file(self, output_path: str) -> "LogCapture":
         """
