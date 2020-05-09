@@ -33,11 +33,11 @@ class EmulatorBundleConfiguration:
     """Location of AVDs, or None for default"""
     avd_dir: Optional[Path] = Path(_ANDROID_RESOLVED_AVD_HOME) if _ANDROID_RESOLVED_AVD_HOME else None
     """Location of system image or None for default"""
-    system_img: Optional[Path] = None
+    system_img: Optional[str] = None
     """Location of kernal to use or None for default"""
-    kernel: Optional[Path] = None
+    kernel: Optional[str] = None
     """location of RAM disk or None for default"""
-    ramdisk: Optional[Path] = None
+    ramdisk: Optional[str] = None
     """which working directory to ro run from (or None to use cwd)"""
     working_dir: Optional[Path] = Path(os.getcwd())
     """timeout if boot does not happen after this many seconds"""
@@ -45,6 +45,9 @@ class EmulatorBundleConfiguration:
 
     def adb_path(self) -> Path:
         return self.sdk.joinpath("platform-tools").joinpath("adb")
+
+    def emulator_path(self) -> Path:
+        return self.sdk.joinpath("emulator").joinpath("emulator")
 
 
 class Emulator(Device):

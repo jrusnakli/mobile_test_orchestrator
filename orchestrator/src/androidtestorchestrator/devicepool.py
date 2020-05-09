@@ -4,13 +4,11 @@ The interface for setting and expiration on reserved Device's/Emulator's is also
 """
 import asyncio
 import multiprocessing
-import os
 import queue
 import subprocess
 from abc import ABC, abstractmethod
 from asyncio import Queue
 from contextlib import asynccontextmanager, suppress
-from pathlib import Path
 from typing import AsyncGenerator, Callable, Optional, Dict, Union, Set, Coroutine, Any, List, TypeVar
 
 from androidtestorchestrator.device import Device

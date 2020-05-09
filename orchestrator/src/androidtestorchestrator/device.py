@@ -666,7 +666,7 @@ class Device:
                                     timeout=timeout or Device.TIMEOUT_SCREEN_CAPTURE)
 
     ####################
-    # Navigation related
+    # Device activity
     ####################
 
     def _activity_stack_top(self, filt: Callable[[str], bool] = lambda x: True) -> Optional[str]:
