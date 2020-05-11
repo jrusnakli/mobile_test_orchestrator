@@ -814,9 +814,9 @@ class RemoteDeviceBased(object):
         return self._device
 
 
-class DeviceNavigation(RemoteDeviceBased):
+class DeviceInteraction(RemoteDeviceBased):
     """
-    Provides API for equvialent of user-navigation along with related device queries
+    Provides API for equivalent of user-navigation along with related device queries
     """
 
     def go_home(self) -> None:

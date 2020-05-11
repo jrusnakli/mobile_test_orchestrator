@@ -8,7 +8,7 @@ from asyncio import AbstractEventLoop
 from apk_bitminer.parsing import AXMLParser  # type: ignore
 from typing import List, TypeVar, Type, Optional, AsyncContextManager, Dict, Union, Any, Set, Iterable, Tuple, Callable
 
-from .device import Device, RemoteDeviceBased, _device_lock, DeviceNavigation
+from .device import Device, RemoteDeviceBased, _device_lock, DeviceInteraction
 
 log = logging.getLogger(__name__)
 
@@ -46,7 +46,7 @@ class Application(RemoteDeviceBased):
         >>> app.grant_permissions(["android.permission.WRITE_EXTERNAL_STORAGE"])
         """
         super().__init__(device)
-        self._device_navigation = DeviceNavigation(device)
+        self._device_navigation = DeviceInteraction(device)
         self._version: Optional[str] = None  # loaded on-demand first time self.version called
         self._package_name: str = manifest.package_name if isinstance(manifest, AXMLParser) else manifest.get("package_name", None)
         if self._package_name is None:

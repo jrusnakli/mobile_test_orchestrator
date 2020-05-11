@@ -140,7 +140,7 @@ class TestApplicationClass:
 
     def test_clean_kill_throws_exception_when_home_screen_not_active(self, install_app, device: Device, support_app: str):
         app = install_app(Application, support_app)
-        with patch('androidtestorchestrator.device.DeviceNavigation.home_screen_active', new_callable=Mock) as mock_home_screen_active:
+        with patch('androidtestorchestrator.device.DeviceInteraction.home_screen_active', new_callable=Mock) as mock_home_screen_active:
             # Force home_screen_active to be false to indicate clean_kill failed
             mock_home_screen_active.return_value = False
             app.start(".MainActivity")
@@ -152,7 +152,7 @@ class TestApplicationClass:
 
     def test_clean_kill_throws_exception_when_pid_still_existing(self, install_app, device: Device, support_app: str):
         app = install_app(Application, support_app)
-        with patch('androidtestorchestrator.device.DeviceNavigation.home_screen_active', new_callable=Mock) as mock_home_screen_active:
+        with patch('androidtestorchestrator.device.DeviceInteraction.home_screen_active', new_callable=Mock) as mock_home_screen_active:
             with patch('androidtestorchestrator.application.Application.pid', new_callable=PropertyMock) as mock_pid:
                 # Force home_screen_active to be True to indicate clean_kill made it to the home screen
                 mock_home_screen_active.return_value = True
@@ -167,7 +167,7 @@ class TestApplicationClass:
 
     def test_clean_kill_succeeds(self, install_app, device: Device, support_app: str):
         app = install_app(Application, support_app)
-        with patch('androidtestorchestrator.device.DeviceNavigation.home_screen_active', new_callable=Mock) as mock_home_screen_active:
+        with patch('androidtestorchestrator.device.DeviceInteraction.home_screen_active', new_callable=Mock) as mock_home_screen_active:
             with patch('androidtestorchestrator.application.Application.pid', new_callable=PropertyMock) as mock_pid:
                 # Force home_screen_active to be True to indicate clean_kill made it to the home screen
                 mock_home_screen_active.return_value = True

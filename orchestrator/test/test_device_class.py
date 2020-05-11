@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from androidtestorchestrator.application import Application, TestApplication
-from androidtestorchestrator.device import Device, DeviceNavigation
+from androidtestorchestrator.device import Device, DeviceInteraction
 from androidtestorchestrator.devicestorage import DeviceStorage
 from . import support
 from .conftest import TAG_MTO_DEVICE_ID
@@ -164,7 +164,7 @@ class TestAndroidDevice:
 
     def test_foreground_and_activity_detection(self, install_app, device: Device, support_app: str):
         app = install_app(Application, support_app)
-        device_nav = DeviceNavigation(device)
+        device_nav = DeviceInteraction(device)
         # By default, emulators should always start into the home screen
         assert device_nav.home_screen_active()
         # Start up an app and test home screen is no longer active, and foreground app is correct
