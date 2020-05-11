@@ -159,9 +159,9 @@ at android.support.test.internal.runner.TestExecutor.execute(TestExecutor.java:5
 at android.support.test.runner.AndroidJUnitRunner.onStart(AndroidJUnitRunner.java:240)
 at android.app.Instrumentation$InstrumentationThread.run(Instrumentation.java:1741)""".strip()
 
-    def test_parse_lines(self, device: Device, tmpdir):
-        tmpdir = str(tmpdir)
-        with DeviceLog(device).capture_to_file(os.path.join(tmpdir, "test_output.log")) as logcat_marker:
+    def test_parse_lines(self, device: Device, mp_tmp_dir):
+        mp_tmp_dir = str(mp_tmp_dir)
+        with DeviceLog(device).capture_to_file(os.path.join(mp_tmp_dir, "test_output.log")) as logcat_marker:
 
             got_test_ignored = False
             got_test_failed = False

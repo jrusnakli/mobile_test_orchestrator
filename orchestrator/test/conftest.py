@@ -6,11 +6,12 @@ import os
 from pathlib import Path
 
 import pytest
+from pytest_mproc.plugin import TmpDirFactory
 from typing import Optional
 
 from androidtestorchestrator.application import Application, TestApplication, ServiceApplication
 from androidtestorchestrator.device import Device
-from androidtestorchestrator.emulators import EmulatorQueue, EmulatorBundleConfiguration, Emulator
+from androidtestorchestrator.emulators import EmulatorBundleConfiguration, Emulator
 from . import support
 from .support import uninstall_apk, find_sdk
 
@@ -153,8 +154,8 @@ def support_app():
 
 
 @pytest.fixture
-def fake_sdk(tmpdir_factory):
-    tmpdir = tmpdir_factory.mktemp("sdk")
+def fake_sdk(mp_tmpdir_factory: TmpDirFactory):
+    tmpdir = mp_tmpdir_factory.create_tmp_dir("sdk")
     os.makedirs(os.path.join(str(tmpdir), "platform-tools"))
     with open(os.path.join(str(tmpdir), "platform-tools", "adb"), 'w'):
         pass  # create a dummy file so that test of its existence as file passes
@@ -162,10 +163,10 @@ def fake_sdk(tmpdir_factory):
 
 
 @pytest.fixture
-def in_tmp_dir(tmp_path: Path) -> Path:
+def in_tmp_dir(mp_tmp_dir) -> Path:
     cwd = os.getcwd()
-    os.chdir(str(tmp_path))
-    yield tmp_path
+    os.chdir(str(mp_tmp_dir))
+    yield Path(str(mp_tmp_dir))
     os.chdir(cwd)
 
 

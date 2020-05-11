@@ -77,9 +77,9 @@ class TestDeviceLog:
             assert "new_line" in line
             assert line not in output_before
 
-    def test_capture_mark_start_stop(self, device: Device, tmpdir):
+    def test_capture_mark_start_stop(self, device: Device, mp_tmp_dir):
         device_log = DeviceLog(device)
-        output_path = os.path.join(str(tmpdir), "logcat.txt")
+        output_path = os.path.join(str(mp_tmp_dir), "logcat.txt")
         with device_log.capture_to_file(output_path) as log_capture:
             time.sleep(2)
             log_capture.mark_start("test1")
@@ -90,9 +90,9 @@ class TestDeviceLog:
             assert "test1.end" in log_capture.markers
             assert log_capture.markers["test1.start"] < log_capture.markers["test1.end"]
 
-    def test_invalid_output_path(self, fake_sdk, tmpdir):
+    def test_invalid_output_path(self, fake_sdk, mp_tmp_dir):
         device = Device("fakeid", os.path.join(fake_sdk, "platform-tools", "adb"))
-        tmpfile = os.path.join(str(tmpdir), "somefile")
+        tmpfile = os.path.join(str(mp_tmp_dir), "somefile")
         with open(tmpfile, 'w'):
             pass
         with pytest.raises(Exception) as exc_info:
@@ -100,5 +100,5 @@ class TestDeviceLog:
         assert "Path %s already exists; will not overwrite" % tmpfile in str(exc_info.value)
 
         with pytest.raises(Exception):
-            logcap = DeviceLog.LogCapture(device, os.path.join(tmpdir, "newfile"))
+            logcap = DeviceLog.LogCapture(device, os.path.join(mp_tmp_dir, "newfile"))
             logcap.mark_end("proc_not_started_so_throw_exception")
