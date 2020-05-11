@@ -170,11 +170,11 @@ class EmulatorQueue:
 
     async def start_async(self, avd: str, config: EmulatorBundleConfiguration, *args: str) -> None:
         """
-        Aynchronous start of an emaulator
+        Aynchronous start of an emulator
 
-        :param avd: namd of avd to launch
+        :param avd: name of avd to launch
         :param config: emulator bundle config
-        :param args: additional arguments to pass to the emaultor launch command
+        :param args: additional arguments to pass to the emulator launch command
         """
         emulators = []
 
@@ -230,7 +230,7 @@ class EmulatorQueue:
 
     def stop(self) -> None:
         """
-        Stop the background process monitoring emulators and stop each emaultor
+        Stop the background process monitoring emulators and stop each emulator
         """
         if self._process:
             self._restart_q.put(None)  # signals end

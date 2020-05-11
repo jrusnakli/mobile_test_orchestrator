@@ -1,12 +1,14 @@
+from contextlib import suppress
+
 import logging
 import subprocess
 import time
 from asyncio import AbstractEventLoop
 
 from apk_bitminer.parsing import AXMLParser  # type: ignore
-from typing import List, TypeVar, Type, Optional, AsyncContextManager, Dict, Union, Any, Set, Iterable
+from typing import List, TypeVar, Type, Optional, AsyncContextManager, Dict, Union, Any, Set, Iterable, Tuple, Callable
 
-from .device import Device, RemoteDeviceBased
+from .device import Device, RemoteDeviceBased, _device_lock
 
 log = logging.getLogger(__name__)
 
@@ -113,7 +115,7 @@ class Application(RemoteDeviceBased):
 
         """
         parser = AXMLParser.parse(apk_path)
-        await device.install(apk_path, as_upgrade)
+        await cls._install(device, apk_path, as_upgrade)
         return cls(device, parser)
 
     @classmethod
@@ -132,8 +134,98 @@ class Application(RemoteDeviceBased):
         >>> app = Application.from_apk("/local/path/to/apk", device, as_upgrade=True)
         """
         parser = AXMLParser.parse(apk_path)
-        device.install_synchronous(apk_path, as_upgrade)
+        cls._install_synchronous(device, apk_path, as_upgrade)
         return cls(device, parser)
+
+    @classmethod
+    def _install_synchronous(cls, device: Device, apk_path: str, as_upgrade: bool) -> None:
+        """
+        install the given bundle, blocking until complete
+
+        :param device: Device to install on
+        :param apk_path: local path to the apk to be installed
+        :param as_upgrade: install as upgrade or not
+        """
+        if as_upgrade:
+            cmd: Tuple[str, ...] = ("install", "-r", apk_path)
+        else:
+            cmd = ("install", apk_path)
+
+        device.execute_remote_cmd(*cmd, timeout=Device.TIMEOUT_LONG_ADB_CMD)
+
+    @classmethod
+    async def _install(clsd, device: Device, apk_path: str, as_upgrade: bool,
+                       conditions: Optional[List[str]] = None,
+                       on_full_install: Optional[Callable[[], None]] = None,
+                       screenshot_dir: Optional[str] = None) -> None:
+        """
+        Install given apk asynchronously, monitoring output for messages containing any of the given conditions,
+        executing a callback if given when any such condition is met.
+
+        :param device: Device to install on
+        :param apk_path: bundle to install
+        :param as_upgrade: whether as upgrade or not
+        :param conditions: list of strings to look for in stdout as a trigger for callback. Some devices are
+            non-standard and will provide a pop-up request explicit user permission for install once the apk is fully
+            uploaded and prepared. This param defaults to ["100%", "pkg:", "Success"] as indication that bundle was
+            fully prepared (pre-pop-up).
+        :param on_full_install: if not None the callback to be called
+        :param screenshot_dir: if not None, where to capture a screenshot on failure; if None, no verification of
+           install will be performed
+
+        :raises Device.InsufficientStorageError: if there is not enough space on device
+        """
+        conditions = conditions or ["100%", "pkg:", "Success"]
+        parser = AXMLParser.parse(apk_path)
+        package = parser.package_name
+        remote_data_path = f"/data/local/tmp/{package}"
+        if not as_upgrade:
+            # avoid unnecessary conflicts with older certs and crap:
+            # TODO: client should handle clean install -- this code really shouldn't be here??
+            with suppress(Exception):
+                device.execute_remote_cmd("uninstall", package, capture_stdout=False)
+
+        # We try Android Studio's method of pushing to device and installing from there, but if push is
+        # unsuccessful, we fallback to plain adb install
+        try:
+            push_cmd = ("push", apk_path, remote_data_path)
+            device.execute_remote_cmd(*push_cmd, timeout=Device.TIMEOUT_LONG_ADB_CMD)
+            push_successful = True
+        except Exception:
+            log.warning("Unable to push apk to install from device, will attempt direct install from local apk")
+            push_successful = False
+
+        try:
+            # Execute the installation of the app, monitoring output for completion in order to invoke any extra
+            # commands or detect insufficient storage issues
+            cmd: List[str] = ["shell", "pm", "install"] if push_successful else ["install"]
+            source = remote_data_path if push_successful else apk_path
+            if as_upgrade:
+                cmd.append("-r")
+            cmd.append(source)
+            # Do not allow more than one install at a time on a specific device, as this can be problematic
+            async with _device_lock(device):
+                async with await device.execute_remote_cmd_async(*cmd) as proc:
+                    async for msg in proc.output(unresponsive_timeout=Device.TIMEOUT_LONG_ADB_CMD):
+                        if device.ERROR_MSG_INSUFFICIENT_STORAGE in msg:
+                            raise device.InsufficientStorageError("Insufficient storage for install of %s" %
+                                                                  apk_path)
+                        # Some devices have non-standard pop-ups that must be cleared by accepting usb installs
+                        # (non-standard Android):
+                        if on_full_install and msg and any([condition in msg for condition in conditions]):
+                            on_full_install()
+                    await proc.wait(Device.TIMEOUT_LONG_ADB_CMD)
+
+            # On some devices, a pop-up may prevent successful install even if return code from adb install showed
+            # success, so must explicitly verify the install was successful:
+            if screenshot_dir:
+                log.info("Verifying install...")
+                device._verify_install(apk_path, package, screenshot_dir)  # raises exception on failure to verify
+        finally:
+            if push_successful:
+                with suppress(Exception):
+                    rm_cmd = ("shell", "rm", remote_data_path)
+                    device.execute_remote_cmd(*rm_cmd, timeout=Device.TIMEOUT_ADB_CMD)
 
     def uninstall(self) -> None:
         """
@@ -190,6 +282,8 @@ class Application(RemoteDeviceBased):
         :param options: string list of options to pass on to the "am start" command on the remote device, or None
 
         """
+        if activity and activity.startswith("."):
+            activity = f"{self.package_name}{activity}"
         # embellish to fully qualified name as Android expects
         activity = f"{self.package_name}/{activity}" if activity else f"{self.package_name}/{self.package_name}.MainActivity"
         if intent:
@@ -282,11 +376,13 @@ class ServiceApplication(Application):
             does not allow background starts any longer)
         """
         # TODO: This is bad. Breaks liskov substitution principle.
-
         if not activity:
             raise Exception("Must provide an activity for ServiceApplication")
 
-        activity = f"{self.package_name}/{activity}"
+        if activity and activity.startswith("."):
+            activity = f"{self.package_name}{activity}"
+        # embellish to fully qualified name as Android expects
+        activity = f"{self.package_name}/{activity}" if activity else f"{self.package_name}/{self.package_name}.MainActivity"
         options = tuple(f'"{item}"' for item in options)
         if intent:
             options = ("-a", intent) + options
@@ -439,7 +535,7 @@ class TestApplication(Application):
         >>> application = await Application.from_apk_async("local/path/to/apk", device)
         """
         parser = AXMLParser.parse(apk_path)
-        await device.install(apk_path, as_upgrade, parser.package_name)
+        await cls._install(device, apk_path, as_upgrade, parser.package_name)
         return cls(device, parser)
 
     @classmethod
@@ -456,5 +552,5 @@ class TestApplication(Application):
         >>> test_application = Application.from_apk("/local/path/to/apk", device, as_upgrade=True)
         """
         parser = AXMLParser.parse(apk_path)
-        device.install_synchronous(apk_path, as_upgrade)
+        cls._install_synchronous(device, apk_path, as_upgrade)
         return cls(device, parser)
