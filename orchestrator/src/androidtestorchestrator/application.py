@@ -329,11 +329,11 @@ class Application(RemoteDeviceBased):
         # TODO: Get rid of sleep call as this is bad practice.
         time.sleep(1)
         if not self._device_navigation.home_screen_active():
-            raise Exception(f"Failed to background current foreground app. Cannot complete app closure.")
+            raise Exception("Failed to background current foreground app. Cannot complete app closure.")
         self.device.execute_remote_cmd("shell", "am", "kill", self.package_name)
         if self.pid is not None:
             raise Exception(
-                f"Detected app process is still running, despite background command succeeding. App closure failed.")
+                "Detected app process is still running, despite background command succeeding. App closure failed.")
 
     def clear_data(self, regrant_permissions: bool = True) -> None:
         """
