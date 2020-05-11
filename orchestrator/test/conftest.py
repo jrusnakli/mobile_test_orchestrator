@@ -81,11 +81,13 @@ def device_queue():
             count = int(os.environ.get("MTO_EMULATOR_COUNT", f"{max_count}"))
 
         queue = m.Queue(count)
+
         # launch emulators in parallel and wait for all to boot:
         async def launch(index: int):
             if index:
                 await asyncio.sleep(index*2)  # stabilizes the launches spacing them out (otherwise, intermittend fail to boot)
             return await Emulator.launch(Emulator.PORTS[index], AVD, CONFIG,*ARGS)
+
         ems = asyncio.get_event_loop().run_until_complete(
             asyncio.gather(*[launch(index) for index in range(count)]))
         for em in ems:
@@ -109,7 +111,6 @@ def device(device_queue: multiprocessing.Queue):
 # noinspection PyShadowingNames
 @pytest.fixture()
 def android_test_app(device,
-                     request,
                      support_app: str,
                      support_test_app: str):
     uninstall_apk(support_app, device)
@@ -125,7 +126,6 @@ def android_test_app(device,
 
 @pytest.fixture()
 def android_service_app(device,
-                        request,
                         support_app: str):
     # the support app is created to act as a service app as well
     uninstall_apk(support_app, device)
