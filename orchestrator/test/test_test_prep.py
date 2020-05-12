@@ -7,8 +7,8 @@ from androidtestorchestrator.testprep import EspressoTestPreparation
 
 class TestEspressoTestPreparation:
 
-    def test_upload_test_vectors(self, device, support_app, support_test_app, tmpdir):
-        root = os.path.join(str(tmpdir), "data_files")
+    def test_upload_test_vectors(self, device, support_app, support_test_app, mp_tmp_dir):
+        root = os.path.join(str(mp_tmp_dir), "data_files")
         os.makedirs(root)
         tv_dir = os.path.join(root, "test_vectors")
         os.makedirs(tv_dir)
@@ -24,12 +24,12 @@ class TestEspressoTestPreparation:
             assert test_prep.test_app is not None
             test_prep.upload_test_vectors(root)
             storage = DeviceStorage(device)
-            test_dir = os.path.join(str(tmpdir), "test_download")
+            test_dir = os.path.join(str(mp_tmp_dir), "test_download")
             storage.pull(remote_path="/".join([storage.external_storage_location, "test_vectors"]),
                          local_path=os.path.join(test_dir))
             assert os.path.exists(os.path.join(test_dir, "tv-1.txt"))
             assert os.path.exists(os.path.join(test_dir, "tv-2.txt"))
-        test_dir2 = os.path.join(str(tmpdir), "no_tv_download")
+        test_dir2 = os.path.join(str(mp_tmp_dir), "no_tv_download")
         os.makedirs(test_dir2)
         storage.pull(remote_path="/".join([storage.external_storage_location, "test_vectors"]),
                      local_path=os.path.join(test_dir2))

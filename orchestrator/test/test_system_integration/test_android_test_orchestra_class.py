@@ -11,6 +11,7 @@ from androidtestorchestrator.parsing import LineParser
 from androidtestorchestrator.reporting import TestRunListener
 from androidtestorchestrator.testprep import EspressoTestPreparation, DevicePreparation
 from ..support import uninstall_apk
+import pytest_mproc
 
 
 # noinspection PyShadowingNames
@@ -35,7 +36,7 @@ class TestAndroidTestOrchestrator(object):
             """
             self.lines.append(line)
 
-    def test_add_logcat_tag_monitor(self, device: Device, tmpdir: str):
+    def test_add_logcat_tag_monitor(self, tmpdir: str):
         with AndroidTestOrchestrator(artifact_dir=str(tmpdir),) as orchestrator:
             handler = TestAndroidTestOrchestrator.TagListener()
             orchestrator.add_logcat_monitor("TestTag", handler)
@@ -52,6 +53,7 @@ class TestAndroidTestOrchestrator(object):
         with pytest.raises(ValueError):
             orchestrator.add_logcat_monitor("TestTag", handler)  # duplicate tag/priority
 
+    @pytest_mproc.group("EXECUTE_TEST_SUITE")  # run before others
     def test_execute_test_suite(self, device: Device, android_test_app: TestApplication, tmpdir):
         test_count = 0
         test_suite_count = 0
@@ -123,6 +125,7 @@ class TestAndroidTestOrchestrator(object):
                                            test_application=android_test_app)
         assert test_count == 4  # last test suite had one test
 
+    @pytest_mproc.group("EXECUTE_BACKGROUND_TASK")  # run before others
     def test_add_background_task(self,
                                  device: Device,
                                  support_app: str,
@@ -245,6 +248,7 @@ class TestAndroidTestOrchestrator(object):
             assert device.get_system_property("debug.mock2") == "5555"
             assert device.get_device_setting("system", "dim_screen") == new
 
+    @pytest_mproc.group("EXECUTE_TEST_SUITE_ORHCESTRATED")
     def test_execute_test_suite_orchestrated(self, device: Device, support_app: str,
                                              support_test_app: str, tmpdir):
         uninstall_apk(support_app, device)

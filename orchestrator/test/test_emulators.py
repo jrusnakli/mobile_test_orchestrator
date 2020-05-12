@@ -1,6 +1,7 @@
 import sys
 
 import getpass
+import pytest_mproc
 from queue import Empty
 
 import asyncio
@@ -62,6 +63,7 @@ class TestEmulator:
 
     @pytest.mark.skipif(getpass.getuser() == 'circleci',
                         reason="Unable to run multiple emulators in circleci without upgrading machine")
+    @pytest_mproc.group("EMULATOR_LAUNCH")
     def test_launch(self):
         async def launch():
             emulator = await Emulator.launch(5584, self.AVD, self.EMULATOR_CONFIG, *self.ARGS)

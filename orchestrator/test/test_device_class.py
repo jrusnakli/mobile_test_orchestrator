@@ -7,17 +7,14 @@
 import asyncio
 import os
 from pathlib import Path
-from unittest.mock import patch, PropertyMock
 
 import pytest
-import time
 
-from androidtestorchestrator.application import Application, TestApplication, ServiceApplication
-from androidtestorchestrator.device import Device
+from androidtestorchestrator.application import Application, TestApplication
+from androidtestorchestrator.device import Device, DeviceInteraction
 from androidtestorchestrator.devicestorage import DeviceStorage
 from . import support
 from .conftest import TAG_MTO_DEVICE_ID
-from .support import uninstall_apk
 
 RESOURCE_DIR = os.path.join(os.path.dirname(__file__), "resources")
 
@@ -41,20 +38,21 @@ else:
         "brand": device.get_system_property("ro.product.brand"),
     }
 
+
 # noinspection PyShadowingNames
 class TestAndroidDevice:
 
-    def test_take_screenshot(self, device: Device, tmpdir):
-        path = os.path.join(str(tmpdir), "test_screenshot.png")
-        device.take_screenshot(os.path.join(str(tmpdir), path))
+    def test_take_screenshot(self, device: Device, mp_tmp_dir):
+        path = os.path.join(str(mp_tmp_dir), "test_screenshot.png")
+        device.take_screenshot(os.path.join(str(mp_tmp_dir), path))
         assert os.path.isfile(path)
         assert os.stat(path).st_size != 0
 
-    def test_take_screenshot_file_already_exists(self, device: Device, tmpdir):
-        path = os.path.join(str(tmpdir), "created_test_screenshot.png")
+    def test_take_screenshot_file_already_exists(self, device: Device, mp_tmp_dir):
+        path = os.path.join(str(mp_tmp_dir), "created_test_screenshot.png")
         open(path, 'w+b')  # create the file
         with pytest.raises(FileExistsError):
-            device.take_screenshot(os.path.join(str(tmpdir), path))
+            device.take_screenshot(os.path.join(str(mp_tmp_dir), path))
 
     def test_device_name(self, device: Device):  # noqa
         name = device.device_name
@@ -166,33 +164,13 @@ class TestAndroidDevice:
 
     def test_foreground_and_activity_detection(self, install_app, device: Device, support_app: str):
         app = install_app(Application, support_app)
+        device_nav = DeviceInteraction(device)
         # By default, emulators should always start into the home screen
-        assert device.home_screen_active
+        assert device_nav.home_screen_active()
         # Start up an app and test home screen is no longer active, and foreground app is correct
         app.start(activity=".MainActivity")
-        assert not device.home_screen_active
+        assert not device_nav.home_screen_active()
         assert device.foreground_activity() == app.package_name
-
-    def test_return_home_succeeds(self, install_app, device: Device, support_app: str):
-        app = install_app(Application, support_app)
-        with patch('androidtestorchestrator.device.Device.home_screen_active',
-                   new_callable=PropertyMock) as mock_home_screen_active:
-            # Have to mock out call since inputting the KEYCODE_BACK event doesn't work for all devices/emulators
-            mock_home_screen_active.return_value = True
-            app.start(activity=".MainActivity")
-            assert device.foreground_activity() == app.package_name
-            device.return_home()
-            assert device.home_screen_active
-
-    def test_return_home_fails(self, install_app, device: Device, support_app: str):
-        app = install_app(Application, support_app)
-        app.start(activity=".MainActivity")
-        assert device.foreground_activity() == app.package_name
-        with pytest.raises(expected_exception=Exception) as excinfo:
-            # Nobody would ever really pass a negative number, but our test app has only one activity screen. So
-            # need to pass -1 to force the function to reach its back button key-press limit
-            device.return_home(keycode_back_limit=-1)
-        assert "Max number of back button presses" in str(excinfo.value)
 
     def test_verify_install_on_non_installed_app(self, device: Device, in_tmp_dir: Path):
         with pytest.raises(expected_exception=Exception) as excinfo:
@@ -200,13 +178,4 @@ class TestAndroidDevice:
         assert "Failed to verify installation of app 'com.linkedin.fake.app'" in str(excinfo.value)
         assert (in_tmp_dir / "test_screenshots" / "install_failure-com.linkedin.fake.app.png").is_file()
 
-    def test_is_screen_on(self, device: Device):
-        is_screen_on = device.is_screen_on()
-        device.toggle_screen_on()
-        retries = 3
-        new_is_screen_on = is_screen_on
-        while retries > 0 and new_is_screen_on == is_screen_on:
-            time.sleep(3)
-            new_is_screen_on = device.is_screen_on()
-            retries -= 1
-        assert is_screen_on != new_is_screen_on
+
