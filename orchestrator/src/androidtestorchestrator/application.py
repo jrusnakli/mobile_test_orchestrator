@@ -6,7 +6,7 @@ import logging
 import subprocess
 import time
 
-from apk_bitminer.parsing import AXMLParser  # noqa
+from apk_bitminer.parsing import AXMLParser  # type: ignore
 from contextlib import suppress
 from typing import List, TypeVar, Type, Optional, AsyncContextManager, Dict, Union, Set, Iterable, Callable
 
