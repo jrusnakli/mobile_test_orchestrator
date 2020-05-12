@@ -80,15 +80,17 @@ class TestApplicationClass:
         if app.device.api_level >= 26:
             try:
                 # Normally get an error code and an exception if package is not running:
-                output, _ = app.device._execute_remote_cmd("shell", "pidof", "-s", app.package_name,
+                completed = app.device._execute_remote_cmd("shell", "pidof", "-s", app.package_name,
                                                            stdout=subprocess.PIPE,
                                                            fail_on_error_code=lambda x: x < 0)
+                output: str = completed.stdout
                 # however, LinkedIn-specific(?) or older emulators don't have this, and return no error code
                 # so check output
                 if not output:
                     return False
                 if "not found" in output:
-                    output, _ = app.device._execute_remote_cmd("shell", "ps", stdout=subprocess.PIPE)
+                    completed = app.device._execute_remote_cmd("shell", "ps", stdout=subprocess.PIPE)
+                    output = completed.stdout
                     return app.package_name in output
                 # on some device 1 is an indication of not present (some with return code of 0!), so if pid is one return false
                 if output == "1":
@@ -98,8 +100,8 @@ class TestApplicationClass:
                 return False
         else:
             try:
-                output, _ = app.device._execute_remote_cmd("shell", "ps", stdout=subprocess.PIPE)
-                return app.package_name in output
+                completed = app.device._execute_remote_cmd("shell", "ps", stdout=subprocess.PIPE)
+                return app.package_name in completed.stdout
             except:
                 return False
 
@@ -111,9 +113,10 @@ class TestApplicationClass:
         app.stop(force=True)
         if self.pidof(app):
             time.sleep(3)  # allow slow emulators to catch up
-        pidoutput, _ = app.device._execute_remote_cmd("shell", "pidof", "-s", app.package_name,
+        completed = app.device._execute_remote_cmd("shell", "pidof", "-s", app.package_name,
                                                       stdout=subprocess.PIPE,
                                                       fail_on_error_code=lambda x: x < 0)
+        pidoutput: str = completed.stdout
         assert not self.pidof(app), f"pidof indicated app is not stopped as expected; output of pidof is: {pidoutput}"
 
     def test_monkey(self, device: Device, support_app):  # noqa
