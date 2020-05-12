@@ -181,8 +181,9 @@ class DeviceLog(RemoteDeviceBased):
 
         :return: the logcat buffer size for given channel, or None if not defined
         """
-        output, _= self.device._execute_remote_cmd("logcat", "-g", stdout=subprocess.PIPE)
-        for line in output.splitlines():
+        completed = self.device._execute_remote_cmd("logcat", "-g", stdout=subprocess.PIPE)
+        stdout: str = completed.stdout
+        for line in stdout.splitlines():
             if line.startswith(channel):
                 "format is <channel>: ring buffer is <size>"
                 return line.split()[4]

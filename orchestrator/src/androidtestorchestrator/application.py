@@ -6,7 +6,7 @@ import logging
 import subprocess
 import time
 
-from apk_bitminer.parsing import AXMLParser
+from apk_bitminer.parsing import AXMLParser  # noqa
 from contextlib import suppress
 from typing import List, TypeVar, Type, Optional, AsyncContextManager, Dict, Union, Set, Iterable, Callable
 
@@ -80,8 +80,8 @@ class Application(RemoteDeviceBased):
         """
         :return: pid of app if running (either in foreground or background) or None if not running
         """
-        stdout, _ = self.device._execute_remote_cmd("shell", "pidof", "-s", self.package_name, stdout=subprocess.PIPE)
-        split_output = stdout.splitlines()
+        completed = self.device._execute_remote_cmd("shell", "pidof", "-s", self.package_name, stdout=subprocess.PIPE)
+        split_output = completed.stdout.splitlines()
         return split_output[0].strip() if split_output else None
 
     @property
@@ -343,7 +343,7 @@ class ServiceApplication(Application):
         options = tuple(f'"{item}"' for item in options)
         if intent:
             options = ("-a", intent) + options
-        if foreground and self.device.api_level >= 26:
+        if foreground and self.device.api_level and self.device.api_level >= 26:
             self.device._execute_remote_cmd("shell", "am", "start-foreground-service", "-n", activity, *options)
         else:
             self.device._execute_remote_cmd("shell", "am", "startservice", "-n", activity, *options)
@@ -440,7 +440,7 @@ class TestApplication(Application):
         # surround each arg with quotes to preserve spaces in any arguments when sent to remote device:
         options = tuple('"%s"' % arg if not arg.startswith('"') else arg for arg in options)
         return await self.device._execute_remote_cmd_async("shell", "am", "instrument", "-w", *options, "-r",
-                                                          "/".join([self._package_name, self._runner]))
+                                                           "/".join([self._package_name, self._runner]))
 
     async def run_orchestrated(self, *options: str) -> AsyncContextManager[Device.Process]:
         """

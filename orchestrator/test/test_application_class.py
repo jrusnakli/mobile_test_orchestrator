@@ -41,9 +41,9 @@ class TestApplicationClass:
         app = Application.from_apk(support_app, device)
         try:
             assert app.package_name == "com.linkedin.mtotestapp"
-            output, _ = device._execute_remote_cmd("shell", "dumpsys", "package", app.package_name,
+            completed = device._execute_remote_cmd("shell", "dumpsys", "package", app.package_name,
                                                    timeout=10, stdout=subprocess.PIPE)
-            for line in output.splitlines():
+            for line in completed.stdout.splitlines():
                 if "versionName" in line:
                     assert app.version == line.strip().split('=', 1)[1]
         finally:
@@ -55,11 +55,11 @@ class TestApplicationClass:
         assert test_app.package_name.endswith(".test")
         permission = "android.permission.WRITE_EXTERNAL_STORAGE"
         test_app.grant_permissions([permission])
-        output, _ = device._execute_remote_cmd("shell", "dumpsys", "package", test_app.package_name,
+        completed = device._execute_remote_cmd("shell", "dumpsys", "package", test_app.package_name,
                                                timeout=10, stdout=subprocess.PIPE)
         perms = []
         look_for_perms = False
-        for line in output.splitlines():
+        for line in completed.stdout.splitlines():
             if "granted=true" in line:
                 perms.append(line.strip().split(':', 1)[0])
             if "grantedPermissions" in line:

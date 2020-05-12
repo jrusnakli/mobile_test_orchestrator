@@ -99,8 +99,6 @@ class Device:
                         await self.stop(timeout=3, force=True)
                     except TimeoutError:
                         log.error("Failed to kill subprocess while exiting its context")
-            if exc_type is not None:
-                raise exc_val from exc_val
 
         @property
         def returncode(self) -> Optional[int]:
@@ -251,9 +249,9 @@ class Device:
         """
         :return: List of the app packages in the activities stack, with the first item being at the top of the stack
         """
-        stdout, _ = self._execute_remote_cmd("shell", "dumpsys", "activity", "activities",
+        completed = self._execute_remote_cmd("shell", "dumpsys", "activity", "activities",
                                              stdout=subprocess.PIPE)
-        for line in stdout.splitlines():
+        for line in completed.stdout.splitlines():
             matches = self.APP_RECORD_PATTERN.match(line.strip())
             app_package = matches.group(1) if matches else None
             if app_package and filter(app_package):
@@ -341,8 +339,8 @@ class Device:
         # retrieve the device's datetime so we can easily calculate the difference of the start time from
         # other times during the test.
         with suppress(Exception):
-            output, _ = self._execute_remote_cmd("shell", "echo", "$EPOCHREALTIME", stdout=subprocess.PIPE)
-            for msg_ in output.splitlines():
+            completed = self._execute_remote_cmd("shell", "echo", "$EPOCHREALTIME", stdout=subprocess.PIPE)
+            for msg_ in completed.stdout.splitlines():
                 if re.search(r"^\d+\.\d+$", msg_):
                     device_datetime = datetime.datetime.fromtimestamp(float(msg_.strip()))
                     self._device_server_datetime_offset = datetime.datetime.now() - device_datetime
@@ -374,8 +372,8 @@ class Device:
         :return: location on remote device of external storage
         """
         if not self._ext_storage:
-            output, _ = self._execute_remote_cmd("shell", "echo", "$EXTERNAL_STORAGE", stdout=subprocess.PIPE)
-            for msg in output.splitlines():
+            completed = self._execute_remote_cmd("shell", "echo", "$EXTERNAL_STORAGE", stdout=subprocess.PIPE)
+            for msg in completed.stdout.splitlines():
                 if msg:
                     self._ext_storage = msg.strip()
         return self._ext_storage or "/sdcard"
@@ -419,7 +417,7 @@ class Device:
                             stdout: Union[None, int, IO[AnyStr]] = None,
                             stderr: Union[None, int, IO[AnyStr]] = subprocess.PIPE,
                             fail_on_error_code: Callable[[int], bool] = lambda x: x != 0) \
-            -> Tuple[Optional[str], Optional[str]]:
+            -> subprocess.CompletedProcess:
         """
         Execute a command on this device (via adb)
 
@@ -445,7 +443,7 @@ class Device:
                 completed.returncode,
                 f"Failed to execute '{' '.join(args)}' on device {self.device_id}:"
                 + f"\n{completed.stdout or ''}\n{completed.stderr or ''}")
-        return completed.stdout, completed.stderr
+        return completed
 
     def _execute_remote_cmd_background(self, *args: str, stdout: Union[None, int, IO[AnyStr]] = subprocess.PIPE,
                                        **kwargs: Any) -> subprocess.Popen:  # noqa
@@ -519,11 +517,12 @@ class Device:
         :return: value of the requested setting as string, or None if setting could not be found
         """
         try:
-            output, _ = self._execute_remote_cmd("shell", "settings", "get", namespace, key,
+            completed = self._execute_remote_cmd("shell", "settings", "get", namespace, key,
                                                  stdout=subprocess.PIPE)
-            if output.startswith("Invalid namespace"):  # some devices output a message with no error return code
+            if completed.stdout.startswith("Invalid namespace"):  # some devices output a message with no error return code
                 return None
-            return output.rstrip()
+            stdout: str = completed.stdout
+            return stdout.rstrip()
         except Exception as e:
             if verbose:
                 log.error(f"Could not get setting for {namespace}:{key} [{str(e)}]")
@@ -534,9 +533,9 @@ class Device:
         :return: full dict of properties
         """
         results: Dict[str, str] = {}
-        output, _= self._execute_remote_cmd("shell", "getprop", timeout=Device.TIMEOUT_ADB_CMD,
-                                            stdout=subprocess.PIPE)
-        for line in output.splitlines():
+        completed = self._execute_remote_cmd("shell", "getprop", timeout=Device.TIMEOUT_ADB_CMD,
+                                             stdout=subprocess.PIPE)
+        for line in completed.stdout.splitlines():
             if ':' in line:
                 property_name, property_value = line.split(':', 1)
                 results[property_name.strip()[1:-1]] = property_value.strip()
@@ -557,8 +556,8 @@ class Device:
             device_locale: Optional[str] = '_'.join([lang.strip(), country.strip()])
         else:
             device_locale = self.get_system_property('persist.sys.locale') or \
-                self.get_system_property("ro.product.locale")  or None
-            device_locale = device_locale.replace('-', '_').strip()
+                self.get_system_property("ro.product.locale") or None
+            device_locale = device_locale.replace('-', '_').strip() if device_locale else None
         return device_locale
 
     def get_state(self) -> str:
@@ -566,7 +565,8 @@ class Device:
         :return: current state of emulaor ("device", "offline", "non-existent", ...)
         """
         try:
-            stdout, _ = self._execute_remote_cmd("get-state", timeout=10, stdout=subprocess.PIPE)
+            completed = self._execute_remote_cmd("get-state", timeout=10, stdout=subprocess.PIPE)
+            stdout: str = completed.stdout
             return stdout.strip()
         except Exception:
             return "non-existent"
@@ -580,8 +580,8 @@ class Device:
         """
         version = None
         try:
-            output, _ = self._execute_remote_cmd("shell", "dumpsys", "package", package, stdout=subprocess.PIPE)
-            for line in output.splitlines():
+            completed = self._execute_remote_cmd("shell", "dumpsys", "package", package, stdout=subprocess.PIPE)
+            for line in completed.stdout.splitlines():
                 if line and "versionName" in line and '=' in line:
                     version = line.split('=')[1].strip()
                     break
@@ -597,8 +597,9 @@ class Device:
         :return: the property from the device associated with the given key, or None if no such property exists
         """
         try:
-            output, _ = self._execute_remote_cmd("shell", "getprop", key, stdout=subprocess.PIPE)
-            return output.rstrip()
+            completed = self._execute_remote_cmd("shell", "getprop", key, stdout=subprocess.PIPE)
+            stdout: str = completed.stdout
+            return stdout.rstrip()
         except Exception as e:
             if verbose:
                 log.error(f"Unable to get system property {key} [{str(e)}]")
@@ -655,10 +656,10 @@ class Device:
         return self._activity_stack_top(filter=lambda x: x.lower() not in ignored)
 
     def get_activity_stack(self) -> List[str]:
-        output, _ = self._execute_remote_cmd("shell", "dumpsys", "activity", "activities",
+        completed = self._execute_remote_cmd("shell", "dumpsys", "activity", "activities",
                                              stdout=subprocess.PIPE, timeout=10)
         activity_list = []
-        for line in output.splitlines():
+        for line in completed.stdout.splitlines():
             matches = self.APP_RECORD_PATTERN.match(line.strip())
             if matches:
                 app_package = matches.group(1)
@@ -672,8 +673,9 @@ class Device:
 
         :return: list of available items of given kind on the device
         """
-        output, _ = self._execute_remote_cmd("shell", "pm", "list", kind, stdout=subprocess.PIPE)
-        return output.splitlines()
+        completed = self._execute_remote_cmd("shell", "pm", "list", kind, stdout=subprocess.PIPE)
+        stdout: str = completed.stdout
+        return stdout.splitlines()
 
     def list_installed_packages(self) -> List[str]:
         """
@@ -748,14 +750,14 @@ class DeviceInteraction(RemoteDeviceBased):
         :raises Exception: if unable to make determination
         """
         found_potential_stack_match = False
-        stdout, _ = self._device._execute_remote_cmd("shell", "dumpsys", "activity", "activities",
+        completed = self._device._execute_remote_cmd("shell", "dumpsys", "activity", "activities",
                                                      timeout=Device.TIMEOUT_ADB_CMD, stdout=subprocess.PIPE)
         # Find lines that look like this:
         #   Stack #0:
         # or
         #   Stack #0: type=home mode=fullscreen
         app_stack_pattern = re.compile(r'^Stack #(\d*):')
-        stdout_lines = stdout.splitlines()
+        stdout_lines = completed.stdout.splitlines()
         for line in stdout_lines:
             matches = app_stack_pattern.match(line.strip())
             if matches:
@@ -791,10 +793,10 @@ class DeviceInteraction(RemoteDeviceBased):
         """
         :return: whether device's screen is on
         """
-        stdout, _ = self._device._execute_remote_cmd("shell", "dumpsys", "activity", "activities",
+        completed = self._device._execute_remote_cmd("shell", "dumpsys", "activity", "activities",
                                                      stdout=subprocess.PIPE,
                                                      timeout=Device.TIMEOUT_ADB_CMD)
-        lines = stdout.splitlines()
+        lines = completed.stdout.splitlines()
         for msg in lines:
             if 'mInteractive=false' in msg or 'mScreenOn=false' in msg or 'isSleeping=true' in msg:
                 return False
@@ -852,16 +854,16 @@ class DeviceConnectivity(RemoteDeviceBased):
         :return: 0 on success, number of failed packets otherwise
         """
         try:
-            output, _ = self._device._execute_remote_cmd("shell", "ping", "-c", str(count), domain,
+            completed = self._device._execute_remote_cmd("shell", "ping", "-c", str(count), domain,
                                                          timeout=Device.TIMEOUT_LONG_ADB_CMD,
                                                          stdout=subprocess.PIPE)
-            for msg in output.splitlines():
+            for msg in completed.stdout.splitlines():
                 if "64 bytes" in str(msg):
                     count -= 1
                 if count <= 0:
                     break
             if count > 0:
-                log.error("Output from ping was: \n%s", output)
+                log.error("Output from ping was: \n%s", completed.stdout)
             return count
         except subprocess.TimeoutExpired:
             log.error("ping is hanging and not yielding any results. Returning error code.")
