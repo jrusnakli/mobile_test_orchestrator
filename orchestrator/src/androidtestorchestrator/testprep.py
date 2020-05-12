@@ -7,7 +7,7 @@ from typing import Dict, List, Optional, Type, Tuple
 from types import TracebackType
 from androidtestorchestrator import Device, DeviceStorage
 from androidtestorchestrator.application import Application, TestApplication
-from androidtestorchestrator.device import DeviceNetwork
+from androidtestorchestrator.device import DeviceConnectivity
 
 log = logging.getLogger()
 
@@ -30,7 +30,7 @@ class DevicePreparation:
         :param device:  device to install and run test app on
         """
         self._device = device
-        self._device_network = DeviceNetwork(device)
+        self._device_network = DeviceConnectivity(device)
         self._restoration_settings: Dict[Tuple[str, str], Optional[str]] = {}
         self._restoration_properties: Dict[str, Optional[str]] = {}
         self._reverse_forwarded_ports: List[int] = []

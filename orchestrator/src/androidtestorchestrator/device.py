@@ -847,7 +847,7 @@ class DeviceInteraction(RemoteDeviceBased):
         self._device.execute_remote_cmd("shell", "input", "keyevent", "KEYCODE_POWER", timeout=10)
 
 
-class DeviceNetwork(RemoteDeviceBased):
+class DeviceConnectivity(RemoteDeviceBased):
     """
     API for network communications configuration/queries, including host-to-device communications
     """
