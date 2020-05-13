@@ -71,22 +71,30 @@ class Device:
         Raised on insufficient storage on device (e.g. in install)
         """
 
-    class Process:
+    class ProcessContext:
         """
-        Wraps below async generator in context manager to ensure proper closure
+        Wraps the Device.Process class in a context manager to ensure proper cleanup.
+        Upon exit of this context, the process will be stopped if it is still running.
+        The client is responsible for calling wait() on the entered Device.Process if
+        it is desired to cleanly exit the process before exiting.
 
         :param proc_future: future (coroutine) to underlying asyncio Subprocess
+
+        >>> async with ProcessContext(some_proc) as proc:
+        ...    async for line in proc.output():
+        ...        yield line
+        ...        proc.wait(timeout=10)
         """
 
-        def __init__(self, proc: Coroutine[Any, Any, asyncio.subprocess.Process]):
+        def __init__(self, proc_future: Coroutine[Any, Any, asyncio.subprocess.Process]):
             # we pass in a future mostly to avoid having to do something quirky like
             # async with await Process(...)
-            self._proc_future = proc
-            self._proc: Optional[Device.Process] = None
+            self._proc_future = proc_future
+            self._proc: Optional[Device.ProcessContext] = None
 
         async def __aenter__(self) -> "Device.Process":
-            self._proc = await self._proc_future
-            return self
+            self._proc = Device.Process(await self._proc_future)
+            return self._proc
 
         async def __aexit__(self, exc_type: Optional[Type[BaseException]], exc_val: Optional[BaseException],
                             exc_tb: Optional[TracebackType]) -> None:
@@ -104,10 +112,17 @@ class Device:
                     except TimeoutError:
                         log.error("Failed to kill subprocess while exiting its context")
 
+    class Process:
+        """
+        Basic process interface that provides a means of monitoring line-by-line output
+        of an `asyncio.subprocess.Process`.
+        """
+
+        def __init__(self, proc: asyncio.subprocess.Process):
+            self._proc = proc
+
         @property
         def returncode(self) -> Optional[int]:
-            if not self._proc:
-                raise Exception("Attempt to get returncode from Device.Process without having entered context")
             return self._proc.returncode
 
         async def output(self,  unresponsive_timeout: Optional[float] = None) -> AsyncIterator[str]:
@@ -116,8 +131,6 @@ class Device:
 
             :param unresponsive_timeout: raise TimeoutException if not None and time to receive next line exceeds this
             """
-            if not self._proc:
-                raise Exception("Attempt to get output of Device.Process without having entered context")
             if self._proc.stdout is None:
                 raise Exception("Failed to capture output from subprocess")
             if unresponsive_timeout is not None:
@@ -138,8 +151,6 @@ class Device:
             :param force: whether to kill (harsh) or simply terminate
             :param timeout: raise TimeoutException if process fails to truly terminate in timeout seconds
             """
-            if not self._proc:
-                raise Exception("Attempt to stop Device.Process without having entered context")
             if force:
                 self._proc.kill()
             else:
@@ -152,8 +163,6 @@ class Device:
 
             :param timeout: raise TimeoutException if waiting beyond this many seconds
             """
-            if not self._proc:
-                raise Exception("Attempt to wait on Device.Process without having entered context")
             if timeout is None:
                 await self._proc.wait()
             else:
@@ -480,7 +489,8 @@ class Device:
                                 **kwargs)
 
     def monitor_remote_cmd(self, *args: str,
-                                 loop: Optional[AbstractEventLoop] = None) -> AsyncContextManager["Device.Process"]:
+                                 loop: Optional[AbstractEventLoop] = None) -> AsyncContextManager[
+        "Device.ProcessContext"]:
         """
         Coroutine for executing a command on this remote device asynchronously, allowing the client to iterate over
         lines of output.
@@ -506,7 +516,7 @@ class Device:
             loop=loop or asyncio.events.get_event_loop(),
             bufsize=0
         )
-        return self.Process(proc_future)
+        return self.ProcessContext(proc_future)
 
     ###################
     # Device settings/properties
