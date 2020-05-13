@@ -27,7 +27,7 @@ class TestDeviceLog:
 
         async def parse_logcat(counter, output):
             nonlocal done_parsing
-            async with await device_log.logcat("-v", "brief", "-s", "MTO-TEST") as proc:
+            async with device_log.logcat("-v", "brief", "-s", "MTO-TEST") as proc:
                 async for line in proc.output(unresponsive_timeout=3):
                     # makes easy to debug on circleci when emulator accel is not available
                     if line.startswith("----"):

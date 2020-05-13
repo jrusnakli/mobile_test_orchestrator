@@ -42,7 +42,7 @@ async def _device_lock(device: "Device") -> AsyncIterator["Device"]:
     :return: device
     """
     DeviceLock._locks.setdefault(device._device_id, asyncio.Semaphore())
-    DeviceLock._locks[device._device_id].acquire()
+    await DeviceLock._locks[device._device_id].acquire()
     yield device
     DeviceLock._locks[device._device_id].release()
 
