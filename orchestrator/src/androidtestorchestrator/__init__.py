@@ -138,7 +138,7 @@ class AndroidTestOrchestrator:
         self._test_timeout = max_test_time
         self._timer = None
         self._tag_monitors: Dict[str, Tuple[str, LineParser]] = {}
-        self._logcat_proc = None
+        self._logcat_proc: Optional[Device.Process] = None
         self._test_suite_listeners: List[TestSuiteListener] = []
         self._run_orchestrated = run_under_orchestration
 

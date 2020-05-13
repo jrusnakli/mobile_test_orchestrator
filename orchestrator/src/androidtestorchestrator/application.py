@@ -8,7 +8,7 @@ import time
 
 from apk_bitminer.parsing import AXMLParser  # type: ignore
 from contextlib import suppress
-from typing import Any, List, TypeVar, Type, Optional, AsyncContextManager, Dict, Union, Set, Iterable, Callable, Coroutine
+from typing import List, TypeVar, Type, Optional, Dict, Union, Set, Iterable, Callable
 
 from .device import Device, RemoteDeviceBased, _device_lock, DeviceInteraction
 
@@ -47,10 +47,12 @@ class Application(RemoteDeviceBased):
         super().__init__(device)
         self._device_navigation = DeviceInteraction(device)
         self._version: Optional[str] = None  # loaded on-demand first time self.version called
-        self._package_name: str = manifest.package_name if isinstance(manifest, AXMLParser) else manifest.get("package_name", None)
+        self._package_name: str = manifest.package_name if isinstance(manifest, AXMLParser) \
+            else manifest.get("package_name", None)
         if self._package_name is None:
             raise ValueError("manifest argument as dictionary must contain \"package_name\" as key")
-        self._permissions: Set[str] = set(manifest.permissions if isinstance(manifest, AXMLParser) else manifest.get("permissions", []))
+        self._permissions: Set[str] = set(manifest.permissions if isinstance(manifest, AXMLParser)
+                                          else manifest.get("permissions", []))
         self._granted_permissions: Set[str] = set()
 
     @property
@@ -94,7 +96,7 @@ class Application(RemoteDeviceBased):
 
     @classmethod
     async def from_apk_async(cls: Type[_TApp], apk_path: str, device: Device, as_upgrade: bool = False,
-                             callback: Optional[Callable[[Device.ProcessContext], None]] = None) -> _TApp:
+                             callback: Optional[Callable[[Device.Process], None]] = None) -> _TApp:
         """
         Install provided application asynchronously.  This allows the output of the install to be processed
         in a streamed fashion.  This can be useful on some devices that are non-standard android where installs
@@ -153,7 +155,7 @@ class Application(RemoteDeviceBased):
 
     @classmethod
     async def _monitor_install(cls, device: Device, apk_path: str, *args: str,
-                               callback: Optional[Callable[[Device.ProcessContext], None]] = None) -> None:
+                               callback: Optional[Callable[[Device.Process], None]] = None) -> None:
         """
         Install given apk asynchronously, monitoring output for messages containing any of the given conditions,
         executing a callback if given when any such condition is met.
@@ -392,7 +394,8 @@ class TestApplication(Application):
             raise Exception("Test application's manifest does not specify proper instrumentation element."
                             "Are you sure this is a test app")
         self._runner: str = manifest.instrumentation.runner
-        self._target_application = Application(device, manifest={'package_name': manifest.instrumentation.target_package})
+        self._target_application = Application(device,
+                                               manifest={'package_name': manifest.instrumentation.target_package})
         self._permissions = manifest.permissions
 
     @property
@@ -420,16 +423,16 @@ class TestApplication(Application):
                 items.append(runner)
         return items
 
-    def run(self, *options: str) -> AsyncContextManager[Device.ProcessContext]:
+    def run(self, *options: str) -> Device.ProcessContext:
         """
         Run an instrumentation test package, yielding lines from std output
 
         :param options: arguments to pass to instrument command
-        :param loop: event loop to execute under, or None for default event loop
         :returns: return coroutine wrapping an asyncio context manager for iterating over lines
         :raises Device.CommandExecutionFailureException with non-zero return code information on non-zero exit status
 
-        >>> app = TestApplication.from_apk("some.apk", device)
+        >>> device = Device("some_id")
+        ... app = TestApplication.from_apk("some.apk", device)
         ...
         ... async def run():
         ...     async with app.run() as proc:
@@ -443,7 +446,7 @@ class TestApplication(Application):
         return self.device.monitor_remote_cmd("shell", "am", "instrument", "-w", *options, "-r",
                                               "/".join([self._package_name, self._runner]))
 
-    def run_orchestrated(self, *options: str) -> AsyncContextManager[Device.ProcessContext]:
+    def run_orchestrated(self, *options: str) -> Device.ProcessContext:
         """
         Run an instrumentation test package via Google's test orchestrator that
 
@@ -452,10 +455,10 @@ class TestApplication(Application):
         :raises: Device.CommandExecutionFailureException with non-zero return code information on non-zero exit status
         :raises: Exception if supporting apks for orchestrated runs are not installed
 
-        >>> app = TestApplication.fromApk("some.apk", device)
+        >>> app = TestApplication.from_apk("some.apk", device)
         ...
         ... async def run():
-        ...     async with app.run_orchestraed() as proc:
+        ...     async with app.run_orchestrated() as proc:
         ...         async  for line in proc.output():
         ...             print(line)
         """
@@ -478,7 +481,7 @@ class TestApplication(Application):
 
     @classmethod
     async def from_apk_async(cls: Type[_TTestApp], apk_path: str, device: Device, as_upgrade: bool = False,
-                             callback: Optional[Callable[[Device.ProcessContext], None]] = None) -> _TTestApp:
+                             callback: Optional[Callable[[Device.Process], None]] = None) -> _TTestApp:
         """
         Install apk as a test application on the given device
 

@@ -6,14 +6,13 @@ import re
 import subprocess
 import time
 
-from asyncio import AbstractEventLoop
 from contextlib import suppress, asynccontextmanager
 from types import TracebackType
 from typing import (
     Any,
     AnyStr,
-    AsyncContextManager,
     AsyncIterator,
+    Awaitable,
     Callable,
     Dict,
     IO,
@@ -22,7 +21,7 @@ from typing import (
     Union,
     Tuple,
     Type,
-    Coroutine)
+)
 
 log = logging.getLogger("MTO")
 log.setLevel(logging.ERROR)
@@ -86,11 +85,10 @@ class Device:
         ...        proc.wait(timeout=10)
         """
 
-        def __init__(self, proc_future: Coroutine[Any, Any, asyncio.subprocess.Process]):
+        def __init__(self, proc_future: Awaitable[asyncio.subprocess.Process]):
             # we pass in a future mostly to avoid having to do something quirky like
             # async with await Process(...)
             self._proc_future = proc_future
-            self._proc: Optional[Device.ProcessContext] = None
 
         async def __aenter__(self) -> "Device.Process":
             self._proc = Device.Process(await self._proc_future)
@@ -98,17 +96,17 @@ class Device:
 
         async def __aexit__(self, exc_type: Optional[Type[BaseException]], exc_val: Optional[BaseException],
                             exc_tb: Optional[TracebackType]) -> None:
-            if self._proc.returncode != 0 and exc_type is not None:
+            if self._proc.returncode and self._proc.returncode != 0 and exc_type is not None:
                 raise Device.CommandExecutionFailure(self._proc.returncode, "Remote command failed on device")
             if self._proc.returncode is None:
-                log.info("Terminating process %d", self._proc.pid)
+                log.info("Terminating process %d", self._proc._proc.pid)
                 with suppress(Exception):
-                    await self.stop(timeout=3)
+                    await self._proc.stop(timeout=3)
             if self._proc.returncode is None:
                 # Second try, force-stop
                 with suppress(Exception):
                     try:
-                        await self.stop(timeout=3, force=True)
+                        await self._proc.stop(timeout=3, force=True)
                     except TimeoutError:
                         log.error("Failed to kill subprocess while exiting its context")
 
@@ -266,7 +264,7 @@ class Device:
         self._device_server_datetime_offset: Optional[datetime.timedelta] = None
         self._api_level: Optional[int] = None
 
-    def _activity_stack_top(self, filter: Callable[[str], bool] = lambda x: True) -> Optional[str]:
+    def _activity_stack_top(self, filt: Callable[[str], bool] = lambda x: True) -> Optional[str]:
         """
         :return: List of the app packages in the activities stack, with the first item being at the top of the stack
         """
@@ -275,7 +273,7 @@ class Device:
         for line in completed.stdout.splitlines():
             matches = self.APP_RECORD_PATTERN.match(line.strip())
             app_package = matches.group(1) if matches else None
-            if app_package and filter(app_package):
+            if app_package and filt(app_package):
                 return app_package
         return None  # to be explicit
 
@@ -474,7 +472,7 @@ class Device:
         :param args: command + list of args to be executed
         :param stdout: an optional file-like objection to which stdout is to be redirected (piped).
             defaults to subprocess.PIPE. If None, stdout is redirected to /dev/null
-        :param kargs: dict arguments passed to subprocess.Popen
+        :param kwargs: dict arguments passed to subprocess.Popen
         :return: subprocess.Open
         """
         # protected methjod: OK to access by subclasses
@@ -488,16 +486,12 @@ class Device:
                                 stderr=subprocess.PIPE,
                                 **kwargs)
 
-    def monitor_remote_cmd(self, *args: str,
-                                 loop: Optional[AbstractEventLoop] = None) -> AsyncContextManager[
-        "Device.ProcessContext"]:
+    def monitor_remote_cmd(self, *args: str) -> "Device.ProcessContext":
         """
         Coroutine for executing a command on this remote device asynchronously, allowing the client to iterate over
         lines of output.
 
         :param args: command to execute
-        :param loop: event loop to asynchronously run under, or None for default event loop
-
         :return: AsyncGenerator iterating over lines of output from command
 
         >>> device = Device("someid")
@@ -513,7 +507,6 @@ class Device:
             *cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
-            loop=loop or asyncio.events.get_event_loop(),
             bufsize=0
         )
         return self.ProcessContext(proc_future)
@@ -536,12 +529,13 @@ class Device:
 
         :param namespace: android setting namespace
         :param key: which setting to get
+        :param verbose: whether to output error logs if unable to find setting or device
         :return: value of the requested setting as string, or None if setting could not be found
         """
         try:
             completed = self.execute_remote_cmd("shell", "settings", "get", namespace, key,
                                                 stdout=subprocess.PIPE)
-            if completed.stdout.startswith("Invalid namespace"):  # some devices output a message with no error return code
+            if completed.stdout.startswith("Invalid namespace"):  # some devices output a message with no error code
                 return None
             stdout: str = completed.stdout
             return stdout.rstrip()
@@ -675,7 +669,7 @@ class Device:
         :return: package name of current foreground activity
         """
         ignored = self.SILENT_RUNNING_PACKAGES if ignore_silent_apps else []
-        return self._activity_stack_top(filter=lambda x: x.lower() not in ignored)
+        return self._activity_stack_top(filt=lambda x: x.lower() not in ignored)
 
     def get_activity_stack(self) -> List[str]:
         completed = self.execute_remote_cmd("shell", "dumpsys", "activity", "activities",

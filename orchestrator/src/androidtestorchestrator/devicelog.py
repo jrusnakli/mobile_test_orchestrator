@@ -1,7 +1,6 @@
 import os
 import signal
 import subprocess
-from asyncio import AbstractEventLoop
 
 import logging
 from subprocess import Popen
@@ -13,7 +12,7 @@ except Exception:
     psutil = None
 
 from contextlib import suppress
-from typing import AsyncContextManager, Dict, Tuple, Optional, TextIO, Type, Any, Coroutine
+from typing import Dict, Tuple, Optional, TextIO, Type
 
 from .timing import StopWatch
 from .parsing import LineParser
@@ -207,8 +206,7 @@ class DeviceLog(RemoteDeviceBased):
         """
         self.device.execute_remote_cmd("logcat", "-b", buffer, "-c")
 
-    async def logcat(self, *options: str, loop: Optional[AbstractEventLoop] = None
-                     ) -> Coroutine[Any, Any, AsyncContextManager[Device.ProcessContext]]:
+    def logcat(self, *options: str) -> Device.ProcessContext:
         """
         async generator to continually output lines from logcat until client
         exits processing (exist async iterator), at which point process is killed
@@ -219,7 +217,7 @@ class DeviceLog(RemoteDeviceBased):
 
         :raises: asyncio.TimeoutError if timeout is not None and timeout is reached
         """
-        return self.device.monitor_remote_cmd("logcat", *options, loop=loop)
+        return self.device.monitor_remote_cmd("logcat", *options)
 
     def capture_to_file(self, output_path: str) -> "LogCapture":
         """
