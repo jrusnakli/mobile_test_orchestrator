@@ -94,7 +94,7 @@ class Emulator(Device):
         device_id = f"emulator-{port}"
         device = Device(device_id, str(config.adb_path()))
         with suppress(Exception):
-            device._execute_remote_cmd("emu", "kill")  # attempt to kill any existing emulator at this port
+            device.execute_remote_cmd("emu", "kill")  # attempt to kill any existing emulator at this port
             await asyncio.sleep(2)
         emulator_cmd = config.sdk.joinpath("emulator").joinpath("emulator")
         if not emulator_cmd.is_file():
@@ -152,7 +152,7 @@ class Emulator(Device):
         Kill this emulator (underlying Process)
         """
         print(f">>>>> Killing emulator {self.device_id}")
-        self._execute_remote_cmd("emu", "kill")
+        self.execute_remote_cmd("emu", "kill")
 
 
 class EmulatorQueue:

@@ -43,7 +43,7 @@ class DeviceStorage(RemoteDeviceBased):
         """
         if not os.path.isfile(local_path):
             raise FileNotFoundError("No such file found: %s" % local_path)
-        self.device._execute_remote_cmd('push', local_path, remote_path)
+        self.device.execute_remote_cmd('push', local_path, remote_path)
 
     def pull(self, remote_path: str, local_path: str, run_as: Optional[str] = None) -> None:
         """
@@ -59,9 +59,9 @@ class DeviceStorage(RemoteDeviceBased):
             log.warning("File %s already exists when pulling. Potential to overwrite files.", local_path)
         if run_as:
             with open(local_path, 'w') as out:
-                self.device._execute_remote_cmd('shell', 'run-as', run_as, 'cat', stdout=out)
+                self.device.execute_remote_cmd('shell', 'run-as', run_as, 'cat', stdout=out)
         else:
-            self.device._execute_remote_cmd('pull', remote_path, local_path)
+            self.device.execute_remote_cmd('pull', remote_path, local_path)
 
     def make_dir(self, path: str, run_as: Optional[str] = None) -> None:
         """
@@ -72,11 +72,11 @@ class DeviceStorage(RemoteDeviceBased):
         :raises Exception: on failure to create directory
         """
         if run_as:
-            self.device._execute_remote_cmd("shell", "run-as", run_as, "mkdir", "-p", path,
-                                            timeout=Device.TIMEOUT_ADB_CMD)
+            self.device.execute_remote_cmd("shell", "run-as", run_as, "mkdir", "-p", path,
+                                           timeout=Device.TIMEOUT_ADB_CMD)
         else:
-            self.device._execute_remote_cmd("shell", "mkdir", "-p", path,
-                                            timeout=Device.TIMEOUT_ADB_CMD)
+            self.device.execute_remote_cmd("shell", "mkdir", "-p", path,
+                                           timeout=Device.TIMEOUT_ADB_CMD)
 
     def remove(self, path: str, recursive: bool = False, run_as: Optional[str] = None) -> None:
         """
@@ -92,4 +92,4 @@ class DeviceStorage(RemoteDeviceBased):
         if recursive:
             cmd.append("-r")
         cmd.append(path)
-        self.device._execute_remote_cmd(*cmd, timeout=Device.TIMEOUT_LONG_ADB_CMD)
+        self.device.execute_remote_cmd(*cmd, timeout=Device.TIMEOUT_LONG_ADB_CMD)

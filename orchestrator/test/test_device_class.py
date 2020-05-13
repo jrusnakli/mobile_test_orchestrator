@@ -142,7 +142,7 @@ class TestAndroidDevice:
 
     def test_invalid_cmd_execution(self, device: Device):
         async def execute():
-            async with await device._execute_remote_cmd_async("some", "bad", "command") as proc:
+            async with await device.monitor_remote_cmd("some", "bad", "command") as proc:
                 async for _ in proc.output(unresponsive_timeout=10):
                     pass
             assert proc.returncode is not None

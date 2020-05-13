@@ -80,7 +80,7 @@ class Application(RemoteDeviceBased):
         """
         :return: pid of app if running (either in foreground or background) or None if not running
         """
-        completed = self.device._execute_remote_cmd("shell", "pidof", "-s", self.package_name, stdout=subprocess.PIPE)
+        completed = self.device.execute_remote_cmd("shell", "pidof", "-s", self.package_name, stdout=subprocess.PIPE)
         split_output = completed.stdout.splitlines()
         return split_output[0].strip() if split_output else None
 
@@ -148,7 +148,7 @@ class Application(RemoteDeviceBased):
         :param as_upgrade: install as upgrade or not
         """
         cmd = ["install"] + list(args) + [apk_path]
-        device._execute_remote_cmd(*cmd, timeout=Device.TIMEOUT_LONG_ADB_CMD)
+        device.execute_remote_cmd(*cmd, timeout=Device.TIMEOUT_LONG_ADB_CMD)
 
     @classmethod
     async def _monitor_install(cls, device: Device, apk_path: str, *args: str,
@@ -169,13 +169,13 @@ class Application(RemoteDeviceBased):
             # We try Android Studio's method of pushing to device and installing from there, but if push is
             # unsuccessful, we fallback to plain adb install
             push_cmd = ("push", apk_path, remote_data_path)
-            device._execute_remote_cmd(*push_cmd, timeout=Device.TIMEOUT_LONG_ADB_CMD)
+            device.execute_remote_cmd(*push_cmd, timeout=Device.TIMEOUT_LONG_ADB_CMD)
 
             # Execute the installation of the app, monitoring output for completion in order to invoke any extra
             # commands or detect insufficient storage issues
             cmd: List[str] = ["shell", "pm", "install"] + list(args) + [remote_data_path]
             # Do not allow more than one install at a time on a specific device, as this can be problematic
-            async with _device_lock(device), await device._execute_remote_cmd_async(*cmd) as proc:
+            async with _device_lock(device), await device.monitor_remote_cmd(*cmd) as proc:
                 if callback:
                     callback(proc)
                 await proc.wait(timeout=Device.TIMEOUT_LONG_ADB_CMD)
@@ -186,7 +186,7 @@ class Application(RemoteDeviceBased):
         finally:
             with suppress(Exception):
                 rm_cmd = ("shell", "rm", remote_data_path)
-                device._execute_remote_cmd(*rm_cmd, timeout=Device.TIMEOUT_ADB_CMD)
+                device.execute_remote_cmd(*rm_cmd, timeout=Device.TIMEOUT_ADB_CMD)
 
     def uninstall(self) -> None:
         """
@@ -194,7 +194,7 @@ class Application(RemoteDeviceBased):
         """
         self.stop()
         try:
-            self.device._execute_remote_cmd("uninstall", self.package_name)
+            self.device.execute_remote_cmd("uninstall", self.package_name)
         except subprocess.TimeoutExpired:
             log.warning("adb command froze on uninstall.  Ignoring issue as device specific")
         except Exception as e:
@@ -219,7 +219,7 @@ class Application(RemoteDeviceBased):
         # note "block grants" do not work on all Android devices, so grant 'em one-by-one
         for p in permissions_filtered:
             try:
-                self.device._execute_remote_cmd("shell", "pm", "grant", self.package_name, p)
+                self.device.execute_remote_cmd("shell", "pm", "grant", self.package_name, p)
             except Exception as e:
                 log.warning(f"Failed to grant permission {p} for package {self.package_name} [{str(e)}]")
             self._granted_permissions.add(p)
@@ -247,7 +247,7 @@ class Application(RemoteDeviceBased):
         activity = f"{self.package_name}/{activity}"
         if intent:
             options = ("-a", intent, *options)
-        self.device._execute_remote_cmd("shell", "am", "start", "-n", activity, *options)
+        self.device.execute_remote_cmd("shell", "am", "start", "-n", activity, *options)
 
     def monkey(self, count: int = 1) -> None:
         """
@@ -255,7 +255,7 @@ class Application(RemoteDeviceBased):
         More to read about adb monkey at https://developer.android.com/studio/test/monkey#command-options-reference
         """
         cmd = ["shell", "monkey", "-p", self._package_name, "-c", "android.intent.category.LAUNCHER", str(count)]
-        self.device._execute_remote_cmd(*cmd, timeout=Device.TIMEOUT_LONG_ADB_CMD)
+        self.device.execute_remote_cmd(*cmd, timeout=Device.TIMEOUT_LONG_ADB_CMD)
 
     def stop(self, force: bool = True) -> None:
         """
@@ -267,7 +267,7 @@ class Application(RemoteDeviceBased):
             basic_cmd = "stop" if not force else "force-stop"
             if force:
                 self._device_navigation.go_home()
-            self.device._execute_remote_cmd("shell", "am", basic_cmd, self.package_name)
+            self.device.execute_remote_cmd("shell", "am", basic_cmd, self.package_name)
         except Exception as e:
             log.error(f"Failed to (force) stop app {self.package_name} with error: {str(e)}")
 
@@ -287,7 +287,7 @@ class Application(RemoteDeviceBased):
         while tries and not self._device_navigation.home_screen_active():
             tries -= 1
             time.sleep(0.5)
-        self.device._execute_remote_cmd("shell", "am", "kill", self.package_name)
+        self.device.execute_remote_cmd("shell", "am", "kill", self.package_name)
         if self.pid is not None:
             if not self._device_navigation.home_screen_active():
                 raise Exception("Failed to background current foreground app. Cannot complete app closure.")
@@ -298,7 +298,7 @@ class Application(RemoteDeviceBased):
         """
         clears app data for given package
         """
-        self.device._execute_remote_cmd("shell", "pm", "clear", self.package_name)
+        self.device.execute_remote_cmd("shell", "pm", "clear", self.package_name)
         if regrant_permissions:
             self.regrant_permissions()
         else:
@@ -344,9 +344,9 @@ class ServiceApplication(Application):
         if intent:
             options = ("-a", intent) + options
         if foreground and self.device.api_level and self.device.api_level >= 26:
-            self.device._execute_remote_cmd("shell", "am", "start-foreground-service", "-n", activity, *options)
+            self.device.execute_remote_cmd("shell", "am", "start-foreground-service", "-n", activity, *options)
         else:
-            self.device._execute_remote_cmd("shell", "am", "startservice", "-n", activity, *options)
+            self.device.execute_remote_cmd("shell", "am", "startservice", "-n", activity, *options)
 
     def broadcast(self, activity: str, *options: str, action: Optional[str]) -> None:
         """
@@ -363,8 +363,8 @@ class ServiceApplication(Application):
         options = tuple(f'"{item}"' for item in options)
         if action:
             options = ("-a", action) + options
-        self.device._execute_remote_cmd("shell", "am", "broadcast", "-n", activity, *options,
-                                        timeout=Device.TIMEOUT_LONG_ADB_CMD)
+        self.device.execute_remote_cmd("shell", "am", "broadcast", "-n", activity, *options,
+                                       timeout=Device.TIMEOUT_LONG_ADB_CMD)
 
 
 class TestApplication(Application):
@@ -439,7 +439,7 @@ class TestApplication(Application):
             raise Exception("App under test, as designatee by this test app's manifest, is not installed!")
         # surround each arg with quotes to preserve spaces in any arguments when sent to remote device:
         options = tuple('"%s"' % arg if not arg.startswith('"') else arg for arg in options)
-        return await self.device._execute_remote_cmd_async("shell", "am", "instrument", "-w", *options, "-r",
+        return await self.device.monitor_remote_cmd("shell", "am", "instrument", "-w", *options, "-r",
                                                            "/".join([self._package_name, self._runner]))
 
     async def run_orchestrated(self, *options: str) -> AsyncContextManager[Device.Process]:
@@ -461,7 +461,7 @@ class TestApplication(Application):
         options_text = " ".join(['"%s"' % arg if not arg.startswith('"') and not arg.startswith("-") else arg
                                  for arg in options])
         target_instrmentation = '/'.join([self._package_name, self._runner])
-        return await self.device._execute_remote_cmd_async(
+        return await self.device.monitor_remote_cmd(
             "shell",
             "CLASSPATH=$(pm path android.support.test.services) "
             + "app_process / android.support.test.services.shellexecutor.ShellMain am instrument "

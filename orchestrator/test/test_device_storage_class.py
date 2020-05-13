@@ -20,16 +20,16 @@ class TestDeviceStorage:
         with suppress(Exception):
             storage.remove(remote_location)
 
-        completed = device._execute_remote_cmd("shell", "ls", device.external_storage_location, stdout=subprocess.PIPE)
+        completed = device.execute_remote_cmd("shell", "ls", device.external_storage_location, stdout=subprocess.PIPE)
         if os.path.basename(remote_location) in completed.stdout:
             raise Exception("Error: did not expect file %s on remote device" % remote_location)
         storage.push(local_path=(os.path.abspath(__file__)), remote_path=remote_location)
-        completed = device._execute_remote_cmd("shell", "ls", device.external_storage_location + "/",
-                                               stdout=subprocess.PIPE)
+        completed = device.execute_remote_cmd("shell", "ls", device.external_storage_location + "/",
+                                              stdout=subprocess.PIPE)
         assert os.path.basename(remote_location) in completed.stdout
 
         storage.remove(remote_location)
-        completed = device._execute_remote_cmd("shell", "ls", device.external_storage_location, stdout=subprocess.PIPE)
+        completed = device.execute_remote_cmd("shell", "ls", device.external_storage_location, stdout=subprocess.PIPE)
         assert not os.path.basename(remote_location) in completed.stdout
 
     def test_push_invalid_remote_path(self, device: Device):
@@ -43,7 +43,7 @@ class TestDeviceStorage:
         storage = DeviceStorage(device)
         local_path = os.path.join(mp_tmp_dir, "somefile")
         remote_path = "/".join([storage.external_storage_location, "touchedfile"])
-        device._execute_remote_cmd("shell", "touch", remote_path)
+        device.execute_remote_cmd("shell", "touch", remote_path)
         storage.pull(remote_path=remote_path, local_path=local_path)
         assert os.path.exists(local_path)
 
@@ -62,12 +62,12 @@ class TestDeviceStorage:
             storage.remove(new_remote_dir, recursive=True)
 
         try:
-            completed = device._execute_remote_cmd("shell", "ls", "-d", new_remote_dir, stdout=subprocess.PIPE)
+            completed = device.execute_remote_cmd("shell", "ls", "-d", new_remote_dir, stdout=subprocess.PIPE)
             # expect "no such directory" error leading to exception, but just in case:
             assert new_remote_dir not in output or "No such file" in completed.stdout
         except Device.CommandExecutionFailure as e:
             assert "no such" in str(e).lower()
 
         storage.make_dir(new_remote_dir)
-        completed = device._execute_remote_cmd("shell", "ls", "-d", new_remote_dir, stdout=subprocess.PIPE)
+        completed = device.execute_remote_cmd("shell", "ls", "-d", new_remote_dir, stdout=subprocess.PIPE)
         assert new_remote_dir in completed.stdout
