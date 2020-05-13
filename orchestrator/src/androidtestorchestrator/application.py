@@ -440,7 +440,7 @@ class TestApplication(Application):
         # surround each arg with quotes to preserve spaces in any arguments when sent to remote device:
         options = tuple('"%s"' % arg if not arg.startswith('"') else arg for arg in options)
         return await self.device.monitor_remote_cmd("shell", "am", "instrument", "-w", *options, "-r",
-                                                           "/".join([self._package_name, self._runner]))
+                                                    "/".join([self._package_name, self._runner]))
 
     async def run_orchestrated(self, *options: str) -> AsyncContextManager[Device.Process]:
         """
