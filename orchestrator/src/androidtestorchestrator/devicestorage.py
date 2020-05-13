@@ -33,7 +33,7 @@ class DeviceStorage(RemoteDeviceBased):
     def push(self, local_path: str, remote_path: str) -> None:
         """
         Push a local file to the given location on the remote device.
-        NOTE: pushin to an app's data directory is not possible and leads to
+        NOTE: pushing to an app's data directory is not possible and leads to
           a permission-denied response even when using "run-as"
 
         :param local_path: path to local host file

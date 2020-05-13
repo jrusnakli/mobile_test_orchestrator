@@ -13,7 +13,7 @@ except Exception:
     psutil = None
 
 from contextlib import suppress
-from typing import AsyncContextManager, Dict, Tuple, Optional, TextIO, Type, Any
+from typing import AsyncContextManager, Dict, Tuple, Optional, TextIO, Type, Any, Coroutine
 
 from .timing import StopWatch
 from .parsing import LineParser
@@ -208,7 +208,7 @@ class DeviceLog(RemoteDeviceBased):
         self.device.execute_remote_cmd("logcat", "-b", buffer, "-c")
 
     async def logcat(self, *options: str, loop: Optional[AbstractEventLoop] = None
-                     ) -> AsyncContextManager[Any]:
+                     ) -> Coroutine[Any, Any, AsyncContextManager[Device.Process]]:
         """
         async generator to continually output lines from logcat until client
         exits processing (exist async iterator), at which point process is killed
@@ -219,7 +219,7 @@ class DeviceLog(RemoteDeviceBased):
 
         :raises: asyncio.TimeoutError if timeout is not None and timeout is reached
         """
-        return await self.device.monitor_remote_cmd("logcat", *options, loop=loop)
+        return self.device.monitor_remote_cmd("logcat", *options, loop=loop)
 
     def capture_to_file(self, output_path: str) -> "LogCapture":
         """

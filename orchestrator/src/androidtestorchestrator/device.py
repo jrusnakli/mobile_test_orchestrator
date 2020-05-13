@@ -22,7 +22,7 @@ from typing import (
     Union,
     Tuple,
     Type,
-)
+    Coroutine)
 
 log = logging.getLogger("MTO")
 log.setLevel(logging.ERROR)
@@ -75,13 +75,17 @@ class Device:
         """
         Wraps below async generator in context manager to ensure proper closure
 
-        : param proc: underlying asyncio Subprocess
+        :param proc_future: future (coroutine) to underlying asyncio Subprocess
         """
 
-        def __init__(self, proc: asyncio.subprocess.Process):
-            self._proc = proc
+        def __init__(self, proc: Coroutine[Any, Any, asyncio.subprocess.Process]):
+            # we pass in a future mostly to avoid having to do something quirky like
+            # async with await Process(...)
+            self._proc_future = proc
+            self._proc: Optional[Device.Process] = None
 
         async def __aenter__(self) -> "Device.Process":
+            self._proc = await self._proc_future
             return self
 
         async def __aexit__(self, exc_type: Optional[Type[BaseException]], exc_val: Optional[BaseException],
@@ -102,6 +106,8 @@ class Device:
 
         @property
         def returncode(self) -> Optional[int]:
+            if not self._proc:
+                raise Exception("Attempt to get returncode from Device.Process without having entered context")
             return self._proc.returncode
 
         async def output(self,  unresponsive_timeout: Optional[float] = None) -> AsyncIterator[str]:
@@ -110,6 +116,8 @@ class Device:
 
             :param unresponsive_timeout: raise TimeoutException if not None and time to receive next line exceeds this
             """
+            if not self._proc:
+                raise Exception("Attempt to get output of Device.Process without having entered context")
             if self._proc.stdout is None:
                 raise Exception("Failed to capture output from subprocess")
             if unresponsive_timeout is not None:
@@ -130,6 +138,8 @@ class Device:
             :param force: whether to kill (harsh) or simply terminate
             :param timeout: raise TimeoutException if process fails to truly terminate in timeout seconds
             """
+            if not self._proc:
+                raise Exception("Attempt to stop Device.Process without having entered context")
             if force:
                 self._proc.kill()
             else:
@@ -142,6 +152,8 @@ class Device:
 
             :param timeout: raise TimeoutException if waiting beyond this many seconds
             """
+            if not self._proc:
+                raise Exception("Attempt to wait on Device.Process without having entered context")
             if timeout is None:
                 await self._proc.wait()
             else:
@@ -467,7 +479,7 @@ class Device:
                                 stderr=subprocess.PIPE,
                                 **kwargs)
 
-    async def monitor_remote_cmd(self, *args: str,
+    def monitor_remote_cmd(self, *args: str,
                                  loop: Optional[AbstractEventLoop] = None) -> AsyncContextManager["Device.Process"]:
         """
         Coroutine for executing a command on this remote device asynchronously, allowing the client to iterate over
@@ -479,22 +491,22 @@ class Device:
         :return: AsyncGenerator iterating over lines of output from command
 
         >>> device = Device("someid")
-        ... async with await device.monitor_remote_cmd("some_cmd", "with", "args",
-        ...                                                  unresponsive_timeout=10) as proc:
+        ... async with device.monitor_remote_cmd("some_cmd", "with", "args",
+        ...                                      unresponsive_timeout=10) as proc:
         ...     async for line in proc.output(unresponsive_timeout=10):
         ...         print(line)
 
         """
         cmd = self._formulate_adb_cmd(*args)
         log.debug(f"Executing: {' '.join(cmd)}")
-        proc = await asyncio.subprocess.create_subprocess_exec(
+        proc_future = asyncio.subprocess.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
             loop=loop or asyncio.events.get_event_loop(),
             bufsize=0
         )
-        return self.Process(proc)
+        return self.Process(proc_future)
 
     ###################
     # Device settings/properties
@@ -805,7 +817,6 @@ class DeviceInteraction(RemoteDeviceBased):
     def return_home(self, keycode_back_limit: int = 10) -> None:
         """
         Return to home screen as though the user did so via one or many taps on the back button.
-
         In this scenario, subsequent launches of the app will need to recreate the app view, but may
         be able to take advantage of some saved state, and is considered a warm app launch.
 
@@ -842,7 +853,7 @@ class DeviceConnectivity(RemoteDeviceBased):
     """
     API for network communications configuration/queries, including host-to-device communications
 
-    :param device: which device is associated with this instance
+    :param device: which device
     """
 
     def check_network_connection(self, domain: str, count: int = 3) -> int:

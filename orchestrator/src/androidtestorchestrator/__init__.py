@@ -217,7 +217,7 @@ class AndroidTestOrchestrator:
                             run_future = test_application.run_orchestrated(*arguments)
                         else:
                             run_future = test_application.run(*arguments)
-                        async with await run_future as proc:
+                        async with run_future as proc:
                             async for line in proc.output(unresponsive_timeout=self._test_timeout):
                                 instrumentation_parser.parse_line(line)
                             await proc.wait(timeout=self._test_timeout)
@@ -260,7 +260,7 @@ class AndroidTestOrchestrator:
             logcat_demuxer = LogcatTagDemuxer(self._tag_monitors)
             device_log = DeviceLog(device)
             keys = ['%s:%s' % (k, v[0]) for k, v in self._tag_monitors.items()]
-            async with await device_log.logcat("-v", "brief", "-s", *keys) as proc:
+            async with device_log.logcat("-v", "brief", "-s", *keys) as proc:
                 self._logcat_proc = proc
                 async for line in proc.output():
                     logcat_demuxer.parse_line(line)

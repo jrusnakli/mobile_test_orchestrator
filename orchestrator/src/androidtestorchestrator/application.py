@@ -8,7 +8,7 @@ import time
 
 from apk_bitminer.parsing import AXMLParser  # type: ignore
 from contextlib import suppress
-from typing import List, TypeVar, Type, Optional, AsyncContextManager, Dict, Union, Set, Iterable, Callable
+from typing import Any, List, TypeVar, Type, Optional, AsyncContextManager, Dict, Union, Set, Iterable, Callable, Coroutine
 
 from .device import Device, RemoteDeviceBased, _device_lock, DeviceInteraction
 
@@ -35,8 +35,9 @@ class Application(RemoteDeviceBased):
     :param device: which device app resides on
 
     >>> device = Device("some_serial_id", "/path/to/adb")
-    >>> app = asyncio.wait(Application.from_apk_async("some.apk", device))
-    >>> app.grant_permissions(["android.permission.WRITE_EXTERNAL_STORAGE"])
+    ... async def install_my_app():
+    ...     app = await Application.from_apk_async("some.apk", device)
+    ...     app.grant_permissions(["android.permission.WRITE_EXTERNAL_STORAGE"])
     """
 
     SILENT_RUNNING_PACKAGES = ["com.samsung.android.mtpapplication", "com.wssyncmldm", "com.bitbar.testdroid.monitor"]
@@ -109,10 +110,10 @@ class Application(RemoteDeviceBased):
         :raises: Exception if failure of install or verify installation
 
         >>> async def install():
-        ...     async with await Application.from_apk_async("/some/local/path/to/apk", device) as stdout:
+        ...     async with Application.from_apk_async("/some/local/path/to/apk", device) as stdout:
         ...         async for line in stdout:
         ...            if "some trigger message" in line:
-        ...               perform_tap_to_accept_install()
+        ...               print(line)
 
         """
         parser = AXMLParser.parse(apk_path)
@@ -175,7 +176,7 @@ class Application(RemoteDeviceBased):
             # commands or detect insufficient storage issues
             cmd: List[str] = ["shell", "pm", "install"] + list(args) + [remote_data_path]
             # Do not allow more than one install at a time on a specific device, as this can be problematic
-            async with _device_lock(device), await device.monitor_remote_cmd(*cmd) as proc:
+            async with _device_lock(device), device.monitor_remote_cmd(*cmd) as proc:
                 if callback:
                     callback(proc)
                 await proc.wait(timeout=Device.TIMEOUT_LONG_ADB_CMD)
@@ -377,12 +378,12 @@ class TestApplication(Application):
         Create an instance of a remote test app and the interface to manipulate it.
         It is recommended to  create instances via the class-method `install`:
 
+        :param device: which device app resides on
+        :param manifest: manifest describing the apk package to be installed
+
         >>> device = Device("some_serial_id", "/path/to/adb")
         >>> test_app = TestApplication.from_apk("some.apk", device)
         >>> test_app.run()
-
-        :param package_name: package name of app
-        :param device: which device app resides on
         """
         super(TestApplication, self).__init__(device=device, manifest=manifest)
         valid = (hasattr(manifest, "instrumentation") and (manifest.instrumentation is not None) and
@@ -419,7 +420,7 @@ class TestApplication(Application):
                 items.append(runner)
         return items
 
-    async def run(self, *options: str) -> AsyncContextManager[Device.Process]:
+    def run(self, *options: str) -> AsyncContextManager[Device.Process]:
         """
         Run an instrumentation test package, yielding lines from std output
 
@@ -428,21 +429,21 @@ class TestApplication(Application):
         :returns: return coroutine wrapping an asyncio context manager for iterating over lines
         :raises Device.CommandExecutionFailureException with non-zero return code information on non-zero exit status
 
-        >>> app = TestApplication.fromApk("some.apk", device)
+        >>> app = TestApplication.from_apk("some.apk", device)
         ...
         ... async def run():
-        ...     async with await app.run() as stdout:
-        ...         async  for line in stdout:
+        ...     async with app.run() as proc:
+        ...         async  for line in proc.output():
         ...             print(line)
         """
         if self._target_application.package_name not in self.device.list_installed_packages():
             raise Exception("App under test, as designatee by this test app's manifest, is not installed!")
         # surround each arg with quotes to preserve spaces in any arguments when sent to remote device:
         options = tuple('"%s"' % arg if not arg.startswith('"') else arg for arg in options)
-        return await self.device.monitor_remote_cmd("shell", "am", "instrument", "-w", *options, "-r",
-                                                    "/".join([self._package_name, self._runner]))
+        return self.device.monitor_remote_cmd("shell", "am", "instrument", "-w", *options, "-r",
+                                              "/".join([self._package_name, self._runner]))
 
-    async def run_orchestrated(self, *options: str) -> AsyncContextManager[Device.Process]:
+    def run_orchestrated(self, *options: str) -> AsyncContextManager[Device.Process]:
         """
         Run an instrumentation test package via Google's test orchestrator that
 
@@ -450,6 +451,13 @@ class TestApplication(Application):
         :returns: coroutine wrapping an asyncio context manager for iterating over lines
         :raises: Device.CommandExecutionFailureException with non-zero return code information on non-zero exit status
         :raises: Exception if supporting apks for orchestrated runs are not installed
+
+        >>> app = TestApplication.fromApk("some.apk", device)
+        ...
+        ... async def run():
+        ...     async with app.run_orchestraed() as proc:
+        ...         async  for line in proc.output():
+        ...             print(line)
         """
         packages = self.device.list_installed_packages()
         if not {'android.support.test.services', 'android.support.test.orchestrator'} < set(packages):
@@ -461,7 +469,7 @@ class TestApplication(Application):
         options_text = " ".join(['"%s"' % arg if not arg.startswith('"') and not arg.startswith("-") else arg
                                  for arg in options])
         target_instrmentation = '/'.join([self._package_name, self._runner])
-        return await self.device.monitor_remote_cmd(
+        return self.device.monitor_remote_cmd(
             "shell",
             "CLASSPATH=$(pm path android.support.test.services) "
             + "app_process / android.support.test.services.shellexecutor.ShellMain am instrument "
