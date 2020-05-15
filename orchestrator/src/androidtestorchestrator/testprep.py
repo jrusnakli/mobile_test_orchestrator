@@ -285,12 +285,21 @@ class EspressoTestSetup(DeviceSetup):
         return data_files_paths
 
     async def _install_all(self, dev: Device):
-        test_app = await TestApplication.from_apk_async(self.path_to_test_apk, dev)
-        target_app = await Application.from_apk_async(self.path_to_apk, dev)
-        if self.grant_all_user_permissions:
-            target_app.grant_permissions()
-            test_app.grant_permissions()
+        installed: List[Application] = []
         foreign_apps: List[Application] = []
-        for foreign_app_location in self.paths_to_foreign_apks:
-            foreign_apps.append(await Application.from_apk_async(foreign_app_location, dev))
-        return [test_app, target_app] + foreign_apps
+        try:
+            test_app = await TestApplication.from_apk_async(self.path_to_test_apk, dev)
+            installed.append(test_app)
+            target_app = await Application.from_apk_async(self.path_to_apk, dev)
+            installed.append(target_app)
+            if self.grant_all_user_permissions:
+                target_app.grant_permissions()
+                test_app.grant_permissions()
+            for foreign_app_location in self.paths_to_foreign_apks:
+                foreign_apps.append(await Application.from_apk_async(foreign_app_location, dev))
+            return installed + foreign_apps
+        except Exception:
+            for app in installed + foreign_apps:
+                with suppress(Exception):
+                    app.uninstall()
+            raise

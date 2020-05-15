@@ -50,12 +50,12 @@ class TestEspressoTestPreparation:
             bundle.upload_test_vectors("/no/such/path").resolve()
 
     @pytest.mark.asyncio
-    async def test_foreign_apk_install(self, device: Device, support_app: str, support_test_app: str):
+    async def test_foreign_apk_install(self, device: Device, support_app: str, support_test_app: str, support_service_app: str):
         device.set_system_property("debug.mock2", "\"\"\"\"")
         now = device.get_device_setting("system", "dim_screen")
         new = {"1": "0", "0": "1"}[now]
         prep = EspressoTestSetup.Builder(path_to_test_apk=support_test_app, path_to_apk=support_app).\
-            add_foreign_apks([support_test_app]).\
+            add_foreign_apks([support_service_app]).\
             configure_settings(settings={'system:dim_screen': new},
                                properties={"debug.mock2": "5555"}).resolve()
 

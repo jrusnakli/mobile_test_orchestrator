@@ -40,7 +40,7 @@ else:
 ############
 
 
-class DeviceManager():
+class DeviceManager:
 
     AVD = "MTO_emulator"
     CONFIG = EmulatorBundleConfiguration(
@@ -86,29 +86,6 @@ async def device_pool():
         yield pool
 
 
-@pytest.fixture()
-async def devices(device_pool: AsyncEmulatorPool, apps, event_loop):
-    # convert queue to an async queue.  We specifially want to test with AsyncEmulatorPool,
-    # so will not ust the AsynQueueAdapter class.
-    count = min(DeviceManager.count(), 2)
-    async with device_pool.reserve_many(count) as devs:
-        for dev in devs:
-            uninstall_apk(apps[0], dev)
-            uninstall_apk(apps[1], dev)
-        yield devs
-
-
-@pytest.fixture()
-async def device(device_pool: AsyncEmulatorPool, apps):
-    """
-    return a single reserved device
-    """
-    async with device_pool.reserve() as device:
-        uninstall_apk(apps[0], device)
-        uninstall_apk(apps[1], device)
-        yield device
-
-
 #################
 # App-related fixtures;  TODO: logic could be cleaned up overall here
 #################
@@ -119,14 +96,18 @@ class AppManager:
     For managing compilation of apps used as test resources and providing them through fixtures
     """
 
-    _proc, _app_queue, _test_app_queue = None, None, None
+    _proc, _app_queue, _test_app_queue, _service_app_queue = None, None, None, None
 
     def __init__(self):
-        AppManager._app_queue = multiprocessing.Queue(1)
-        AppManager._test_app_queue = multiprocessing.Queue(1)
+        self._m = multiprocessing.Manager()
+        self._app_queue = self._m.Queue(1)
+        self._test_app_queue = self._m.Queue(1)
+        self._service_app_queue = self._m.Queue(1)
         self._app = None
         self._test_app = None
-        AppManager._proc =support.compile_all(self._app_queue, self._test_app_queue)
+        self._service_app = None
+        AppManager._proc =support.compile_all(self._app_queue, self._test_app_queue,
+                                              self._service_app_queue)
 
     def __enter__(self):
         return self
@@ -146,6 +127,14 @@ class AppManager:
             self._test_app = self._test_app_queue.get()
         return self._test_app
 
+    def service_app(self):
+        """
+        :return: the string path to the service apk that was compiled
+        """
+        if self._service_app is None:
+            self._service_app = self._service_app_queue.get()
+        return self._service_app
+
     def app(self):
         """
         :return: the string path to the target apk that was compiled
@@ -153,6 +142,31 @@ class AppManager:
         if self._app is None:
             self._app = self._app_queue.get()
         return self._app
+
+
+@pytest.fixture()
+async def devices(device_pool: AsyncEmulatorPool, app_manager: AppManager, event_loop):
+    # convert queue to an async queue.  We specifially want to test with AsyncEmulatorPool,
+    # so will not ust the AsynQueueAdapter class.
+    count = min(DeviceManager.count(), 2)
+    async with device_pool.reserve_many(count) as devs:
+        for dev in devs:
+            uninstall_apk(app_manager.app(), dev)
+            uninstall_apk(app_manager.test_app(), dev)
+            uninstall_apk(app_manager.service_app(), dev)
+        yield devs
+
+
+@pytest.fixture()
+async def device(device_pool: AsyncEmulatorPool, app_manager):
+    """
+    return a single reserved device
+    """
+    async with device_pool.reserve() as device:
+        uninstall_apk(app_manager.app(), device)
+        uninstall_apk(app_manager.test_app(), device)
+        uninstall_apk(app_manager.service_app(), device)
+        yield device
 
 
 # noinspection PyShadowingNames
@@ -221,21 +235,24 @@ async def android_service_app(device, support_app: str):
 
 
 @pytest.fixture(scope='node')
-def apps():
+def app_manager():
     with AppManager() as app_manager:
-        app = app_manager.app()
-        test_app = app_manager.test_app()
-        yield app, test_app
+        yield app_manager
 
 
 @pytest.fixture(scope='session')
-def support_app(apps: Tuple[Application, TestApplication]):
-    return apps[0]
+def support_app(app_manager: AppManager):
+    return app_manager.app()
 
 
 @pytest.fixture(scope='session')
-def support_test_app(apps: Tuple[Application, TestApplication]):
-    return apps[1]
+def support_test_app(app_manager: AppManager):
+    return app_manager.test_app()
+
+
+@pytest.fixture(scope='session')
+def support_service_app(app_manager: AppManager):
+    return app_manager.service_app()
 
 
 @pytest.fixture

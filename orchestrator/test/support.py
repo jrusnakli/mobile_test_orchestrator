@@ -7,7 +7,7 @@ import subprocess
 import sys
 from contextlib import suppress
 from multiprocessing import Queue
-from typing import Tuple
+from typing import Tuple, Dict, List
 
 from apk_bitminer.parsing import AXMLParser
 
@@ -17,6 +17,7 @@ _BASE_DIR = os.path.join(os.path.dirname(__file__), "..", "..")
 _SRC_BASE_DIR = os.path.join(os.path.dirname(__file__), "..", )
 
 TEST_SUPPORT_APP_DIR = os.path.join(_BASE_DIR, "testsupportapps")
+TEST_SERVICE_APP_DIR = os.path.join(_BASE_DIR, "testservice")
 
 RESOURCES_DIR = os.path.join(_SRC_BASE_DIR, "src", "androidtestorchestrator", "resources")
 SETUP_PATH = os.path.join(_SRC_BASE_DIR, "setup.py")
@@ -52,58 +53,66 @@ def find_sdk():
     return android_sdk
 
 
-def gradle_build(*target_and_q: Tuple[str, Queue]):
-    assert target_and_q, "empty target specified"
-    targets = [t for t, _ in target_and_q]
-    try:
-        apk_path = None
-        gradle_path = os.path.join("gradlew")
-        if sys.platform == 'win32':
-            cmd = [gradle_path+".bat"] + targets
-            shell = True
+def gradle_build(targets_and_q: Dict[str, List[Tuple[str, Queue, str]]]):
+    for root_build_dir, target_and_q in targets_and_q.items():
+        targets = [t for t, _ in target_and_q]
+        try:
+            apk_path = None
+            gradle_path = os.path.join("gradlew")
+            if sys.platform == 'win32':
+                cmd = [gradle_path+".bat"] + targets
+                shell = True
+            else:
+                cmd = [os.path.join(".", gradle_path)] + targets
+                shell = False
+            log.info(f"Launching: {cmd} from {root_build_dir}")
+            process = subprocess.run(cmd,
+                                     cwd=root_build_dir,
+                                     env=os.environ.copy(),
+                                     stdout=sys.stdout,
+                                     stderr=sys.stderr,
+                                     shell=shell)
+            if process.returncode != 0:
+                raise Exception(f"Failed to build apk: {cmd}")
+            for target, q in target_and_q:
+                if q is None:
+                    continue
+                if target.endswith("assembleAndroidTest"):
+                    apk_path = os.path.join(root_build_dir, "app", "build", "outputs", "apk", "androidTest", "debug", "app-debug-androidTest.apk")
+                else:  # assembleDebug
+                    apk_path = os.path.join(root_build_dir, "app", "build", "outputs", "apk", "debug", "app-debug.apk")
+                if not os.path.exists(apk_path):
+                    raise Exception("Failed to find built apk %s" % apk_path)
+                q.put(apk_path)
+        except Exception:
+            for _, q in target_and_q:
+                if q:
+                    q.put(None)
+            # harsh exit to prevent tests from attempting to run that require apk that wasn't built
+            raise
         else:
-            cmd = [os.path.join(".", gradle_path)] + targets
-            shell = False
-        log.info(f"Launching: {cmd} from {TEST_SUPPORT_APP_DIR}")
-        process = subprocess.run(cmd,
-                                 cwd=TEST_SUPPORT_APP_DIR,
-                                 env=os.environ.copy(),
-                                 stdout=sys.stdout,
-                                 stderr=sys.stderr,
-                                 shell=shell)
-        if process.returncode != 0:
-            raise Exception(f"Failed to build apk: {cmd}")
-        for target, q in target_and_q:
-            if q is None:
-                continue
-            if target.endswith("assembleAndroidTest"):
-                apk_path = os.path.join(TEST_SUPPORT_APP_DIR, "app", "build", "outputs", "apk", "androidTest", "debug", "app-debug-androidTest.apk")
-            else:  # assembleDebug
-                apk_path = os.path.join(TEST_SUPPORT_APP_DIR, "app", "build", "outputs", "apk", "debug", "app-debug.apk")
-            if not os.path.exists(apk_path):
-                raise Exception("Failed to find built apk %s" % apk_path)
-            q.put(apk_path)
-    except Exception:
-        for _, q in target_and_q:
-            if q:
-                q.put(None)
-        # harsh exit to prevent tests from attempting to run that require apk that wasn't built
-        raise
-    else:
-        log.info(f"Built {apk_path}")
+            log.info(f"Built {apk_path}")
 
 
-def compile_all(support_app_q: Queue, support_test_app_q: Queue) -> multiprocessing.Process:
+def compile_all(support_app_q: Queue, support_test_app_q: Queue, service_app_q: Queue) -> multiprocessing.Process:
     """
     compile support app and test app in the background and return the queues where they will be placed
 
     :return: tuple of queues that will hold the apps once built
     """
-    process = multiprocessing.Process(target=gradle_build, args=(
-        ("assemble", None),
-        ("assembleAndroidTest", support_test_app_q),
-        ("assembleDebug", support_app_q),
-    ))
+    process = multiprocessing.Process(
+        target=gradle_build, args=(
+            {TEST_SUPPORT_APP_DIR: [
+                ("assemble", None),
+                ("assembleAndroidTest", support_test_app_q),
+                ("assembleDebug", support_app_q),
+            ],
+             TEST_SERVICE_APP_DIR: [
+                ("assembleDebug", service_app_q)
+            ],
+            },
+        ),
+    )
     process.start()
     return process
 
