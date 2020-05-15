@@ -6,6 +6,7 @@
 ##########
 
 import asyncio
+import subprocess
 import time
 from pathlib import Path
 from unittest.mock import patch, Mock, PropertyMock
@@ -41,8 +42,9 @@ class TestApplicationClass:
         app = await Application.from_apk_async(support_app, device)
         try:
             assert app.package_name == "com.linkedin.mtotestapp"
-            output = device.execute_remote_cmd("shell", "dumpsys", "package", app.package_name, capture_stdout=True,
-                                               timeout=10)
+            completed = device.execute_remote_cmd("shell", "dumpsys", "package", app.package_name,
+                                                  timeout=10, stdout=subprocess.PIPE)
+            output: str = completed.stdout
             for line in output.splitlines():
                 if "versionName" in line:
                     assert app.version == line.strip().split('=', 1)[1]
@@ -56,8 +58,9 @@ class TestApplicationClass:
         assert test_app.package_name.endswith(".test")
         permission = "android.permission.WRITE_EXTERNAL_STORAGE"
         test_app.grant_permissions([permission])
-        output = device.execute_remote_cmd("shell", "dumpsys", "package", test_app.package_name, capture_stdout=True,
-                                           timeout=10)
+        completed = device.execute_remote_cmd("shell", "dumpsys", "package", test_app.package_name,
+                                              timeout=10, stdout=subprocess.PIPE)
+        output: str = completed.stdout
         perms = []
         look_for_perms = False
         for line in output.splitlines():
@@ -82,13 +85,17 @@ class TestApplicationClass:
         if app.device.api_level >= 26:
             try:
                 # Normally get an error code and an exception if package is not running:
-                output = app.device.execute_remote_cmd("shell", "pidof", "-s", app.package_name, fail_on_error_code=lambda x: x < 0)
+                completed = app.device.execute_remote_cmd("shell", "pidof", "-s", app.package_name,
+                                                          stdout=subprocess.PIPE,
+                                                          fail_on_error_code=lambda x: x < 0)
+                output: str = completed.stdout
                 # however, LinkedIn-specific(?) or older emulators don't have this, and return no error code
                 # so check output
                 if not output:
                     return False
                 if "not found" in output:
-                    output = app.device.execute_remote_cmd("shell", "ps")
+                    completed = app.device.execute_remote_cmd("shell", "ps", stdout=subprocess.PIPE)
+                    output: str = completed.stdout
                     return app.package_name in output
                 # on some device 1 is an indication of not present (some with return code of 0!), so if pid is one return false
                 if output == "1":
@@ -98,7 +105,8 @@ class TestApplicationClass:
                 return False
         else:
             try:
-                output = app.device.execute_remote_cmd("shell", "ps" )
+                completed = app.device.execute_remote_cmd("shell", "ps", stdout=subprocess.PIPE)
+                output: str = completed.stdout
                 return app.package_name in output
             except:
                 return False
@@ -112,7 +120,10 @@ class TestApplicationClass:
         app.stop(force=True)
         if self.pidof(app):
             time.sleep(3)  # allow slow emulators to catch up
-        pidoutput = app.device.execute_remote_cmd("shell", "pidof", "-s", app.package_name, fail_on_error_code=lambda x: x < 0)
+        completed = app.device.execute_remote_cmd("shell", "pidof", "-s", app.package_name,
+                                                  stdout=subprocess.PIPE,
+                                                  fail_on_error_code=lambda x: x < 0)
+        pidoutput: str = completed.stdout
         assert not self.pidof(app), f"pidof indicated app is not stopped as expected; output of pidof is: {pidoutput}"
 
     @pytest.mark.asyncio
@@ -161,9 +172,11 @@ class TestApplicationClass:
     async def test_clean_kill_throws_exception_when_home_screen_not_active(self, install_app, device: Device,
                                                                            support_app: str):
         app = install_app(Application, support_app)
-        with patch('androidtestorchestrator.device.DeviceNavigation.home_screen_active', new_callable=Mock) as mock_home_screen_active:
+        with patch('androidtestorchestrator.device.DeviceInteraction.home_screen_active', new_callable=Mock) as mock_home_screen_active, \
+            patch('androidtestorchestrator.application.Application.pid', new_callable=PropertyMock) as mock_pid:
             # Force home_screen_active to be false to indicate clean_kill failed
             mock_home_screen_active.return_value = False
+            mock_pid.return_value = "21345"
             app.start(".MainActivity")
             time.sleep(3)   # Give app time to come up
             assert device.foreground_activity() == app.package_name
@@ -174,7 +187,7 @@ class TestApplicationClass:
     @pytest.mark.asyncio
     async def test_clean_kill_throws_exception_when_pid_still_existing(self, install_app, device: Device, support_app: str):
         app = install_app(Application, support_app)
-        with patch('androidtestorchestrator.device.DeviceNavigation.home_screen_active', new_callable=Mock) as mock_home_screen_active:
+        with patch('androidtestorchestrator.device.DeviceInteraction.home_screen_active', new_callable=Mock) as mock_home_screen_active:
             with patch('androidtestorchestrator.application.Application.pid', new_callable=PropertyMock) as mock_pid:
                 # Force home_screen_active to be True to indicate clean_kill made it to the home screen
                 mock_home_screen_active.return_value = True
@@ -190,7 +203,7 @@ class TestApplicationClass:
     @pytest.mark.asyncio
     async def test_clean_kill_succeeds(self, install_app, device: Device, support_app: str):
         app = install_app(Application, support_app)
-        with patch('androidtestorchestrator.device.DeviceNavigation.home_screen_active', new_callable=Mock) as mock_home_screen_active:
+        with patch('androidtestorchestrator.device.DeviceInteraction.home_screen_active', new_callable=Mock) as mock_home_screen_active:
             with patch('androidtestorchestrator.application.Application.pid', new_callable=PropertyMock) as mock_pid:
                 # Force home_screen_active to be True to indicate clean_kill made it to the home screen
                 mock_home_screen_active.return_value = True
@@ -221,6 +234,5 @@ class TestApplicationClass:
                 return []
 
         with pytest.raises(expected_exception=Exception) as excinfo:
-            Application._verify_install(MockDevice(), "com.linkedin.fake.app", "test_screenshots")
+            Application.verify_install(MockDevice(), "com.linkedin.fake.app")
         assert "Failed to verify installation of app 'com.linkedin.fake.app'" in str(excinfo.value)
-        assert (in_tmp_dir / "test_screenshots" / "install_failure-com.linkedin.fake.app.png").is_file()

@@ -7,6 +7,7 @@
 import asyncio
 import datetime
 import os
+import subprocess
 from pathlib import Path
 from unittest.mock import patch, PropertyMock
 
@@ -14,7 +15,7 @@ import pytest
 import time
 
 from androidtestorchestrator.application import Application, TestApplication, ServiceApplication
-from androidtestorchestrator.device import Device, DeviceNavigation, DeviceNetwork
+from androidtestorchestrator.device import Device, DeviceInteraction, DeviceNetwork
 from androidtestorchestrator.devicestorage import DeviceStorage
 from . import support
 from .conftest import TAG_MTO_DEVICE_ID
@@ -183,7 +184,7 @@ class TestAndroidDevice:
     @pytest.mark.asyncio
     async def test_foreground_and_activity_detection(self, install_app, device: Device, support_app: str):
         app = install_app(Application, support_app)
-        nav = DeviceNavigation(device)
+        nav = DeviceInteraction(device)
         # By default, emulators should always start into the home screen
         assert nav.home_screen_active()
         # Start up an app and test home screen is no longer active, and foreground app is correct
@@ -224,28 +225,32 @@ class TestDeviceNetwork:
     async def test_port_forward(self, device: Device):
         device_network = DeviceNetwork(device)
         device_network.port_forward(32451, 29323)
-        output = device.execute_remote_cmd("forward", "--list")
+        completed = device.execute_remote_cmd("forward", "--list", stdout=subprocess.PIPE)
+        output: str = completed.stdout
         assert "32451" in output
         device_network.remove_port_forward(29323)
-        output = device.execute_remote_cmd("forward", "--list")
+        completed = device.execute_remote_cmd("forward", "--list", stdout=subprocess.PIPE)
+        output: str = completed.stdout
         assert "32451" not in output
 
     @pytest.mark.asyncio
     async def test_reverse_port_forward(self, device: Device):
         device_network = DeviceNetwork(device)
         device_network.reverse_port_forward(32451, 29323)
-        output = device.execute_remote_cmd("reverse", "--list")
+        completed = device.execute_remote_cmd("reverse", "--list", stdout=subprocess.PIPE)
+        output: str = completed.stdout
         assert "29323" in output
         device_network.remove_reverse_port_forward(32451)
-        output = device.execute_remote_cmd("reverse", "--list")
+        completed = device.execute_remote_cmd("reverse", "--list", stdout=subprocess.PIPE)
+        output: str = completed.stdout
         assert "32451" not in output
 
 
-class TestDeviceNavigation:
+class TestDeviceInteraction:
 
     @pytest.mark.asyncio
     async def test_is_screen_on(self, device: Device):
-        navigator = DeviceNavigation(device)
+        navigator = DeviceInteraction(device)
         is_screen_on = navigator.is_screen_on()
         navigator.toggle_screen_on()
         retries = 3
@@ -258,7 +263,7 @@ class TestDeviceNavigation:
 
     @pytest.mark.asyncio
     async def test_go_home(self, device: Device, android_app: Application):
-        navigator = DeviceNavigation(device)
+        navigator = DeviceInteraction(device)
         await android_app.launch("MainActivity")
         if navigator.home_screen_active():
            time.sleep(2)

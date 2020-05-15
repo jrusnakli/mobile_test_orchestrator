@@ -2,6 +2,7 @@
 The *devielog* package provides the API for streaming, capturing and manipulating the device log
 """
 import os
+import subprocess
 from asyncio import AbstractEventLoop
 
 import logging
@@ -74,7 +75,8 @@ class DeviceLog(DeviceBased):
         :param channel: which channel's size ('main', 'system', or 'crash')
         :return: the logcat buffer size for given channel, or None if not defined
         """
-        output = self.device.execute_remote_cmd("logcat", "-g", capture_stdout=True)
+        completed = self.device.execute_remote_cmd("logcat", "-g", stdout=subprocess.PIPE)
+        output: str = completed.stdout
         for line in output.splitlines():
             if line.startswith(channel):
                 "format is <channel>: ring buffer is <size>"
@@ -93,7 +95,7 @@ class DeviceLog(DeviceBased):
         """
         clear device log on the device and start fresh
         """
-        self.device.execute_remote_cmd("logcat", "-b", "all", "-c", capture_stdout=False)
+        self.device.execute_remote_cmd("logcat", "-b", "all", "-c")
 
     async def logcat(self, *options: str, loop: Optional[AbstractEventLoop] = None
                      ) -> AsyncContextManager[Any]:

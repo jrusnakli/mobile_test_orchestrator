@@ -10,16 +10,14 @@ from that class to provide additional APIs specific to service application and (
 
 import asyncio
 import logging
-import os
 import subprocess
 import time
-from asyncio import AbstractEventLoop
 from contextlib import suppress
 
 from apk_bitminer.parsing import AXMLParser  # type: ignore
-from typing import List, TypeVar, Type, Optional, AsyncContextManager, Dict, Union, Any, Set, Tuple, Callable
+from typing import List, TypeVar, Type, Optional, AsyncContextManager, Dict, Union, Set, Tuple, Callable, Iterable
 
-from .device import Device, DeviceBased, _device_lock, DeviceNavigation
+from .device import Device, DeviceBased, _device_lock, DeviceInteraction
 
 __all__ = ["Application", "ServiceApplication", "TestApplication"]
 
@@ -59,22 +57,23 @@ class Application(DeviceBased):
 
     def __init__(self, device: Device, manifest: Union[AXMLParser, Dict[str, str]]):
         super().__init__(device)
+        self._device_navigation = DeviceInteraction(device)
         self._version: Optional[str] = None  # loaded on-demand first time self.version called
-        self._package_name: str = manifest.package_name if isinstance(manifest, AXMLParser) else manifest.get("package_name", None)
+        self._package_name: str = manifest.package_name if isinstance(manifest, AXMLParser) \
+            else manifest.get("package_name", None)
         if self._package_name is None:
             raise ValueError("manifest argument as dictionary must contain \"package_name\" as key")
-        self._permissions: List[str] = manifest.permissions if isinstance(manifest, AXMLParser) else manifest.get("permissions", [])
-        self._granted_permissions: List[str] = []
+        self._permissions: Set[str] = set(manifest.permissions if isinstance(manifest, AXMLParser) else \
+                                          manifest.get("permissions", []))
+        self._granted_permissions: Set[str] = set()
 
     @classmethod
-    def _verify_install(cls, device: Device, package: str, screenshot_dir: Optional[str] = None) -> None:
+    def verify_install(cls, device: Device, package: str) -> None:
         """
         Verify installation of an app, taking a screenshot on failure
 
         :param device: device to install on
         :param package: package name of app
-        :param screenshot_dir: if not None, where to capture screenshot on failure
-
         :raises Exception: if failure to verify
         """
         packages = device.list_installed_packages()
@@ -84,12 +83,6 @@ class Application(DeviceBased):
             packages = device.list_installed_packages()
         if package not in packages:
             if package is not None:
-                try:
-                    if screenshot_dir:
-                        os.makedirs(screenshot_dir, exist_ok=True)
-                        device.take_screenshot(os.path.join(screenshot_dir, f"install_failure-{package}.png"))
-                except Exception as e:
-                    log.warning(f"Unable to take screenshot of installation failure: {e}")
                 log.error("Did not find installed package %s;  found: %s", package, packages)
                 log.error("Device failure to install %s on model %s;  install status succeeds,"
                           "but package not found on device", package, device.model)
@@ -99,7 +92,7 @@ class Application(DeviceBased):
             log.info("Package %s installed" % str(package))
 
     @classmethod
-    def _install_synchronous(cls, device: Device, apk_path: str, as_upgrade: bool) -> None:
+    def _install(cls, device: Device, apk_path: str, as_upgrade: bool) -> None:
         """
         Install the given bundle, blocking until complete
         Preference should be to use `Application.from_apk_async` method.
@@ -108,86 +101,49 @@ class Application(DeviceBased):
         :param apk_path: local path to the apk to be installed
         :param as_upgrade: install as upgrade or not
         """
-        if as_upgrade:
-            cmd: Tuple[str, ...] = ("install", "-r", apk_path)
-        else:
-            cmd = ("install", apk_path)
-
+        cmd: Tuple[str, ...] = ("install", "-r", apk_path) if as_upgrade else  ("install", apk_path)
         device.execute_remote_cmd(*cmd, timeout=Device.TIMEOUT_LONG_ADB_CMD)
 
     @classmethod
-    async def _install_async(cls, device: Device, apk_path: str, as_upgrade: bool,
-                             conditions: Optional[List[str]] = None,
-                             on_full_install: Optional[Callable[[], None]] = None,
-                             screenshot_dir: Optional[str] = None) -> None:
+    async def _monitor_install(cls, device: Device, apk_path: str, *args: str,
+                               callback: Optional[Callable[[Device.Process], None]] = None) -> None:
         """
         Install given apk asynchronously, monitoring output for messages containing any of the given conditions,
         executing a callback if given when any such condition is met.
-        Preference should be to use `Application.from_apk_async` method.
 
-        :param device: device to install on
+        :param device: Device to install on
         :param apk_path: bundle to install
-        :param as_upgrade: whether as upgrade or not
-        :param conditions: list of strings to look for in stdout as a trigger for callback. Some devices are
-            non-standard and will provide a pop-up request explicit user permission for install once the apk is fully
-            uploaded and prepared. This param defaults to ["100%", "pkg:", "Success"] as indication that bundle was
-            fully prepared (pre-pop-up).
-        :param on_full_install: if not None the callback to be called
-        :param screenshot_dir: if not None, where to capture a screenshot on failure; if None, no verification of
-           install will be performed
-
         :raises Device.InsufficientStorageError: if there is not enough space on device
+        :raises IOError if push of apk to device was unsuccessful
         """
-        conditions = conditions or ["100%", "pkg:", "Success"]
+        print(f"{device.device_id} ???????????????? MONITORING INSTALL.... {apk_path}")
         parser = AXMLParser.parse(apk_path)
         package = parser.package_name
         remote_data_path = f"/data/local/tmp/{package}"
-        if not as_upgrade:
-            # avoid unnecessary conflicts with older certs and crap:
-            # TODO: client should handle clean install -- this code really shouldn't be here??
-            with suppress(Exception):
-                device.execute_remote_cmd("uninstall", package, capture_stdout=False)
-
-        # We try Android Studio's method of pushing to device and installing from there, but if push is
-        # unsuccessful, we fallback to plain adb install
         try:
-            push_cmd = ("push", apk_path, remote_data_path)
-            device.execute_remote_cmd(*push_cmd, timeout=Device.TIMEOUT_LONG_ADB_CMD)
-            push_successful = True
-        except Exception:
-            log.warning("Unable to push apk to install from device, will attempt direct install from local apk")
-            push_successful = False
+            try:
+                # We try Android Studio's method of pushing to device and installing from there, but if push is
+                # unsuccessful, we fallback to plain adb install
+                push_cmd = ("push", apk_path, remote_data_path)
+                device.execute_remote_cmd(*push_cmd, timeout=Device.TIMEOUT_LONG_ADB_CMD)
+            except Device.CommandExecutionFailure as e:
+                raise IOError(f"Unable to push apk to device {e}") from e
 
-        try:
             # Execute the installation of the app, monitoring output for completion in order to invoke any extra
             # commands or detect insufficient storage issues
-            cmd: List[str] = ["shell", "pm", "install"] if push_successful else ["install"]
-            source = remote_data_path if push_successful else apk_path
-            if as_upgrade:
-                cmd.append("-r")
-            cmd.append(source)
+            cmd: List[str] = ["shell", "pm", "install"] + list(args) + [remote_data_path]
             # Do not allow more than one install at a time on a specific device, as this can be problematic
             async with _device_lock(device), await device.monitor_remote_cmd(*cmd) as proc:
-                async for msg in proc.output(unresponsive_timeout=Device.TIMEOUT_LONG_ADB_CMD):
-                    if Device.ERROR_MSG_INSUFFICIENT_STORAGE in msg:
-                        raise Device.InsufficientStorageError("Insufficient storage for install of %s" %
-                                                              apk_path)
-                    # Some devices have non-standard pop-ups that must be cleared by accepting usb installs
-                    # (non-standard Android):
-                    if on_full_install and msg and any([condition in msg for condition in conditions]):
-                        on_full_install()
-                await proc.wait(Device.TIMEOUT_LONG_ADB_CMD)
-
-            # On some devices, a pop-up may prevent successful install even if return code from adb install
-            # showed success, so must explicitly verify the install was successful:
-            log.info("Verifying install...")
-            if screenshot_dir:
-                cls._verify_install(device, package, screenshot_dir)  # raises exception on failure to verify
+                if callback:
+                    callback(proc)
+                await proc.wait(timeout=Device.TIMEOUT_LONG_ADB_CMD)
+                if proc.returncode != 0:
+                    raise Device.CommandExecutionFailure(proc.returncode,
+                                                         f"Install of {apk_path} failed: {await proc.communicate()}")
         finally:
-            if push_successful:
-                with suppress(Exception):
-                    rm_cmd = ("shell", "rm", remote_data_path)
-                    device.execute_remote_cmd(*rm_cmd, timeout=Device.TIMEOUT_ADB_CMD)
+            with suppress(Exception):
+                rm_cmd = ("shell", "rm", remote_data_path)
+                device.execute_remote_cmd(*rm_cmd, timeout=Device.TIMEOUT_ADB_CMD)
 
     @property
     def package_name(self) -> str:
@@ -197,7 +153,10 @@ class Application(DeviceBased):
         return self._package_name
 
     @property
-    def permissions(self) -> List[str]:
+    def permissions(self) -> Set[str]:
+        """
+        :return: set of permissions required by this app
+        """
         return self._permissions
 
     @property
@@ -214,9 +173,11 @@ class Application(DeviceBased):
         """
         :return: pid of app if running (either in foreground or background) or None if not running
         """
-        stdout = self.device.execute_remote_cmd("shell", "pidof", "-s", self.package_name, capture_stdout=True)
+        completed = self.device.execute_remote_cmd("shell", "pidof", "-s", self.package_name, stdout=subprocess.PIPE,
+                                                   fail_on_error_code=lambda x: False)
+        stdout: str = completed.stdout
         split_output = stdout.splitlines()
-        if len(split_output) > 0:
+        if split_output:
             return split_output[0].strip()
         return None
 
@@ -228,7 +189,8 @@ class Application(DeviceBased):
         return set(self._granted_permissions)
 
     @classmethod
-    async def from_apk_async(cls: Type[_TApp], apk_path: str, device: Device, as_upgrade: bool = False) -> _TApp:
+    async def from_apk_async(cls: Type[_TApp], apk_path: str, device: Device, as_upgrade: bool = False,
+                             callback: Callable[[Device.Process], None] = None) -> _TApp:
         """
         Install application asynchronously.  This allows the output of the install to be processed
         in a streamed fashion.  This can be useful on some devices that are non-standard android where installs
@@ -238,9 +200,10 @@ class Application(DeviceBased):
         :param apk_path: path to apk
         :param device: device to install on
         :param as_upgrade: whether to install as upgrade or not
-
+        :param callback: callback invoked after push of apk to device and kick-off of pm-install through adb;  callback
+            should return None and take one parameter -- a `Device.Process` instance that can be used to wait on the
+            process, parse streamed stdout, etc.
         :return: remote installed application
-
         :raises: Exception if failure of install or verify installation
 
         >>> async def install():
@@ -251,7 +214,8 @@ class Application(DeviceBased):
 
         """
         parser = AXMLParser.parse(apk_path)
-        await cls._install_async(device, apk_path, as_upgrade)
+        args = ["-r"] if as_upgrade else []
+        await cls._monitor_install(device, apk_path, *args, callback=callback)
         return cls(device, parser)
 
     @classmethod
@@ -270,23 +234,24 @@ class Application(DeviceBased):
         >>> app = Application.from_apk("/local/path/to/apk", device, as_upgrade=True)
         """
         parser = AXMLParser.parse(apk_path)
-        cls._install_synchronous(device, apk_path, as_upgrade)
+        cls._install(device, apk_path, as_upgrade)
         return cls(device, parser)
 
     def uninstall(self) -> None:
         """
         Uninstall this app from remote device.
         """
+        print(f"{self.device.device_id} ?????????? UNINSTALLING {self.package_name}")
         self.stop()
         try:
-            self.device.execute_remote_cmd("uninstall", self.package_name, capture_stdout=False)
+            self.device.execute_remote_cmd("uninstall", self.package_name)
         except subprocess.TimeoutExpired:
             log.warning("adb command froze on uninstall.  Ignoring issue as device specific")
         except Exception as e:
             if self.package_name in self.device.list_installed_packages():
                 log.error(f"Failed to uninstall app {self.package_name} [{str(e)}]")
 
-    def grant_permissions(self, permissions: Optional[List[str]] = None) -> Set[str]:
+    def grant_permissions(self, permissions: Optional[Iterable[str]] = None) -> Set[str]:
         """
         Grant permissions for a package on a device
 
@@ -305,11 +270,11 @@ class Application(DeviceBased):
         # note "block grants" do not work on all Android devices, so grant 'em one-by-one
         for p in permissions_filtered:
             try:
-                self.device.execute_remote_cmd("shell", "pm", "grant", self.package_name, p, capture_stdout=False)
+                self.device.execute_remote_cmd("shell", "pm", "grant", self.package_name, p)
             except Exception as e:
                 log.error(f"Failed to grant permission {p} for package {self.package_name} [{str(e)}]")
-            self._granted_permissions.append(p)
-        return set(self._granted_permissions)
+            self._granted_permissions.add(p)
+        return self._granted_permissions
 
     def regrant_permissions(self) -> Set[str]:
         """
@@ -333,7 +298,7 @@ class Application(DeviceBased):
         activity = f"{self.package_name}/{activity}"
         if intent:
             options = ("-a", intent, *options)
-        self.device.execute_remote_cmd("shell", "am", "start", "-n", activity, *options, capture_stdout=False)
+        self.device.execute_remote_cmd("shell", "am", "start", "-n", activity, *options)
 
     async def launch(self, activity: str, *options: str, intent: Optional[str] = None,
                      timeout: Optional[int] = None) -> None:
@@ -377,7 +342,7 @@ class Application(DeviceBased):
         More to read about adb monkey at https://developer.android.com/studio/test/monkey#command-options-reference
         """
         cmd = ["shell", "monkey", "-p", self._package_name, "-c", "android.intent.category.LAUNCHER", str(count)]
-        self.device.execute_remote_cmd(*cmd, capture_stdout=False, timeout=Device.TIMEOUT_LONG_ADB_CMD)
+        self.device.execute_remote_cmd(*cmd, timeout=Device.TIMEOUT_LONG_ADB_CMD)
 
     def stop(self, force: bool = True) -> None:
         """
@@ -387,10 +352,10 @@ class Application(DeviceBased):
         """
         try:
             if force:
-                DeviceNavigation(self.device).go_home()
-                self.device.execute_remote_cmd("shell", "am", "force-stop", self.package_name, capture_stdout=False)
+                self._device_navigation.go_home()
+                self.device.execute_remote_cmd("shell", "am", "force-stop", self.package_name)
             else:
-                self.device.execute_remote_cmd("shell", "am", "stop", self.package_name, capture_stdout=False)
+                self.device.execute_remote_cmd("shell", "am", "stop", self.package_name)
         except Exception as e:
             log.error(f"Failed to force-stop app {self.package_name} with error: {str(e)}")
 
@@ -404,27 +369,28 @@ class Application(DeviceBased):
         cold app launch.
         NOTE: Currently appears to only work with Android 9.0 devices
         """
-        nav = DeviceNavigation(self.device)
-        nav.input("KEYCODE_HOME")
-        # Sleep for a second to allow for app to be backgrounded
-        # TODO: Get rid of sleep call as this is bad practice.
-        if not nav.home_screen_active():
-            time.sleep(1)
-        if not nav.home_screen_active():
-            raise Exception(f"Failed to background current foreground app. Cannot complete app closure.")
+        self._device_navigation.input("KEYCODE_HOME")
+        tries = 3
+        # poll a few times to ensure input is enacted
+        while tries and not self._device_navigation.home_screen_active():
+            tries -= 1
+            time.sleep(0.5)
         self.device.execute_remote_cmd("shell", "am", "kill", self.package_name)
         if self.pid is not None:
-            raise Exception(
-                f"Detected app process is still running, despite background command succeeding. App closure failed.")
+            if not self._device_navigation.home_screen_active():
+                raise Exception(f"Failed to background current foreground app. Cannot complete app closure.")
+            else:
+                raise Exception(f"Detected app process is still running. App closure failed.")
 
     def clear_data(self, regrant_permissions: bool = True) -> None:
         """
         clears app data for given package
         """
-        self.device.execute_remote_cmd("shell", "pm", "clear", self.package_name, capture_stdout=False)
-        self._granted_permissions = []
+        self.device.execute_remote_cmd("shell", "pm", "clear", self.package_name)
         if regrant_permissions:
             self.regrant_permissions()
+        else:
+            self._granted_permissions = set()
 
     def in_foreground(self, ignore_silent_apps: bool = True) -> bool:
         """
@@ -466,11 +432,9 @@ class ServiceApplication(Application):
         if intent:
             options = ("-a", intent) + options
         if foreground and self.device.api_level >= 26:
-            self.device.execute_remote_cmd("shell", "am", "start-foreground-service", "-n", activity, *options,
-                                           capture_stdout=False)
+            self.device.execute_remote_cmd("shell", "am", "start-foreground-service", "-n", activity, *options)
         else:
-            self.device.execute_remote_cmd("shell", "am", "startservice", "-n", activity, *options,
-                                           capture_stdout=False)
+            self.device.execute_remote_cmd("shell", "am", "startservice", "-n", activity, *options)
 
     def broadcast(self, activity: str,  # TODO: activity should be Optional, as it is in Application.
                   *options: str, action: Optional[str]) -> None:
@@ -488,7 +452,7 @@ class ServiceApplication(Application):
         options = tuple(f'"{item}"' for item in options)
         if action:
             options = ("-a", action) + options
-        self.device.execute_remote_cmd("shell", "am", "broadcast", "-n", activity, *options, capture_stdout=False)
+        self.device.execute_remote_cmd("shell", "am", "broadcast", "-n", activity, *options)
 
 
 class TestApplication(Application):
@@ -519,7 +483,7 @@ class TestApplication(Application):
                             "Are you sure this is a test app")
         self._runner: str = manifest.instrumentation.runner
         self._target_application = Application(device, manifest={'package_name': manifest.instrumentation.target_package})
-        self._permissions = manifest.permissions
+        self._permissions = set(manifest.permissions)
 
     @property
     def target_application(self) -> Application:
@@ -547,7 +511,7 @@ class TestApplication(Application):
                 items.append(runner)
         return items
 
-    async def run(self, *options: str) -> AsyncContextManager[Any]:
+    async def run(self, *options: str) -> AsyncContextManager[Device.Process]:
         """
         Run an instrumentation test package, yielding lines from std output
 
@@ -572,15 +536,12 @@ class TestApplication(Application):
         return await self.device.monitor_remote_cmd("shell", "am", "instrument", "-w", *options, "-r",
                                                     "/".join([self._package_name, self._runner]))
 
-    async def run_orchestrated(self, *options: str) -> AsyncContextManager[Any]:
+    async def run_orchestrated(self, *options: str) -> AsyncContextManager[Device.Process]:
         """
         Run an instrumentation test package via Google's test orchestrator that
 
         :param options: arguments to pass to instrument command
-        :param loop: event loop to execute under, or None for default event loop
-
         :returns: return coroutine wrapping an asyncio context manager for iterating over lines
-
         :raises Device.CommandExecutionFailureException with non-zero return code information on non-zero exit status
         """
         packages = self.device.list_installed_packages()
@@ -600,21 +561,23 @@ class TestApplication(Application):
             + "android.support.test.orchestrator/android.support.test.orchestrator.AndroidTestOrchestrator")
 
     @classmethod
-    async def from_apk_async(cls: Type[_TTestApp], apk_path: str, device: Device, as_upgrade: bool = False
-                             ) -> _TTestApp:
+    async def from_apk_async(cls: Type[_TTestApp], apk_path: str, device: Device, as_upgrade: bool = False,
+                             callback: Optional[Callable[[Device.Process], None]] = None) -> _TTestApp:
         """
         Install apk as a test application on the given device
 
         :param apk_path: path to test apk (containing a runner)
         :param device: device to install on
         :param as_upgrade: whether to install as upgrade or not
-
+        :param callback: if not None, callback to be made on successful push and at start of install; the
+           `Device.Process` that is installing from device storage is passed as the only parameter to the callback
         :return: `TestApplication` of installed apk
 
         >>> application = await Application.from_apk_async("local/path/to/apk", device)
         """
         parser = AXMLParser.parse(apk_path)
-        await cls._install_async(device, apk_path, as_upgrade, parser.package_name)
+        args = ["-t"] if not as_upgrade else ["-r", "-t"]
+        await cls._monitor_install(device, apk_path, *args, callback=callback)
         return cls(device, parser)
 
     @classmethod
@@ -625,11 +588,11 @@ class TestApplication(Application):
         :param apk_path: path to test apk (containing a runner)
         :param device: device to install on
         :param as_upgrade: whether to install as upgrade or not
-
         :return: `TestApplication` of installed apk
 
         >>> test_application = Application.from_apk("/local/path/to/apk", device, as_upgrade=True)
         """
         parser = AXMLParser.parse(apk_path)
-        cls._install_synchronous(device, apk_path, as_upgrade)
+        args = ["-t"] if not as_upgrade else ["-r", "-t"]
+        cls._install(device, apk_path, *args)
         return cls(device, parser)

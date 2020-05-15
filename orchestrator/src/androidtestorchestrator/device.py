@@ -100,7 +100,7 @@ class Device:
         def return_code(self) -> int:
             return self._return_code
 
-    class _Process:
+    class Process:
         """
         Provides a basic interface to an underlying asyncio.Subprocess, providing access to an async generator
         for iterating over lines of output asynchronously
@@ -108,7 +108,7 @@ class Device:
         def __init__(self, process: asyncio.subprocess.Process):
             self._proc = process
 
-        async def __aenter__(self) -> "Device._Process":
+        async def __aenter__(self) -> "Device.Process":
             return self
 
         async def __aexit__(self, exc_type: Optional[Type[BaseException]], exc_val: Optional[BaseException],
@@ -121,11 +121,19 @@ class Device:
                     with suppress(Exception):
                         await self.stop(force=True)
 
+        @property
+        def returncode(self) -> Optional[int]:
+            return self._proc.returncode
+
         async def _next_line(self,  unresponsive_timeout: Optional[float] = None):
             if unresponsive_timeout is not None:
                 return await asyncio.wait_for(self._proc.stdout.readline(), timeout=unresponsive_timeout)
             else:
                 return await self._proc.stdout.readline()
+
+        async def communicate(self):
+            stdout, _ = await self._proc.communicate()
+            return stdout
 
         async def output(self,  unresponsive_timeout: Optional[float] = None) -> AsyncIterator[str]:
             """
@@ -165,10 +173,7 @@ class Device:
             else:
                 await asyncio.wait_for(self._proc.wait(), timeout=timeout)
 
-        @property
-        def returncode(self) -> Optional[int]:
-            return self._proc.returncode
-
+    APP_RECORD_PATTERN = re.compile(r'^\* TaskRecord\{[a-f0-9-]* #\d* [AI]=([a-zA-Z].[a-zA-Z0-9.]*)[ /].*')
     ERROR_MSG_INSUFFICIENT_STORAGE = "INSTALL_FAILED_INSUFFICIENT_STORAGE"
     # These packages may appear as running when looking at the activities in a device's activity stack. The running
     # of these packages do not affect interaction with the app under test. With the exception of the Samsung
@@ -285,7 +290,8 @@ class Device:
             # retrieve the device's datetime so we can easily calculate the difference of the start time from
             # other times during the test.
             with suppress(Exception):
-                output = self.execute_remote_cmd("shell", "echo", "$EPOCHREALTIME", capture_stdout=True)
+                completed = self.execute_remote_cmd("shell", "echo", "$EPOCHREALTIME", stdout=subprocess.PIPE)
+                output: str = completed.stdout
                 for msg_ in output.splitlines():
                     if re.search(r"^\d+\.\d+$", msg_):
                         return datetime.datetime.fromtimestamp(float(msg_.strip()))
@@ -340,7 +346,8 @@ class Device:
         :return: location on remote device of external storage
         """
         if not self._ext_storage:
-            output = self.execute_remote_cmd("shell", "echo", "$EXTERNAL_STORAGE")
+            completed = self.execute_remote_cmd("shell", "echo", "$EXTERNAL_STORAGE", stdout=subprocess.PIPE)
+            output: str = completed.stdout
             for msg in output.splitlines():
                 if msg:
                     self._ext_storage = msg.strip()
@@ -388,24 +395,21 @@ class Device:
 
     def execute_remote_cmd(self, *args: str,
                            timeout: Optional[float] = None,
-                           capture_stdout: bool = True,
-                           stdout_redirect: Union[None, int, IO[AnyStr]] = subprocess.DEVNULL,
-                           fail_on_presence_of_stderr: bool = False,
-                           fail_on_error_code: Callable[[int], bool] = lambda x: x != 0) -> Optional[str]:
-        # TODO: remove capture_stdout argument and clean up this API
+                           stdout: Union[None, int, IO[AnyStr]] = subprocess.DEVNULL,
+                           stderr: Union[None, int, IO[AnyStr]] = subprocess.PIPE,
+                           fail_on_error_code: Callable[[int], bool] = lambda x: x != 0) \
+            -> subprocess.CompletedProcess:
         """
         Execute a command on this device (via adb)
 
         :param args: args to be executed (via adb command)
         :param timeout: raise asyncio.TimeoutError if command fails to execute in specified time (in seconds)
-        :param capture_stdout: whether to capture and return stdout output (otherwise return None)
-        :param stdout_redirect: where to redirect stdout, defaults to subprocess.DEVNULL
-        :param fail_on_presence_of_stderr: Some commands return code 0 and still fail, so must check stderr
-            (NOTE however that some commands like monkey return 0 and use stderr as though it was stdout :-( )
+        :param stdout: where to direct stdout, default to /dev/null if not specified
+        :param stderr: where to direct stderr, default to pipe to this application for processing if not specified
         :param fail_on_error_code: optional function that takes an error code and returns true if it represents an
             error, False otherwise
 
-        :return: None if no stdout output requested, otherwise a string containing the stdout output of the command
+        :return: tuple of stdout and stderr output, or None for any of those that were redirected elsewhere
 
         :raises: CommandExecutionFailure: if command fails to execute on remote device
         :raises: asyncio.TimeoutError if command fails to execute in time
@@ -414,16 +418,16 @@ class Device:
         log.debug(f"Executing remote command: {self._formulate_adb_cmd(*args)}")
         completed = subprocess.run(
             self._formulate_adb_cmd(*args), timeout=timeout, bufsize=0,
-            stderr=subprocess.PIPE,
-            stdout=subprocess.PIPE if capture_stdout and stdout_redirect == subprocess.DEVNULL else stdout_redirect,
+            stderr=stderr,
+            stdout=stdout,
             encoding='utf-8', errors='ignore'
         )
-        if fail_on_error_code(completed.returncode) or (fail_on_presence_of_stderr and completed.stderr):
+        if fail_on_error_code(completed.returncode):
+            stderr = completed.stderr.replace('\n', '\n\t')  # indent
             raise self.CommandExecutionFailure(
                 completed.returncode,
-                f"Failed to execute '{' '.join(args)}' on device {self.device_id} [{completed.stderr}]")
-        ret: Optional[str] = completed.stdout
-        return ret
+                f"Failed to execute '{' '.join(args)}' on device {self.device_id}\n\t{stderr}")
+        return completed
 
     def execute_remote_cmd_background(self, *args: str, stdout: Union[None, int, IO[AnyStr]] = subprocess.PIPE,
                                       **kwargs: Any) -> subprocess.Popen:  # noqa
@@ -474,7 +478,7 @@ class Device:
                                                                stderr=asyncio.subprocess.STDOUT,
                                                                loop=loop or asyncio.events.get_running_loop(),
                                                                bufsize=0)  # noqa
-        return self._Process(proc)
+        return self.Process(proc)
 
     ###################
     # Setting and getting device settings/properties
@@ -491,10 +495,11 @@ class Device:
         :return: value of the requested setting as string, or None if setting could not be found
         """
         try:
-            output = self.execute_remote_cmd("shell", "settings", "get", namespace, key)
-            if output.startswith("Invalid namespace"):  # some devices output a message with no error return code
+            completed = self.execute_remote_cmd("shell", "settings", "get", namespace, key, stdout=subprocess.PIPE)
+            stdout: str = completed.stdout
+            if stdout.startswith("Invalid namespace"):  # some devices output a message with no error return code
                 return None
-            return output.rstrip()
+            return stdout.rstrip()
         except Exception as e:
             if verbose:
                 log.error(f"Could not get setting for {namespace}:{key} [{str(e)}]")
@@ -516,7 +521,7 @@ class Device:
         previous_value = self.get_device_setting(namespace, key)
         if previous_value is not None or key in ["location_providers_allowed"]:
             try:
-                self.execute_remote_cmd("shell", "settings", "put", namespace, key, value, capture_stdout=False)
+                self.execute_remote_cmd("shell", "settings", "put", namespace, key, value)
             except Exception as e:
                 log.error(f"Failed to set device setting {namespace}:{key}. Ignoring error [{str(e)}]")
         else:
@@ -531,7 +536,8 @@ class Device:
         :return: the property from the device associated with the given key, or None if no such property exists
         """
         try:
-            output = self.execute_remote_cmd("shell", "getprop", key)
+            completed = self.execute_remote_cmd("shell", "getprop", key, stdout=subprocess.PIPE)
+            output: str = completed.stdout
             return output.rstrip()
         except Exception as e:
             if verbose:
@@ -548,7 +554,7 @@ class Device:
         :return: previous value, in case client wishes to restore at some point
         """
         previous_value = self.get_system_property(key)
-        self.execute_remote_cmd("shell", "setprop", key, value, capture_stdout=False)
+        self.execute_remote_cmd("shell", "setprop", key, value)
         return previous_value
 
     def get_device_properties(self) -> Dict[str, str]:
@@ -556,7 +562,8 @@ class Device:
         :return: full dict of properties
         """
         results: Dict[str, str] = {}
-        output = self.execute_remote_cmd("shell", "getprop", timeout=Device.TIMEOUT_ADB_CMD,)
+        completed = self.execute_remote_cmd("shell", "getprop", timeout=Device.TIMEOUT_ADB_CMD, stdout=subprocess.PIPE)
+        output: str = completed.stdout
         for line in output.splitlines():
             if ':' in line:
                 property_name, property_value = line.split(':', 1)
@@ -594,7 +601,8 @@ class Device:
         :return: current state of emulaor ("device", "offline", "non-existent", ...)
         """
         try:
-            state = self.execute_remote_cmd("get-state", capture_stdout=True, timeout=10).strip()
+            completed = self.execute_remote_cmd("get-state", timeout=10, stdout=subprocess.PIPE)
+            state: str = completed.stdout.strip()
             mapping = {"device": Device.State.ONLINE,
                        "offline": Device.State.OFFLINE}
             return mapping.get(state, Device.State.UNKNOWN)
@@ -611,7 +619,8 @@ class Device:
         """
         version = None
         try:
-            output = self.execute_remote_cmd("shell", "dumpsys", "package", package)
+            completed = self.execute_remote_cmd("shell", "dumpsys", "package", package, stdout=subprocess.PIPE)
+            output: str = completed.stdout
             for line in output.splitlines():
                 if line and "versionName" in line and '=' in line:
                     version = line.split('=')[1].strip()
@@ -627,7 +636,8 @@ class Device:
 
         :return: list of available items of given kind on the device
         """
-        output = self.execute_remote_cmd("shell", "pm", "list", kind)
+        completed = self.execute_remote_cmd("shell", "pm", "list", kind, stdout=subprocess.PIPE)
+        output: str = completed.stdout
         return output.splitlines()
 
     def list_installed_packages(self) -> List[str]:
@@ -661,8 +671,8 @@ class Device:
         if os.path.exists(local_screenshot_path):
             raise FileExistsError(f"cannot overwrite screenshot path {local_screenshot_path}")
         with open(local_screenshot_path, 'w+b') as f:
-            self.execute_remote_cmd("shell", "screencap", "-p", capture_stdout=False,
-                                    stdout_redirect=f.fileno(),
+            self.execute_remote_cmd("shell", "screencap", "-p",
+                                    stdout=f.fileno(),
                                     timeout=timeout or Device.TIMEOUT_SCREEN_CAPTURE)
 
     ####################
@@ -673,12 +683,9 @@ class Device:
         """
         :return: List of the app packages in the activities stack, with the first item being at the top of the stack
         """
-        stdout = self.execute_remote_cmd("shell", "dumpsys", "activity", "activities", capture_stdout=True)
-        # Find lines that look like this:
-        #  * TaskRecord{133fbae #1340 I=com.google.android.apps.nexuslauncher/.NexusLauncherActivity U=0 StackId=0 sz=1}
-        # or
-        #  * TaskRecord{94c8098 #1791 A=com.android.chrome U=0 StackId=454 sz=1}
-        app_record_pattern = re.compile(r'^\* TaskRecord\{[a-f0-9-]* #\d* [AI]=([a-zA-Z].[a-zA-Z0-9.]*)[ /].*')
+        completed = self.execute_remote_cmd("shell", "dumpsys", "activity", "activities", stdout=subprocess.PIPE)
+        stdout: str = completed.stdout
+        app_record_pattern = self.APP_RECORD_PATTERN
         for line in stdout.splitlines():
             matches = app_record_pattern.match(line.strip())
             app_package = matches.group(1) if matches else None
@@ -698,7 +705,9 @@ class Device:
         return self._activity_stack_top(filt=lambda x: x.lower() not in ignored)
 
     def get_activity_stack(self) -> List[str]:
-        output = self.execute_remote_cmd("shell", "dumpsys", "activity", "activities", timeout=10)
+        completed = self.execute_remote_cmd("shell", "dumpsys", "activity", "activities", timeout=10,
+                                            stdout=subprocess.PIPE)
+        output: str = completed.stdout
         activity_list = []
         # Find lines that look like this:
         #  * TaskRecord{133fbae #1340 I=com.google.android.apps.nexuslauncher/.NexusLauncherActivity U=0 StackId=0 sz=1}
@@ -797,7 +806,7 @@ class Device:
                 await asyncio.sleep(expiry)
                 self._timed_out = True
 
-            def reset(self) -> None:
+            def reset_lease(self) -> None:
                 """
                 Reset to no long have expiration.  Should only be called internally, and probably only by
                 the AndroidTestOrchestrator orchestrating test execution
@@ -909,12 +918,13 @@ class DeviceNetwork(DeviceBased):
             self.device.execute_remote_cmd("reverse", "--remove-all")
 
 
-class DeviceNavigation(DeviceBased):
+class DeviceInteraction(DeviceBased):
     """
     Provides API for navigating (going home, querying whether home screen is active, screen is on, ...)
 
     :param device: which device is associated with this instance
     """
+    APP_STACK_PATTERN = re.compile(r'^Stack #(\d*):')
 
     def go_home(self) -> None:
         """
@@ -930,15 +940,11 @@ class DeviceNavigation(DeviceBased):
         """
 
         found_potential_stack_match = False
-        stdout = self.device.execute_remote_cmd("shell", "dumpsys", "activity", "activities", capture_stdout=True,
-                                                timeout = Device.TIMEOUT_ADB_CMD)
-        # Find lines that look like this:
-        # Stack #0:
-        # or
-        # Stack #0: type=home mode=fullscreen
-        app_stack_pattern = re.compile(r'^Stack #(\d*):')
+        completed = self.device.execute_remote_cmd("shell", "dumpsys", "activity", "activities",
+                                                   timeout=Device.TIMEOUT_ADB_CMD, stdout=subprocess.PIPE)
+        stdout: str = completed.stdout
         for line in stdout.splitlines():
-            matches = app_stack_pattern.match(line.strip())
+            matches = self.APP_STACK_PATTERN.match(line.strip())
             if matches:
                 if matches.group(1) == "0":
                     return True
@@ -965,13 +971,15 @@ class DeviceNavigation(DeviceBased):
         :param subject: event to send
         :param source: source of event, or None to default to "keyevent"
         """
-        self.device.execute_remote_cmd("shell", "input", source or "keyevent", subject, capture_stdout=False)
+        self.device.execute_remote_cmd("shell", "input", source or "keyevent", subject)
 
     def is_screen_on(self) -> bool:
         """
         :return: whether device's screen is on
         """
-        lines = self.device.execute_remote_cmd("shell", "dumpsys", "activity", "activities", timeout=10).splitlines()
+        completed = self.device.execute_remote_cmd("shell", "dumpsys", "activity", "activities",
+                                                  timeout=10, stdout=subprocess.PIPE)
+        lines: List[str] = completed.stdout.splitlines()
         for msg in lines:
             if 'mInteractive=false' in msg or 'mScreenOn=false' in msg or 'isSleeping=true' in msg:
                 return False

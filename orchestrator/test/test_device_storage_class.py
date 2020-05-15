@@ -1,4 +1,5 @@
 import os
+import subprocess
 from contextlib import suppress
 
 import pytest
@@ -19,15 +20,19 @@ class TestDeviceStorage:
         with suppress(Exception):
             storage.remove(remote_location)
 
-        output = device.execute_remote_cmd("shell", "ls", device.external_storage_location, capture_stdout=True)
+        completed = device.execute_remote_cmd("shell", "ls", device.external_storage_location, stdout=subprocess.PIPE)
+        output: str = completed.stdout
         if os.path.basename(remote_location) in output:
             raise Exception("Error: did not expect file %s on remote device" % remote_location)
         storage.push(local_path=(os.path.abspath(__file__)), remote_path=remote_location)
-        output = device.execute_remote_cmd("shell", "ls", device.external_storage_location + "/", capture_stdout=True)
+        completed = device.execute_remote_cmd("shell", "ls", device.external_storage_location + "/",
+                                              stdout=subprocess.PIPE)
+        output: str = completed.stdout
         assert os.path.basename(remote_location) in output
 
         storage.remove(remote_location)
-        output = device.execute_remote_cmd("shell", "ls", device.external_storage_location, capture_stdout=True)
+        completed = device.execute_remote_cmd("shell", "ls", device.external_storage_location, stdout=subprocess.PIPE)
+        output: str = completed.stdout
         assert not os.path.basename(remote_location) in output
 
     @pytest.mark.asyncio
@@ -38,15 +43,18 @@ class TestDeviceStorage:
         with suppress(Exception):
             storage.remove(remote_location)
 
-        output = device.execute_remote_cmd("shell", "ls", device.external_storage_location, capture_stdout=True)
+        completed = device.execute_remote_cmd("shell", "ls", device.external_storage_location, stdout=subprocess.PIPE)
+        output: str = completed.stdout
         if os.path.basename(remote_location) in output:
             raise Exception("Error: did not expect file %s on remote device" % remote_location)
         await storage.push_async(local_path=(os.path.abspath(__file__)), remote_path=remote_location)
-        output = device.execute_remote_cmd("shell", "ls", device.external_storage_location + "/", capture_stdout=True)
+        completed = device.execute_remote_cmd("shell", "ls", device.external_storage_location + "/", stdout=subprocess.PIPE)
+        output: str = completed.stdout
         assert os.path.basename(remote_location) in output
 
         storage.remove(remote_location)
-        output = device.execute_remote_cmd("shell", "ls", device.external_storage_location, capture_stdout=True)
+        completed = device.execute_remote_cmd("shell", "ls", device.external_storage_location, stdout=subprocess.PIPE)
+        output: str = completed.stdout
         assert not os.path.basename(remote_location) in output
 
     def test_push_invalid_remote_path(self, device: Device):
@@ -96,12 +104,14 @@ class TestDeviceStorage:
             storage.remove(new_remote_dir, recursive=True)
 
         try:
-            output = device.execute_remote_cmd("shell", "ls", "-d", new_remote_dir, capture_stdout=True)
+            completed = device.execute_remote_cmd("shell", "ls", "-d", new_remote_dir, stdout=subprocess.PIPE)
+            output: str = completed.stdout
             # expect "no such directory" error leading to exception, but just in case:
             assert new_remote_dir not in output or "No such file" in output
         except Device.CommandExecutionFailure as e:
             assert "no such" in str(e).lower()
 
         storage.make_dir(new_remote_dir)
-        output = device.execute_remote_cmd("shell", "ls", "-d", new_remote_dir, capture_stdout=True)
+        completed = device.execute_remote_cmd("shell", "ls", "-d", new_remote_dir, stdout=subprocess.PIPE)
+        output: str = completed.stdout
         assert new_remote_dir in output

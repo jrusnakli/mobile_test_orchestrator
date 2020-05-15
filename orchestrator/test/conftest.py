@@ -17,7 +17,7 @@ from typing import Optional, Tuple, List
 from androidtestorchestrator.application import Application, TestApplication, ServiceApplication
 from androidtestorchestrator.device import Device, DeviceLock
 from androidtestorchestrator.emulators import EmulatorBundleConfiguration, Emulator
-from androidtestorchestrator.devicepool import AsyncEmulatorPool
+from androidtestorchestrator.devicepool import AsyncEmulatorPool, AsyncQueueAdapter
 from . import support
 from .support import uninstall_apk
 
@@ -40,7 +40,7 @@ else:
 ############
 
 
-class DeviceManager:
+class DeviceManager():
 
     AVD = "MTO_emulator"
     CONFIG = EmulatorBundleConfiguration(
@@ -57,87 +57,8 @@ class DeviceManager:
         "-partition-size", "1024"
     ]
 
-    _queue = multiprocessing.Queue()
     _process: multiprocessing.Process = None
     _reservation_gate = multiprocessing.Semaphore(1)
-
-    def serve(self, count: int, queue: multiprocessing.Queue):
-        """
-        Launch the given number of emulators and make available through the provided queue.
-        This method is started in a separate `multiprocessing.Process` so as not to block other activities.
-        emulators become avilable in the queue as soon as each one is booted.
-
-        :param count: Number of emulators to start
-        :param queue: queue to hold the emulators
-        """
-        support.ensure_avd(str(self.CONFIG.sdk), self.AVD)
-        if IS_CIRCLECI or TAG_MTO_DEVICE_ID in os.environ:
-            self.ARGS.append("-no-accel")
-
-        async def launch_one(index: int) -> Emulator:
-            """
-            Launch the nth (per index) emulator
-
-            :returns: the fully booted emulator
-            """
-            if index:
-                await asyncio.sleep(index*3)
-            return await Emulator.launch(Emulator.PORTS[index], self.AVD, self.CONFIG, *self.ARGS)
-
-        async def launch_emulators() -> None:
-            """
-            Launch the requested emulators, monitoring their boot status concurrently via asyncio
-            """
-            pending = [launch_one(index) for index in range(count)]
-            while pending:
-                completed, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
-                for task in completed:
-                    emulator = task.result()
-                    queue.put(emulator)
-
-        asyncio.get_event_loop().run_until_complete(asyncio.wait_for(launch_emulators(), timeout=5*60))
-
-    def __enter__(self):
-        assert DeviceManager._process is None, "DeviceManager is a singleton and should only be instantiated once"
-        # at the class level as they shouldn't have to be pickled since we want to use this
-        # object in a global multiprocess-safe fixture
-        DeviceManager._process = multiprocessing.Process(target=self.serve, args=(self.count(), self._queue))
-        DeviceManager._process.start()
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        try:
-            for _ in range(self.count()):
-                em = self._queue.get(timeout=1)
-                with suppress(Exception):
-                    em.kill()
-            DeviceManager._process.join(timeout=10)
-        except Exception:
-            print(">>> ERROR Stopping emulators.  Terminating process directly...")
-            DeviceManager._process.terminate()
-
-    @contextmanager
-    def reserve(self, count: int = 1):
-        """
-        Reserve the given number of emulators, relinqushing them on exit of context manager back to the queue
-
-        :param count: number of emulators to reserve
-        :return: List of reserved emulators
-        :raises: ValueError if the count is larger than the number of emulators available
-        """
-        # do not allow those reserving 1 to block those that first requested more than 1:
-        if count > self.count():
-            raise ValueError(f"Cannot resesrve more than the number of emulators launched ({count} > {self.count()}")
-        self._reservation_gate.acquire()
-        try:
-            devs = [self._queue.get(timeout=5 * 60) for _ in range(count)]
-        finally:
-            self._reservation_gate.release()
-        try:
-            yield devs
-        finally:
-            for dev in devs:
-                self._queue.put(dev)
 
     @staticmethod
     def count():
@@ -153,39 +74,39 @@ class DeviceManager:
         return count
 
 
-@pytest.fixture(scope='global')
-def device_manager():
-    with DeviceManager() as device_manager:
-        yield device_manager
+@pytest.fixture(scope='node')
+async def device_pool():
+    m = multiprocessing.Manager()
+    queue = AsyncQueueAdapter(q=m.Queue())
+    async with AsyncEmulatorPool.create(DeviceManager.count(),
+                                        DeviceManager.AVD,
+                                        DeviceManager.CONFIG,
+                                        *DeviceManager.ARGS,
+                                        external_queue=queue) as pool:
+        yield pool
 
 
 @pytest.fixture()
-async def devices(device_manager, event_loop):
+async def devices(device_pool: AsyncEmulatorPool, apps, event_loop):
     # convert queue to an async queue.  We specifially want to test with AsyncEmulatorPool,
     # so will not ust the AsynQueueAdapter class.
-    count = min(device_manager.count(), 2)
-    with device_manager.reserve(count) as devs:
-        async_q = asyncio.Queue(loop=event_loop)
+    count = min(DeviceManager.count(), 2)
+    async with device_pool.reserve_many(count) as devs:
         for dev in devs:
-            await async_q.put(dev)
-        yield AsyncEmulatorPool(async_q)
-
-
-@pytest.fixture
-def device_list(device_manager):
-    # return a list of at most 2 emulators (and only 1 if on a constrained system such as Circlci free)
-    count = min(device_manager.count(), 2)
-    with device_manager.reserve(count) as devs:
+            uninstall_apk(apps[0], dev)
+            uninstall_apk(apps[1], dev)
         yield devs
 
 
 @pytest.fixture()
-async def device(device_manager):
+async def device(device_pool: AsyncEmulatorPool, apps):
     """
     return a single reserved device
     """
-    with device_manager.reserve() as devs:
-        yield devs[0]
+    async with device_pool.reserve() as device:
+        uninstall_apk(apps[0], device)
+        uninstall_apk(apps[1], device)
+        yield device
 
 
 #################
@@ -289,28 +210,22 @@ async def android_test_app2(device2,
 
 
 @pytest.fixture()
-async def android_service_app(device,
-                        request,
-                        support_app: str,
-                        event_loop):
+async def android_service_app(device, support_app: str):
     # the support app is created to act as a service app as well
     uninstall_apk(support_app, device)
     service_app = ServiceApplication.from_apk(support_app, device)
-
-    def fin():
-        """
-        Leave the campground as clean as you found it:
-        """
+    try:
+        yield service_app
+    finally:
         service_app.uninstall()
 
-    request.addfinalizer(fin)
-    return service_app
 
-
-@pytest.fixture(scope='global')
+@pytest.fixture(scope='node')
 def apps():
     with AppManager() as app_manager:
-        yield app_manager.app(), app_manager.test_app()
+        app = app_manager.app()
+        test_app = app_manager.test_app()
+        yield app, test_app
 
 
 @pytest.fixture(scope='session')

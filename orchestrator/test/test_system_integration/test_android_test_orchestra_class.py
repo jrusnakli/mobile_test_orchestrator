@@ -82,7 +82,7 @@ class TestAndroidTestOrchestrator(object):
     @pytest_mproc.group("device_q")
     @pytest.mark.asyncio
     async def test_execute_test_suite(self,
-                                      devices: AsyncDevicePool,
+                                      device_pool: AsyncDevicePool,
                                       support_app: str,
                                       support_test_app: str,
                                       tmpdir):
@@ -143,13 +143,13 @@ class TestAndroidTestOrchestrator(object):
             orchestrator.add_test_listener(listener)
             await orchestrator.execute_test_plan(test_plan=test_generator(),
                                                  test_setup=test_setup,
-                                                 devices=devices)
+                                                 devices=device_pool)
         assert listener.test_count == 4
         assert set(listener.expected_test_class.keys()) == set(listener.test_suites)
 
     @pytest_mproc.group("device_q")
     @pytest.mark.asyncio
-    async def test_execute_test_suite_orchestrated(self, devices: AsyncDevicePool, support_app: str,
+    async def test_execute_test_suite_orchestrated(self, device_pool: AsyncDevicePool, support_app: str,
                                                    support_test_app: str, tmpdir):
         test_count = 0
         test_suite_count = 0
@@ -234,6 +234,6 @@ class TestAndroidTestOrchestrator(object):
             orchestrator.add_test_listener(TestExpectations())
             await orchestrator.execute_test_plan(test_plan=test_generator(),
                                                  test_setup=test_setup,
-                                                 devices=devices)
+                                                 devices=device_pool)
 
         assert test_count == 4

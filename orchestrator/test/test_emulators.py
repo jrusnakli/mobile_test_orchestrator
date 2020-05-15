@@ -109,11 +109,11 @@ class TestLeasedEmulator:
     @pytest.mark.asyncio
     async def test_lease(self, device: Emulator):
         os.environ["ANDRDOID_SDK_ROOT"] = find_sdk()
-        default_config = EmulatorBundleConfiguration()
+        default_config = EmulatorBundleConfiguration(sdk=Path(find_sdk()))
         leased_emulator = AsyncEmulatorPool.LeasedEmulator(device.port, config=default_config)
         await leased_emulator.set_timer(expiry=1)
         await asyncio.sleep(3)
         with pytest.raises(Device.LeaseExpired):
-            # access to any attribute should throw an exception
+            # access to any attribute should throw an exception (except device_id)
             leased_emulator.model
         assert leased_emulator.device_id == device.device_id  # device_id should be accessible always

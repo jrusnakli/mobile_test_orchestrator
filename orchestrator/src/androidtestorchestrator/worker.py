@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import subprocess
 from contextlib import suppress
 
 from typing import Any, AsyncIterator, List, Optional, Dict, Tuple, Iterator, Union, Coroutine

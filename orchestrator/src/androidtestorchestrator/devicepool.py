@@ -129,11 +129,25 @@ class AsyncDevicePool(BaseDevicePool):
         device = await self._q.get()
         try:
             yield device
-        except Device.LeaseExpired as e:
-            # remove any lease on the device before putting back in queue
-            e.device.reset()
         finally:
+            if hasattr(device, "reset_lease"):
+                device.reset_lease()
             await self._q.put(device)
+
+    @asynccontextmanager
+    async def reserve_many(self, count: int) -> AsyncGenerator[List[Device], None]:
+        """
+        :param count: how many to reserve
+        :return: a reserved Device
+        """
+        devices = [await self._q.get() for _ in range(count)]
+        try:
+            yield devices
+        finally:
+            for device in devices:
+                if hasattr(device, "reset_lease"):
+                    device.reset_lease()
+                await self._q.put(device)
 
     @staticmethod
     def from_external(queue: multiprocessing.Queue) -> "AsyncDevicePool":
@@ -227,6 +241,7 @@ class AsyncEmulatorPool(AsyncDevicePool):
     @classmethod
     @asynccontextmanager
     async def create(cls, count: int, avd: str, config: EmulatorBundleConfiguration, *args: str,
+                     external_queue: Optional[AbstractAsyncQueue] = None,
                      max_lease_time: Optional[int] = None,
                      wait_for_startup: Optional[int] = None) -> "AsyncEmulatorPool":
         """
@@ -234,18 +249,18 @@ class AsyncEmulatorPool(AsyncDevicePool):
         launching the emulators in the background
 
         :param count: how many emulators in queue
-        :param avd: name of avd to launch
         :param config: emulator bundle config
+        :param avd: avd to launch
         :param args: additional arguments to pass to the emulator launch command
+        :param external_queue: an external asyncio.Queue to use for queueing devices, or None to create internally
         :param max_lease_time: see constructor
         :param wait_for_startup: opiontal amount of time to wait emulators to be started before a TimeoutError is raised
-
         :return: new EmulatorQueue populated with requested emulators
         :raises: TimeoutError if *wait_for_startup* is specified and emulaors not started in time
         """
         if count > len(Emulator.PORTS):
             raise Exception(f"Can have at most {count} emulators at one time")
-        queue = Queue(count)
+        queue = external_queue or Queue(count)
         emulators: List[Emulator] = []
         emulator_q = cls(queue, max_lease_time=max_lease_time)
 

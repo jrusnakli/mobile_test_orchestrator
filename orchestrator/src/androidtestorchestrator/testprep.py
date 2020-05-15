@@ -239,7 +239,6 @@ class EspressoTestSetup(DeviceSetup):
                 grant_all_user_permissions=self._grant_all_user_permissions
             )
 
-
     @asynccontextmanager
     async def apply(self, device: Device) -> AsyncGenerator[TestApplication, None]:
         installed: List[Application] = []
@@ -262,7 +261,6 @@ class EspressoTestSetup(DeviceSetup):
                     with suppress(Exception):
                         for remote_location in data_files_paths[device]:
                             storage.remove(remote_location)
-
             for app in installed:
                 try:
                     app.uninstall()

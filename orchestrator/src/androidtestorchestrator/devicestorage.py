@@ -47,7 +47,7 @@ class DeviceStorage(DeviceBased):
         # a permission-denied response even when using "run-as"
         if not os.path.isfile(local_path):
             raise FileNotFoundError("No such file found: %s" % local_path)
-        self.device.execute_remote_cmd('push', local_path, remote_path, capture_stdout=False)
+        self.device.execute_remote_cmd('push', local_path, remote_path)
 
     async def push_async(self, local_path: str, remote_path: str, timeout: Optional[int] = None) -> None:
         """
@@ -78,7 +78,7 @@ class DeviceStorage(DeviceBased):
             log.warning("File %s already exists when pulling. Potential to overwrite files.", local_path)
         if run_as:
             with open(local_path, 'w') as out:
-                self.device.execute_remote_cmd('shell', 'run-as', run_as, 'cat', remote_path, stdout_redirect=out)
+                self.device.execute_remote_cmd('shell', 'run-as', run_as, 'cat', remote_path, stdout=out)
         else:
             self.device.execute_remote_cmd('pull', remote_path, local_path)
 
@@ -108,9 +108,9 @@ class DeviceStorage(DeviceBased):
         :raises `Device.CommandExecutionFailure`: on failure to create directory
         """
         if run_as:
-            self.device.execute_remote_cmd("shell", "run-as", run_as, "mkdir", "-p", path, capture_stdout=False)
+            self.device.execute_remote_cmd("shell", "run-as", run_as, "mkdir", "-p", path)
         else:
-            self.device.execute_remote_cmd("shell", "mkdir", "-p", path, capture_stdout=False)
+            self.device.execute_remote_cmd("shell", "mkdir", "-p", path)
 
     def remove(self, path: str, recursive: bool = False, run_as: Optional[str] = None) -> None:
         """
@@ -122,11 +122,8 @@ class DeviceStorage(DeviceBased):
         :param run_as: user to run command under on remote device, or None
         :raises `Device.CommandExecutionFailure`: on failure to remove specified path
         """
-        if run_as:
-            cmd = ["shell", "run-as", run_as, "rm"]
-        else:
-            cmd = ["shell", "rm"]
+        cmd = ["shell", "run-as", run_as, "rm"] if run_as else ["shell", "rm"]
         if recursive:
             cmd.append("-r")
         cmd.append(path)
-        self.device.execute_remote_cmd(*cmd, capture_stdout=False)
+        self.device.execute_remote_cmd(*cmd)
