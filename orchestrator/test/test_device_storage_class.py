@@ -64,34 +64,34 @@ class TestDeviceStorage:
             storage.push(local_path=(os.path.abspath(__file__)),
                          remote_path=remote_location)
 
-    def test_pull(self, device: Device, temp_dir):
+    def test_pull(self, device: Device, mp_tmp_dir):
         storage = DeviceStorage(device)
-        local_path = os.path.join(temp_dir, "somefile")
+        local_path = os.path.join(mp_tmp_dir, "somefile")
         remote_path = "/".join([storage.external_storage_location, "touchedfile"])
         device.execute_remote_cmd("shell", "touch", remote_path)
         storage.pull(remote_path=remote_path, local_path=local_path)
         assert os.path.exists(local_path)
 
     @pytest.mark.asyncio
-    async def test_pull_async(self, device: Device, temp_dir):
+    async def test_pull_async(self, device: Device, mp_tmp_dir):
         storage = DeviceStorage(device)
-        local_path = os.path.join(temp_dir, "somefile")
+        local_path = os.path.join(mp_tmp_dir, "somefile")
         remote_path = "/".join([storage.external_storage_location, "touchedfile"])
         device.execute_remote_cmd("shell", "touch", remote_path)
         await storage.pull_async(remote_path=remote_path, local_path=local_path)
         assert os.path.exists(local_path)
 
-    def test_pull_invalid_remote_path(self, device: Device, temp_dir):
+    def test_pull_invalid_remote_path(self, device: Device, mp_tmp_dir):
         storage = DeviceStorage(device)
-        local = os.path.join(str(temp_dir), "nosuchfile")
+        local = os.path.join(str(mp_tmp_dir), "nosuchfile")
         with pytest.raises(Exception):
             storage.pull(remote_path="/no/such/file", local_path=local)
         assert not os.path.exists(local)
 
     @pytest.mark.asyncio
-    async def test_pull_invalid_remote_path_async(self, device: Device, temp_dir):
+    async def test_pull_invalid_remote_path_async(self, device: Device, mp_tmp_dir):
         storage = DeviceStorage(device)
-        local = os.path.join(str(temp_dir), "nosuchfile")
+        local = os.path.join(str(mp_tmp_dir), "nosuchfile")
         with pytest.raises(Exception):
             await storage.pull_async(remote_path="/no/such/file", local_path=local)
         assert not os.path.exists(local)

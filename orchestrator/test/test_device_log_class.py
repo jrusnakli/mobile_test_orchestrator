@@ -79,9 +79,9 @@ class TestDeviceLog:
             assert "new_line" in line
             assert line not in output_before
 
-    def test_invalid_output_path(self, fake_sdk, temp_dir):
+    def test_invalid_output_path(self, fake_sdk, mp_tmp_dir):
         device = Device("fakeid", os.path.join(fake_sdk, "platform-tools", "adb"))
-        tmpfile = os.path.join(str(temp_dir), "somefile")
+        tmpfile = os.path.join(str(mp_tmp_dir), "somefile")
         with open(tmpfile, 'w'):
             pass
         with pytest.raises(Exception) as exc_info:
@@ -89,5 +89,5 @@ class TestDeviceLog:
         assert "Path %s already exists; will not overwrite" % tmpfile in str(exc_info.value)
 
         with pytest.raises(Exception):
-            logcap = DeviceLog.LogCapture(device, os.path.join(temp_dir, "newfile"))
+            logcap = DeviceLog.LogCapture(device, os.path.join(mp_tmp_dir, "newfile"))
             logcap.mark_end("proc_not_started_so_throw_exception")

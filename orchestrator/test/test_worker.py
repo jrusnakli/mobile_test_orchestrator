@@ -49,7 +49,7 @@ class TestWorker:
             assert test_run_name in self.expected_test_class.keys()
 
     @pytest.mark.asyncio
-    async def test_run(self, device, support_app, support_test_app, temp_dir):
+    async def test_run(self, device, support_app, support_test_app, mp_tmp_dir):
         tests = {
             'test_suite1': "com.linkedin.mtotestapp.InstrumentedTestAllSuccess",
             'test_suite2': "com.linkedin.mtotestapp.InstrumentedTestAllSuccess",
@@ -59,7 +59,7 @@ class TestWorker:
         expectations = self.Expectations(tests)
         test_setup = EspressoTestSetup.Builder(path_to_apk=support_app,
                                                path_to_test_apk=support_test_app).resolve()
-        worker = Worker(device, iter(test_suites), test_setup, artifact_dir=temp_dir, listeners=[expectations])
+        worker = Worker(device, iter(test_suites), test_setup, artifact_dir=mp_tmp_dir, listeners=[expectations])
         completion_called = False
 
         async def done():

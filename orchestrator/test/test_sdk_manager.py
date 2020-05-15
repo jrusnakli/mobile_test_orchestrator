@@ -4,7 +4,6 @@ from androidtestorchestrator.tooling.sdkmanager import SdkManager
 import pytest
 
 
-@pytest.mark.skipif(True, reason="temp disable")
 class TestSdkManager:
 
     def test_emulator_path(self, mp_tmp_dir: Path):
@@ -20,7 +19,11 @@ class TestSdkManager:
         sdk_manager.bootstrap("platform-tools")
         assert sdk_manager.adb_path.exists()
 
-    def test_bootstrap_platform_tools(self, mp_tmp_dir):
+    def test_bootstrap_platform_tools(self, mp_tmp_dir, monkeypatch):
+        def mock_bootstrap(self, target: str):
+            assert target == "platform-tools"
+
+        monkeypatch.setattr("androidtestorchestrator.tooling.sdkmanager.SdkManager.bootstrap", mock_bootstrap)
         sdk_manager = SdkManager(sdk_dir=mp_tmp_dir)
         sdk_manager.bootstrap_platform_tools()
 

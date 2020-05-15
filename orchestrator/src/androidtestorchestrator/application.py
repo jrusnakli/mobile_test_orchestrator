@@ -116,7 +116,6 @@ class Application(DeviceBased):
         :raises Device.InsufficientStorageError: if there is not enough space on device
         :raises IOError if push of apk to device was unsuccessful
         """
-        print(f"{device.device_id} ???????????????? MONITORING INSTALL.... {apk_path}")
         parser = AXMLParser.parse(apk_path)
         package = parser.package_name
         remote_data_path = f"/data/local/tmp/{package}"
@@ -241,7 +240,6 @@ class Application(DeviceBased):
         """
         Uninstall this app from remote device.
         """
-        print(f"{self.device.device_id} ?????????? UNINSTALLING {self.package_name}")
         self.stop()
         try:
             self.device.execute_remote_cmd("uninstall", self.package_name)

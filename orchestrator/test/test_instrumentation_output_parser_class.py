@@ -3,8 +3,6 @@ from typing import Optional, Any
 
 import pytest
 
-from androidtestorchestrator.device import Device
-from androidtestorchestrator.devicelog import DeviceLog
 from androidtestorchestrator.parsing import InstrumentationOutputParser
 from androidtestorchestrator.reporting import TestExecutionListener
 
