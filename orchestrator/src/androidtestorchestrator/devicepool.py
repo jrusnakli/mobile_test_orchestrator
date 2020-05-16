@@ -64,7 +64,7 @@ class AsyncQueueAdapter(AbstractAsyncQueue[It]):
                 await asyncio.sleep(self._polling_interval)
 
 
-AsyncQ = TypeVar('AsyncQ', AbstractAsyncQueue[Any], asyncio.Queue[Any])
+AsyncQ = TypeVar('AsyncQ', AbstractAsyncQueue[Any], asyncio.Queue)  # type: ignore
 
 
 class BaseDevicePool(ABC):
@@ -152,7 +152,7 @@ class AsyncDevicePool(BaseDevicePool):
                 await self._q.put(device)  # type: ignore
 
     @staticmethod
-    def from_external(queue: multiprocessing.Queue["Device"]) -> "AsyncDevicePool":
+    def from_external(queue: multiprocessing.Queue) -> "AsyncDevicePool":  # type: ignore
         """
         Return an AsyncDeviceQueue instance from the given multiprocessing Queue (i.e., with devices provided
         from an external process, which must be running on the same host)
@@ -185,7 +185,7 @@ class AsyncEmulatorPool(AsyncDevicePool):
 
     MAX_BOOT_RETRIES = 2
 
-    def __init__(self, queue: Queue[Emulator], max_lease_time: Optional[int] = None):
+    def __init__(self, queue: Queue, max_lease_time: Optional[int] = None):  # type: ignore
         super().__init__(queue)
         self._max_lease_time = max_lease_time
 
