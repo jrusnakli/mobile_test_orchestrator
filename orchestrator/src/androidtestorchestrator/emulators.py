@@ -180,6 +180,9 @@ class Emulator(Device):
                     await asyncio.sleep(1)
                     duration = time.time() - start
                     print(f">>> [{duration}]  {device.device_id} Booted?: {booted}")
+                    if proc.poll() is not None:
+                        stdout, _ = proc.communicate()
+                        raise Emulator.FailedBootError(port, stdout.decode('utf-8'))
 
             await asyncio.wait_for(wait_for_boot(), config.boot_timeout)
             return cls(port, config=config, launch_cmd=cmd, env=environ)
