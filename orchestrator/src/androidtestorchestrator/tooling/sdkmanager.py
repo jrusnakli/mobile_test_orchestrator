@@ -14,7 +14,6 @@ import androidtestorchestrator
 from importlib_resources import files  # type: ignore
 
 
-@pytest.skipif(CIRCLECI)
 class SdkManager:
 
     PROTOCOL_PREFIX = "sdkmanager"

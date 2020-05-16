@@ -230,9 +230,13 @@ class AndroidTestOrchestrator:
         """
         have_tests_to_process = True
         # see comment on acquire() below
-        sem = asyncio.Semaphore(0)
+        start_gate = asyncio.Semaphore(0)
 
         async def worker_completion() -> None:
+            """
+            Callback when worker has nothing more to do
+            (when first worker has nothing more to do, this means there are no more tests in the queue)
+            """
             nonlocal have_tests_to_process
             have_tests_to_process = False
 
@@ -250,7 +254,7 @@ class AndroidTestOrchestrator:
                             # this synchronizes reservation of device with outer loop to prevent it from spinning
                             # its wheels.  This task blocks if until a device is available and the sem therefore
                             # blocks the outer loop on the same condition
-                            sem.release()
+                            start_gate.release()
                             released = True
                             if not have_tests_to_process:
                                 return
@@ -265,7 +269,7 @@ class AndroidTestOrchestrator:
                         raise
                     finally:
                         if not released:
-                            sem.release()
+                            start_gate.release()
 
                 if have_tests_to_process:
                     task = asyncio.create_task(do_work())
@@ -274,7 +278,7 @@ class AndroidTestOrchestrator:
                     # be reserved.  This is a little quirky, but it also allows the provision of having a simpler
                     # and safer API on the AsyncDevicePool that ensures reserved devices are always relinquished
                     # upon completion
-                    await sem.acquire()
+                    await start_gate.acquire()
             results, pending = await asyncio.wait(worker_tasks, return_when=asyncio.FIRST_EXCEPTION)
             for task in pending:  # type: ignore
                 task.cancel()
@@ -292,7 +296,6 @@ class AndroidTestOrchestrator:
         :param test_setup: test configuration used to prep device for test execution
         :param devices: DeviceQueue to pull devices from for test execution
         :param test_suite: `TestSuite` to execute on remote device
-
         :raises asyncio.TimeoutError if test or test suite times out
         """
         await self.execute_test_plan(test_setup,
