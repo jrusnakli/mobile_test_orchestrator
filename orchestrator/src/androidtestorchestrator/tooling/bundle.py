@@ -4,12 +4,12 @@ import shutil
 import sys
 import tempfile
 from pathlib import Path
-from typing import Union, List, Tuple, Optional
+from typing import Union, List, Tuple, Optional, Any
 
-import shiv.builder
-import shiv.constants
+import shiv.builder  # type: ignore
+import shiv.constants  # type: ignore
 from shiv import pip
-from shiv.bootstrap.environment import Environment
+from shiv.bootstrap.environment import Environment  # type: ignore
 
 _root = os.path.dirname(__file__)
 
@@ -17,13 +17,13 @@ _root = os.path.dirname(__file__)
 class Bundle:
 
     def __init__(self, shiv_path: Union[Path, str]):
-        self._sources = []
+        self._sources: List[Path] = []
         if os.path.exists(shiv_path):
             raise FileExistsError(f"File {shiv_path} already exists")
-        self._shiv_path = shiv_path
-        self._tmpdir: Optional[tempfile.TemporaryDirectory] = None
+        self._shiv_path = shiv_path if isinstance(shiv_path, Path) else Path(shiv_path)
+        self._tmpdir: Optional[tempfile.TemporaryDirectory] = None  # type: ignore
 
-    def __enter__(self):
+    def __enter__(self) -> "Bundle":
         self._tmpdir = tempfile.TemporaryDirectory()
         self._site_pkgs = tempfile.TemporaryDirectory()
         self._site_pkgs.__enter__()
@@ -31,7 +31,7 @@ class Bundle:
         self._sources.append(Path(self._site_pkgs.name))
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         try:
             if exc_type is None:
                 env = Environment(built_at=datetime.datetime.strftime(datetime.datetime.utcnow(),
@@ -45,10 +45,11 @@ class Bundle:
                                             interpreter=sys.executable)
         finally:
             self._site_pkgs.__exit__(exc_type, exc_val, exc_tb)
-            self._tmpdir.__exit__(exc_type, exc_val, exc_tb)
+            if self._tmpdir is not None:
+                self._tmpdir.__exit__(exc_type, exc_val, exc_tb)
 
     @property
-    def shiv_path(self):
+    def shiv_path(self) -> Path:
         return self._shiv_path
 
     def add_file(self, path: Union[Path, str], relative_path: Union[Path, str]) -> None:

@@ -89,4 +89,3 @@ class Timer(StopWatch):
         self._future = asyncio.get_running_loop().create_future()
         # in principle, a loop is already running, so just add another task to process:
         self._task = asyncio.create_task(timer())
-

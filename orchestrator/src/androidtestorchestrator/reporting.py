@@ -40,7 +40,7 @@ class TestSuite:
     "whether to clean user data and re-grant permissions before executing this test"
 
 
-class TestExecutionListener:
+class TestExecutionListener(ABC):
     """
     Abstraction for reporting test status (coming from InstrumentationOutputParser)
 

@@ -3,8 +3,8 @@ import logging
 from contextlib import suppress, asynccontextmanager
 from dataclasses import dataclass, field
 
-from typing import Dict, List, Optional, Tuple, AsyncContextManager, AsyncGenerator, FrozenSet
-from androidtestorchestrator.device import Device
+from typing import Dict, List, Optional, Tuple, AsyncContextManager, AsyncGenerator, FrozenSet, AsyncIterator, Any
+from androidtestorchestrator.device import Device, DeviceNetwork
 from androidtestorchestrator.devicestorage import DeviceStorage
 from androidtestorchestrator.application import Application, TestApplication
 
@@ -37,7 +37,7 @@ class DeviceSetup:
         """
         Convenience class used to build a DevicePreparation instance
         """
-        def __init__(self):
+        def __init__(self) -> "Device.Builder":  # type: ignore
             self._reverse_forwarded_ports: Dict[int, int] = {}
             self._forwarded_ports: Dict[int, int] = {}
             self._requested_settings: Dict[str, str] = {}
@@ -54,8 +54,8 @@ class DeviceSetup:
             :param properties: Android property setting of key (in form of namespace:key) and value pairs
             :return: this instance
             """
-            self._requested_settings = settings
-            self._requested_properties = properties
+            self._requested_settings = settings or {}
+            self._requested_properties = properties or {}
             return self
 
         def verify_network_connection(self, domain: str, count: int = 10,
@@ -96,7 +96,7 @@ class DeviceSetup:
             self._forwarded_ports[device_port] = local_port
             return self
 
-        def resolve(self)-> "DeviceSetup":
+        def resolve(self) -> "DeviceSetup":
             """
             resolve this Builder into a (frozen) DevicePreparation instance
             :return: (frozen) DevicePreparation instance
@@ -108,16 +108,16 @@ class DeviceSetup:
                                verify_network_domains=frozenset(self._verify_network_domains))
 
     @asynccontextmanager
-    async def apply(self, device: Device) -> AsyncContextManager["DeviceSetup"]:
+    async def apply(self, device: Device) -> Any:
         """
         Apply requested settings/configuration to the given device
         :param device: device to apply chnages to
         """
         restoration_settings: Dict[Tuple[str, str], Optional[str]] = {}
         restoration_properties: Dict[str, Optional[str]] = {}
-
+        dev_connectivity = DeviceNetwork(device)
         for domain, count, acceptable_loss in self.verify_network_domains:
-            lost_packets = await device.check_network_connection(domain, count)
+            lost_packets = await dev_connectivity.check_network_connection(domain, count)
             if lost_packets > acceptable_loss:
                 raise IOError(f"Connection to {domain} for device {device.device_id} failed")
         if self.requested_settings:
@@ -130,17 +130,16 @@ class DeviceSetup:
                 result = device.set_system_property(property_, value)
                 restoration_properties[property_] = result
         for device_port, local_port in self.reverse_forwarded_ports:
-            device.reverse_port_forward(device_port=device_port, local_port=local_port)
+            dev_connectivity.reverse_port_forward(device_port=device_port, local_port=local_port)
         for device_port, local_port in self.forwarded_ports:
-            device.port_forward(local_port=local_port, device_port=device_port)
+            dev_connectivity.port_forward(local_port=local_port, device_port=device_port)
 
         yield self
 
         #####
         # cleanup/restoration:
         #####
-
-        for (ns, key), setting in restoration_settings.items():
+        for (ns, key), setting in restoration_settings.items():  # type: ignore
             with suppress(Exception):
                 device.set_device_setting(ns, key, setting or '\"\"')
         for prop in restoration_properties:
@@ -148,13 +147,13 @@ class DeviceSetup:
                 device.set_system_property(prop, restoration_properties[prop] or '\"\"')
         for device_port, _ in self.reverse_forwarded_ports:
             try:
-                device.remove_reverse_port_forward(device_port)
+                dev_connectivity.remove_reverse_port_forward(device_port)
             except Exception as e:
                 log.error(f"Failed to remove reverse port forwarding for device {device.device_id}" +
                           f"on port {device_port}: {str(e)}")
         for device_port, _ in self.forwarded_ports:
             try:
-                device.remove_port_forward(device_port)
+                dev_connectivity.remove_port_forward(device_port)
             except Exception as e:
                 log.error(f"Failed to remove port forwarding for device {device.device_id}:"
                           + f"on port {device_port}: {str(e)}")
@@ -240,7 +239,7 @@ class EspressoTestSetup(DeviceSetup):
             )
 
     @asynccontextmanager
-    async def apply(self, device: Device) -> AsyncGenerator[TestApplication, None]:
+    async def apply(self, device: Device) -> AsyncIterator[TestApplication]:
         installed: List[Application] = []
         data_files_paths: Dict[Device, List[str]] = {}
         try:
@@ -249,14 +248,14 @@ class EspressoTestSetup(DeviceSetup):
 
             async with super().apply(device):
                 installed = await self._install_all(device)
-                yield installed[0]  # = test_app
+                yield installed[0]  # type: ignore
         except Exception as e:
             log.exception(e)
             raise
         finally:
             # cleanup:
             if data_files_paths:
-                for device, data_files_paths in data_files_paths.items():
+                for device in data_files_paths:
                     storage = DeviceStorage(device)
                     with suppress(Exception):
                         for remote_location in data_files_paths[device]:
@@ -284,7 +283,7 @@ class EspressoTestSetup(DeviceSetup):
                 data_files_paths.append(remote_location)
         return data_files_paths
 
-    async def _install_all(self, dev: Device):
+    async def _install_all(self, dev: Device) -> List[Application]:
         installed: List[Application] = []
         foreign_apps: List[Application] = []
         try:

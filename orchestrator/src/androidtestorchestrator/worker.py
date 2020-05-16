@@ -1,8 +1,8 @@
 import asyncio
 import logging
 import os
-import subprocess
 from contextlib import suppress
+from dataclasses import dataclass, field
 
 from typing import Any, AsyncIterator, List, Optional, Dict, Tuple, Iterator, Union, Coroutine
 
@@ -21,7 +21,26 @@ log = logging.getLogger(__name__)
 log.setLevel(logging.INFO)
 
 
-async def _async_iter_adapter(iter: Iterator):
+@dataclass(frozen=True)
+class TestSuite:
+    """
+    A dataclass representing a test suite that defines the attributes:
+    """
+
+    "unique name of test suite"
+    name: str
+    """
+    arguments to be passed to the am instrument command, run as
+        "am instrument -w -r [-e key value for key,value in arguments] <package>/<runner> ..."
+    """
+    test_parameters: Dict[str, str]
+    "optional list of tuples of (loacl_path, remote_path) of test vector files to be uploaded to remote device"
+    uploadables: List[Tuple[str, str]] = field(default_factory=list)
+    "optional list of tuples of (loacl_path, remote_path) of test vector files to be uploaded to remote device"
+    clean_data_on_start: bool = False
+
+
+async def _async_iter_adapter(iter: Iterator[TestSuite]) -> AsyncIterator[TestSuite]:
     for item in iter:
         yield item
         await asyncio.sleep(0)
@@ -31,8 +50,8 @@ class Worker:
 
     def __init__(self,
                  device: Device,
-                 tests: Union[AsyncIterator["androidtestorchestrator.main.TestSuite"],
-                              Iterator["androidtestorchestrator.main.TestSuite"]],
+                 tests: Union[AsyncIterator[TestSuite],
+                              Iterator[TestSuite]],
                  test_setup: EspressoTestSetup,
                  artifact_dir: str,
                  listeners: List[TestExecutionListener]):
@@ -75,7 +94,8 @@ class Worker:
         except Exception as e:
             log.error("Exception on logcat processing, aborting: \n%s" % str(e))
 
-    async def _loop_over_tests(self, test_app: TestApplication, under_orchestration: bool, test_timeout: Optional[int]):
+    async def _loop_over_tests(self, test_app: TestApplication, under_orchestration: bool, test_timeout: Optional[float])\
+            -> None:
         log.info("Running tests...")
         device_storage = DeviceStorage(self._device)
         async for test_run in self._tests:
@@ -84,15 +104,16 @@ class Worker:
             # which is the source of test status from the device:
             with InstrumentationOutputParser(test_run.name) as instrumentation_parser:
                 instrumentation_parser.add_execution_listeners(self._run_listeners)
-                # add timer that times timeout if any INDIVIDUAL test takes too long
-                instrumentation_parser.add_simple_test_listener(Timer(test_timeout))
+                if test_timeout is not None:
+                    # add timer that times timeout if any INDIVIDUAL test takes too long
+                    instrumentation_parser.add_simple_test_listener(Timer(test_timeout))
 
                 try:
                     # push test vectors, if any, to device
                     for local_path, remote_path in test_run.uploadables:
                         device_storage.push(local_path=local_path, remote_path=remote_path)
                     # run tests on the device, and parse output
-                    test_args = []
+                    test_args: List[str] = []
                     for key, value in test_run.test_parameters.items():
                         test_args += ["-e", key, value]
                     if under_orchestration:
@@ -119,7 +140,7 @@ class Worker:
                         try:
                             self._signal_listeners("test_suite_failed", test_run.name, failure_msg)
                         except Exception:
-                            log.exception("Exception raised in client test status handler 'test_suite_failed'!" 
+                            log.exception("Exception raised in client test status handler 'test_suite_failed'!"
                                           "Ignoring and moving on")
                     try:
                         self._signal_listeners("test_suite_ended", test_run.name,
@@ -143,7 +164,7 @@ class Worker:
             method(*args, **kargs)
 
     async def run(self,
-                  completion_callback: Coroutine[None, None, None],
+                  completion_callback: Optional[Coroutine[None, None, None]],
                   under_orchestration: bool = False,
                   test_timeout: Optional[int] = None,
                   monitor_tags: Optional[Dict[str, Tuple[str, LineParser]]] = None) -> None:
@@ -151,7 +172,8 @@ class Worker:
         Worker coroutine where test execution against a given test application (on a single device) happens
         :param completion_callback: corouting that is awaited on upon completion, or None
         :param under_orchestration: whether to run under orchestration or not
-        :param test_timeout: raises TimeoutError after this many seconds if not None and test exceution has not completed
+        :param test_timeout: raises TimeoutError after this many seconds if not None and test exceution has not
+           completed
         :param monitor_tags: tags mapped to listeners to be monitored in logcat for processing
 
         :raises asyncio.TimeoutError if execution does not complete in time
@@ -177,7 +199,8 @@ class Worker:
             if logcat_task:
                 if logcat_task.exception():
                     log.error(f"Exception found in task processing logcat tags/commands: {logcat_task.exception()}")
-            try:
-                await completion_callback
-            except Exception:
-                log.exception("Error in completion callback on worker task")
+            if completion_callback:
+                try:
+                    await completion_callback
+                except Exception:
+                    log.exception("Error in completion callback on worker task")

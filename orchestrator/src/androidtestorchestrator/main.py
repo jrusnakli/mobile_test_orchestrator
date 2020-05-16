@@ -3,12 +3,11 @@ import sys
 
 import logging
 import os
-from dataclasses import dataclass, field
 from types import TracebackType
-from typing import AsyncIterator, Dict, Iterator, List, Optional, Tuple, Type, Union, Coroutine
+from typing import AsyncIterator, Dict, Iterator, List, Optional, Tuple, Type, Union, Coroutine, Any
 
+from androidtestorchestrator.worker import TestSuite
 from .testprep import EspressoTestSetup
-from .application import TestApplication
 from .device import Device
 from androidtestorchestrator.devicepool import AsyncDevicePool
 from .parsing import LineParser
@@ -21,25 +20,6 @@ log = logging.getLogger(__name__)
 if sys.platform == 'win32':
     loop = asyncio.ProactorEventLoop()
     asyncio.set_event_loop(loop)
-
-
-@dataclass(frozen=True)
-class TestSuite:
-    """
-    A dataclass representing a test suite that defines the attributes:
-    """
-
-    "unique name of test suite"
-    name: str
-    """
-    arguments to be passed to the am instrument command, run as
-        "am instrument -w -r [-e key value for key,value in arguments] <package>/<runner> ..."
-    """
-    test_parameters: Dict[str, str]
-    "optional list of tuples of (loacl_path, remote_path) of test vector files to be uploaded to remote device"
-    uploadables: List[Tuple[str, str]] = field(default_factory=list)
-    "optional list of tuples of (loacl_path, remote_path) of test vector files to be uploaded to remote device"
-    clean_data_on_start: bool = False
 
 
 class AndroidTestOrchestrator:
@@ -147,7 +127,7 @@ class AndroidTestOrchestrator:
         self._artifact_dir = artifact_dir
         self._max_device_count = max_device_count
         self._instrumentation_timeout = max_test_suite_time
-        self._test_timeout = max_test_time
+        self._test_timeout = int(max_test_time) if max_test_time is not None else max_test_time
         self._timer = None
         self._tag_monitors: Dict[str, Tuple[str, LineParser]] = {}
         self._run_listeners: List[TestExecutionListener] = []
@@ -252,17 +232,17 @@ class AndroidTestOrchestrator:
         # see comment on acquire() below
         sem = asyncio.Semaphore(0)
 
-        async def worker_completion():
+        async def worker_completion() -> None:
             nonlocal have_tests_to_process
             have_tests_to_process = False
 
-        async def run_loop():
-            worker_tasks = []
+        async def run_loop() -> None:
+            worker_tasks: List[asyncio.Task[Any]] = []
             while have_tests_to_process and (self._max_device_count is None or len(worker_tasks) < self._max_device_count):
                 # call worker to start processing and running tests from the test plan
                 # (completes when all tests ar exhausted)
 
-                async def do_work():
+                async def do_work() -> None:
                     nonlocal have_tests_to_process
                     released = False
                     try:
@@ -296,7 +276,7 @@ class AndroidTestOrchestrator:
                     # upon completion
                     await sem.acquire()
             results, pending = await asyncio.wait(worker_tasks, return_when=asyncio.FIRST_EXCEPTION)
-            for task in pending:
+            for task in pending:  # type: ignore
                 task.cancel()
             [r.result() for r in results]  # will raise any exception caught during task execution
         await asyncio.wait_for(run_loop(), timeout=self._instrumentation_timeout)

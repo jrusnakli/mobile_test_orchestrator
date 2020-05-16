@@ -97,7 +97,7 @@ class DeviceStorage(DeviceBased):
         async with await self.device.monitor_remote_cmd('pull', '%s' % remote_path, '%s' % local_path) as proc:
             await proc.wait(timeout)
         if proc.returncode != 0:
-            raise Device.CommandExecutionFailure(f"Failed to pull {remote_path} from device")
+            raise Device.CommandExecutionFailure(proc.returncode, f"Failed to pull {remote_path} from device")
 
     def make_dir(self, path: str, run_as: Optional[str] = None) -> None:
         """

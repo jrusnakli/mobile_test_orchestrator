@@ -6,7 +6,8 @@ from typing import Any, Optional
 import pytest
 import pytest_mproc
 
-from androidtestorchestrator.main import AndroidTestOrchestrator, TestSuite
+from androidtestorchestrator.main import AndroidTestOrchestrator
+from androidtestorchestrator.worker import TestSuite
 from androidtestorchestrator.device import Device
 from androidtestorchestrator.devicepool import AsyncDevicePool
 from androidtestorchestrator.parsing import LineParser

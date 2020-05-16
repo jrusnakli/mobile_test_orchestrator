@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Optional
 
 import androidtestorchestrator
-from importlib_resources import files
+from importlib_resources import files  # type: ignore
 
 
 class SdkManager:
@@ -21,17 +21,17 @@ class SdkManager:
     def __init__(self, sdk_dir: Path):
         self._sdk_dir = sdk_dir
         self._sdk_manager_path = sdk_dir.joinpath("tools", "bin", "sdkmanager")
-        self._env = dict(os.environ).update({'ANDROID_SDK_ROOT': self._sdk_dir})
+        self._env = dict(os.environ).update({'ANDROID_SDK_ROOT': str(self._sdk_dir)})
 
     @property
-    def emulator_path(self):
+    def emulator_path(self) -> Path:
         return self._sdk_dir.joinpath("emulator", "emulator")
 
     @property
-    def adb_path(self):
+    def adb_path(self) -> Path:
         return self._sdk_dir.joinpath("platform-tools", "adb")
 
-    def bootstrap(self, application: str, version: Optional[str] = None):
+    def bootstrap(self, application: str, version: Optional[str] = None) -> None:
         application = f"{application};{version}" if version else f"{application}"
         if not os.path.exists(self._sdk_manager_path):
             bootstrap_zip = files(androidtestorchestrator).joinpath(os.path.join("resources", "sdkmanager",
@@ -50,7 +50,7 @@ class SdkManager:
                                      stderr=subprocess.PIPE, stdin=subprocess.PIPE)
         for _ in range(10):
             completed.stdin.write(b'y\n')
-        for line in iter(completed.stdout.readline, ''):
+        for line in iter(completed.stdout.readline, b''):
             if line:
                 print(line.decode('utf-8'))
             else:

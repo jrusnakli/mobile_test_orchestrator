@@ -11,8 +11,9 @@ import re
 import subprocess
 import sys
 import time
+from abc import ABC, abstractmethod
 
-from asyncio import AbstractEventLoop
+from asyncio import AbstractEventLoop, StreamReader
 from contextlib import suppress, asynccontextmanager
 from enum import Enum
 from types import TracebackType
@@ -28,13 +29,15 @@ from typing import (
     Optional,
     Union,
     Type,
-    Tuple, TypeVar)
+    Tuple, TypeVar, Generic)
 
 log = logging.getLogger("MTO")
 log.setLevel(logging.WARNING)
 
 
 __all__ = ["Device", "DeviceBased"]
+
+D =  TypeVar('D', bound="Device")
 
 
 class DeviceLock:
@@ -125,13 +128,16 @@ class Device:
         def returncode(self) -> Optional[int]:
             return self._proc.returncode
 
-        async def _next_line(self,  unresponsive_timeout: Optional[float] = None):
+        async def _next_line(self,  unresponsive_timeout: Optional[float] = None) -> bytes:
+            stdout: Optional[StreamReader] = self._proc.stdout
+            if stdout is None:
+                raise IOError("Process was not configured to capture stdout")
             if unresponsive_timeout is not None:
-                return await asyncio.wait_for(self._proc.stdout.readline(), timeout=unresponsive_timeout)
+                return await asyncio.wait_for(stdout.readline(), timeout=unresponsive_timeout)
             else:
-                return await self._proc.stdout.readline()
+                return await stdout.readline()
 
-        async def communicate(self):
+        async def communicate(self) -> Optional[bytes]:
             stdout, _ = await self._proc.communicate()
             return stdout
 
@@ -144,7 +150,7 @@ class Device:
             """
             if self._proc.stdout is None:
                 raise Exception("Failed to capture output from subprocess")
-            line = await self._next_line(unresponsive_timeout)
+            line: bytes = await self._next_line(unresponsive_timeout)
             while line:
                 yield line.decode('utf-8')
                 line = await self._next_line(unresponsive_timeout)
@@ -182,7 +188,6 @@ class Device:
     # to the user. We keep a list of them so we know which ones to disregard when trying to retrieve the actual
     # foreground application the user is interacting with.
     SILENT_RUNNING_PACKAGES = ["com.samsung.android.mtpapplication", "com.wssyncmldm", "com.bitbar.testdroid.monitor"]
-
 
     override_ext_storage = {
         # TODO: is this still needed (in lieu of updates to OS SW):
@@ -255,7 +260,7 @@ class Device:
         self._device_server_datetime_offset: Optional[datetime.timedelta] = None
         self._api_level: Optional[int] = None
 
-    def __del__(self):
+    def __del__(self) -> None:
         with suppress(Exception):
             del DeviceLock.locks[f"{self.device_id}-{os.getpid()}"]
 
@@ -584,8 +589,10 @@ class Device:
         :return: device's current locale setting, or None if indeterminant
         """
         # try old way:
-        lang = self.get_system_property('persist.sys.language').strip() or ""
-        country = self.get_system_property('persist.sys.country').strip() or ""
+        lang_raw = self.get_system_property('persist.sys.language')
+        lang = lang_raw.strip() if lang_raw else ""
+        county_raw = self.get_system_property('persist.sys.country')
+        country = county_raw.strip() if county_raw else ""
 
         if lang and country:
             device_locale: Optional[str] = '_'.join([lang.strip(), country.strip()])
@@ -736,11 +743,11 @@ class Device:
     ##################
 
     @classmethod
-    def adb_path(cls):
+    def adb_path(cls) -> str:
         if "ANDROID_SDK_ROOT" not in os.environ:
             raise Exception("Unable to find path to 'adb'; ANDROID_SDK_ROOT environment variable must be set")
         adb = 'adb.exe' if sys.platform == 'win32' else 'adb'
-        return os.path.join(os.environ.get("ANDROID_SDK_ROOT"), "platform-tools", adb)
+        return os.path.join(os.environ.get("ANDROID_SDK_ROOT", ""), "platform-tools", adb)
 
     @classmethod
     def set_default_adb_timeout(cls, timeout: int) -> None:
@@ -767,27 +774,27 @@ class Device:
             self._device = device
 
         @property
-        def device(self):
+        def device(self) -> "Device":
             return self._device
 
     # class _Leased:
     @classmethod
-    def _Leased(cls) -> TypeVar('D', bound="Device", covariant=False):
+    def _Leased(cls: Type[D]) -> D:
         """
         This provides a Pythonic way of doing mixins to subclass a Device or a subclass of Device to
         be "Leased"
 
         :return: subclass of this class that can be set to expire after a prescribed amount of time
         """
-        class LeasedDevice(cls):
+        class LeasedDevice(cls):  # type: ignore
 
             def __init__(self, *args: Any, **kargs: Any):
                 # must come first to avoid issues with __getattribute__ override
                 self._timed_out = False
                 super().__init__(*args, **kargs)
-                self._task: asyncio.Task = None
+                self._task: Optional[asyncio.Task[Any]] = None
 
-            async def set_timer(self, expiry: int):
+            async def set_timer(self, expiry: float) -> None:
                 """
                 set lease expiration
 
@@ -797,7 +804,7 @@ class Device:
                     raise Exception("Renewal of already existing lease is not allowed")
                 self._task = asyncio.create_task(self._expire(expiry))
 
-            async def _expire(self, expiry: int) -> None:
+            async def _expire(self, expiry: float) -> None:
                 """
                 set the expiration time
 
@@ -825,7 +832,7 @@ class Device:
                     raise Device.LeaseExpired(self)
                 return object.__getattribute__(self, item)
 
-        return LeasedDevice
+        return LeasedDevice  # type: ignore
 
 
 class DeviceBased:
@@ -978,7 +985,7 @@ class DeviceInteraction(DeviceBased):
         :return: whether device's screen is on
         """
         completed = self.device.execute_remote_cmd("shell", "dumpsys", "activity", "activities",
-                                                  timeout=10, stdout=subprocess.PIPE)
+                                                   timeout=10, stdout=subprocess.PIPE)
         lines: List[str] = completed.stdout.splitlines()
         for msg in lines:
             if 'mInteractive=false' in msg or 'mScreenOn=false' in msg or 'isSleeping=true' in msg:

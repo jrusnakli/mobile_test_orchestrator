@@ -1,8 +1,7 @@
 import pytest
 
 from androidtestorchestrator import EspressoTestSetup, TestExecutionListener
-from androidtestorchestrator.main import TestSuite
-from androidtestorchestrator.worker import Worker
+from androidtestorchestrator.worker import Worker, TestSuite
 from typing import Dict, Optional, Any
 
 

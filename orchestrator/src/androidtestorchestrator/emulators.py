@@ -29,7 +29,7 @@ _ANDROID_RESOLVED_AVD_HOME = _ANDROID_AVD_HOME if _ANDROID_AVD_HOME else \
 @dataclass
 class EmulatorBundleConfiguration:
     """Path to SDK (must contain platform-tools and emulator dirs)"""
-    sdk: Path = Path(_ANDROID_SDK_ROOT) if _ANDROID_SDK_ROOT else None
+    sdk: Path = Path(_ANDROID_SDK_ROOT) if _ANDROID_SDK_ROOT else None  # type: ignore
     """Location of AVDs, or None for default"""
     avd_dir: Optional[Path] = Path(_ANDROID_RESOLVED_AVD_HOME) if _ANDROID_RESOLVED_AVD_HOME else None
     """Location of system image or None for default"""
@@ -73,9 +73,9 @@ class Emulator(Device):
             self._port = port
 
         @property
-        def port(self):
+        def port(self) -> int:
             return self._port
-        
+
     def __init__(self,
                  port: int,
                  config: EmulatorBundleConfiguration,
@@ -120,30 +120,6 @@ class Emulator(Device):
             if seconds > self._config.boot_timeout:
                 raise TimeoutError("Timeout waiting for emulator to boot")
 
-    async def restart_async(self) -> None:
-        """
-        Restart this emulator and make it available for use again
-        """
-        if self._launch_cmd is None:
-            raise Exception("This emulator was started externally; cannot restart")
-
-        async def wait_for_boot() -> None:
-            subprocess.Popen(self._launch_cmd,
-                             stderr=subprocess.STDOUT,
-                             stdout=subprocess.PIPE,
-                             env=self._env)
-            booted = False
-            # wait to come online
-            while self.get_state() != Device.State.ONLINE:
-                time.sleep(1)
-
-            # wait for complete boot once online
-            while not booted:
-                booted = self.get_system_property("sys.boot_completed") == "1"
-                await asyncio.sleep(1)
-
-        await asyncio.wait_for(wait_for_boot(), self._config.boot_timeout)
-
     @classmethod
     async def launch(cls, port: int, avd: str, config: EmulatorBundleConfiguration, *args: str) -> "Emulator":
         """
@@ -186,7 +162,6 @@ class Emulator(Device):
                                 stdout=subprocess.PIPE,
                                 env=environ)
         try:
-
             async def wait_for_boot() -> None:
                 nonlocal booted
                 nonlocal proc
@@ -219,5 +194,3 @@ class Emulator(Device):
         """
         log.info(f">>>>> Killing emulator {self.device_id}")
         self.execute_remote_cmd("emu", "kill")
-
-

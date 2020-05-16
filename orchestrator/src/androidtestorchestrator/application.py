@@ -63,7 +63,7 @@ class Application(DeviceBased):
             else manifest.get("package_name", None)
         if self._package_name is None:
             raise ValueError("manifest argument as dictionary must contain \"package_name\" as key")
-        self._permissions: Set[str] = set(manifest.permissions if isinstance(manifest, AXMLParser) else \
+        self._permissions: Set[str] = set(manifest.permissions if isinstance(manifest, AXMLParser) else
                                           manifest.get("permissions", []))
         self._granted_permissions: Set[str] = set()
 
@@ -92,7 +92,7 @@ class Application(DeviceBased):
             log.info("Package %s installed" % str(package))
 
     @classmethod
-    def _install(cls, device: Device, apk_path: str, as_upgrade: bool) -> None:
+    def _install(cls, device: Device, apk_path: str, *args: str) -> None:
         """
         Install the given bundle, blocking until complete
         Preference should be to use `Application.from_apk_async` method.
@@ -101,7 +101,7 @@ class Application(DeviceBased):
         :param apk_path: local path to the apk to be installed
         :param as_upgrade: install as upgrade or not
         """
-        cmd: Tuple[str, ...] = ("install", "-r", apk_path) if as_upgrade else  ("install", apk_path)
+        cmd: Tuple[str, ...] = ("install", *args, apk_path)
         device.execute_remote_cmd(*cmd, timeout=Device.TIMEOUT_LONG_ADB_CMD)
 
     @classmethod
@@ -189,7 +189,7 @@ class Application(DeviceBased):
 
     @classmethod
     async def from_apk_async(cls: Type[_TApp], apk_path: str, device: Device, as_upgrade: bool = False,
-                             callback: Callable[[Device.Process], None] = None) -> _TApp:
+                             callback: Optional[Callable[[Device.Process], None]] = None) -> _TApp:
         """
         Install application asynchronously.  This allows the output of the install to be processed
         in a streamed fashion.  This can be useful on some devices that are non-standard android where installs
@@ -233,7 +233,8 @@ class Application(DeviceBased):
         >>> app = Application.from_apk("/local/path/to/apk", device, as_upgrade=True)
         """
         parser = AXMLParser.parse(apk_path)
-        cls._install(device, apk_path, as_upgrade)
+        args = ["-r"] if as_upgrade else []
+        cls._install(device, apk_path, *args)
         return cls(device, parser)
 
     def uninstall(self) -> None:
@@ -310,7 +311,7 @@ class Application(DeviceBased):
 
         :raises: Exception if app crashes during start and fails to display
         """
-        async def launch():
+        async def launch() -> None:
             async with await self.device.monitor_remote_cmd(
                     "logcat", "-s", "ActivityManager:I", "ActivityTaskManager:I", "AndroidRuntime:E",
                     "-T", "1") as logcat_proc:
@@ -321,7 +322,7 @@ class Application(DeviceBased):
                     if count == 2:
                         break
                 detected_fatal_exception = False
-                self.start(activity=activity, intent=intent, *options)
+                self.start(activity, *options, intent=intent)
                 async for line in logcat_proc.output(unresponsive_timeout=timeout):
                     if "FATAL EXCEPTION" in line:
                         detected_fatal_exception = True
@@ -410,8 +411,7 @@ class ServiceApplication(Application):
     Class representing an Android application that is specifically a service
     """
 
-    def start(self, activity: str,  # type: ignore
-              *options: str, intent: Optional[str] = None, foreground: bool = True) -> None:
+    def start(self, activity: str, *options: str, intent: Optional[str] = None, foreground: bool = True) -> None:
 
         """
         invoke an intent associated with this service by calling start the service
