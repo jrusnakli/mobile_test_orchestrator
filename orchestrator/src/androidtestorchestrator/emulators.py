@@ -157,6 +157,7 @@ class Emulator(Device):
         environ["ANDROID_AVD_HOME"] = str(config.avd_dir)
         environ["ANDROID_SDK_HOME"] = str(config.sdk)
         booted = False
+        print(f">>>>>> LAUNCHING {cmd}")
         proc = subprocess.Popen(cmd,
                                 stderr=subprocess.STDOUT,
                                 stdout=subprocess.PIPE,

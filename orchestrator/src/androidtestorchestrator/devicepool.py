@@ -200,6 +200,7 @@ class AsyncEmulatorPool(AsyncDevicePool):
         """
         async def launch_next(index: int, port: int) -> Emulator:
             await asyncio.sleep(index * 3)  # space out launches as this can help with avoiding instability
+            print(f">>>>> LAUNCHING {index} ON {port}...")
             if self._max_lease_time:
                 leased_emulator = await self.LeasedEmulator.launch(port, avd, config, *args)
                 leased_emulator.set_timer(expiry=self._max_lease_time)  # type: ignore
