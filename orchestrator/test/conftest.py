@@ -78,7 +78,6 @@ class DeviceManager:
 #################
 # App-related fixtures;  TODO: logic could be cleaned up overall here
 #################
-sem = Semaphore(0)
 
 
 class AppManager:
@@ -96,9 +95,8 @@ class AppManager:
         self._app = None
         self._test_app = None
         self._service_app = None
-        AppManager._proc =support.compile_all(self._app_queue, self._test_app_queue,
-                                              self._service_app_queue, wait=IS_CIRCLECI)
-        sem.release()
+        AppManager._proc = support.compile_all(self._app_queue, self._test_app_queue,
+                                               self._service_app_queue, wait=IS_CIRCLECI)
 
     def __enter__(self):
         return self
@@ -134,11 +132,19 @@ class AppManager:
             self._app = self._app_queue.get()
         return self._app
 
+    _singleton: Optional["AppManager"] = None
+
+    @staticmethod
+    def singleton():
+        if AppManager._singleton is None:
+            AppManager._singleton = AppManager()
+        return AppManager._singleton
+
 
 @pytest.fixture(scope='node')
 async def device_pool():
     if IS_CIRCLECI:
-        sem.acquire()
+        AppManager.singleton()  # force build to happen fist in serial
     m = multiprocessing.Manager()
     queue = AsyncQueueAdapter(q=m.Queue())
     print(f">>>>>>> CREATING EMULATOR POOL of {DeviceManager.count()} emulators\n     {DeviceManager.ARGS}")
@@ -242,7 +248,7 @@ async def android_service_app(device, support_app: str):
 
 @pytest.fixture(scope='node')
 def app_manager():
-    with AppManager() as app_manager:
+    with AppManager.singleton() as app_manager:
         yield app_manager
 
 
