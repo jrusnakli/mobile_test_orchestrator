@@ -7,6 +7,7 @@ import shutil
 import socket
 import tempfile
 from contextlib import suppress, closing, contextmanager
+from multiprocessing import Semaphore
 from multiprocessing.managers import BaseManager
 
 from pathlib import Path
@@ -74,22 +75,10 @@ class DeviceManager:
         return count
 
 
-@pytest.fixture(scope='node')
-async def device_pool():
-    m = multiprocessing.Manager()
-    queue = AsyncQueueAdapter(q=m.Queue())
-    print(f">>>>>>> CREATING EMULATOR POOL of {DeviceManager.count()} emulators\n     {DeviceManager.ARGS}")
-    async with AsyncEmulatorPool.create(DeviceManager.count(),
-                                        DeviceManager.AVD,
-                                        DeviceManager.CONFIG,
-                                        *DeviceManager.ARGS,
-                                        external_queue=queue) as pool:
-        yield pool
-
-
 #################
 # App-related fixtures;  TODO: logic could be cleaned up overall here
 #################
+sem = Semaphore(0)
 
 
 class AppManager:
@@ -109,6 +98,7 @@ class AppManager:
         self._service_app = None
         AppManager._proc =support.compile_all(self._app_queue, self._test_app_queue,
                                               self._service_app_queue, wait=IS_CIRCLECI)
+        sem.release()
 
     def __enter__(self):
         return self
@@ -143,6 +133,21 @@ class AppManager:
         if self._app is None:
             self._app = self._app_queue.get()
         return self._app
+
+
+@pytest.fixture(scope='node')
+async def device_pool():
+    if IS_CIRCLECI:
+        sem.acquire()
+    m = multiprocessing.Manager()
+    queue = AsyncQueueAdapter(q=m.Queue())
+    print(f">>>>>>> CREATING EMULATOR POOL of {DeviceManager.count()} emulators\n     {DeviceManager.ARGS}")
+    async with AsyncEmulatorPool.create(DeviceManager.count(),
+                                        DeviceManager.AVD,
+                                        DeviceManager.CONFIG,
+                                        *DeviceManager.ARGS,
+                                        external_queue=queue) as pool:
+        yield pool
 
 
 @pytest.fixture()
