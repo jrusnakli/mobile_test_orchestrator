@@ -94,7 +94,8 @@ def gradle_build(targets_and_q: Dict[str, List[Tuple[str, Queue, str]]]):
             log.info(f"Built {apk_path}")
 
 
-def compile_all(support_app_q: Queue, support_test_app_q: Queue, service_app_q: Queue) -> multiprocessing.Process:
+def compile_all(support_app_q: Queue, support_test_app_q: Queue, service_app_q: Queue,
+                wait: bool = False) -> multiprocessing.Process:
     """
     compile support app and test app in the background and return the queues where they will be placed
 
@@ -114,6 +115,8 @@ def compile_all(support_app_q: Queue, support_test_app_q: Queue, service_app_q: 
         ),
     )
     process.start()
+    if wait:
+        process.join()
     return process
 
 

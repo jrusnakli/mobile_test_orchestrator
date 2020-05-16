@@ -107,7 +107,7 @@ class AppManager:
         self._test_app = None
         self._service_app = None
         AppManager._proc =support.compile_all(self._app_queue, self._test_app_queue,
-                                              self._service_app_queue)
+                                              self._service_app_queue, wait=IS_CIRCLECI)
 
     def __enter__(self):
         return self
