@@ -1,9 +1,14 @@
+import getpass
+import os
 from pathlib import Path
 
 from androidtestorchestrator.tooling.sdkmanager import SdkManager
 import pytest
 
+IS_CIRCLECI = getpass.getuser() == 'circleci' or "CIRCLECI" in os.environ
 
+
+@pytest.skipif(IS_CIRCLECI, "Tests have too long a time without output")
 class TestSdkManager:
 
     def test_emulator_path(self, mp_tmp_dir: Path):
