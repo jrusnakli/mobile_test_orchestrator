@@ -14,19 +14,19 @@ from typing import AsyncGenerator, Callable, Optional, Dict, Union, Set, Corouti
 from androidtestorchestrator.device import Device
 from androidtestorchestrator.emulators import Emulator, EmulatorBundleConfiguration, log
 
-I = TypeVar('I')
+It = TypeVar('It')
 
 
-class AbstractAsyncQueue(ABC, Generic[I]):
+class AbstractAsyncQueue(ABC, Generic[It]):
 
     @abstractmethod
-    async def get(self) -> I:
+    async def get(self) -> It:
         """
         :return: item from queue
         """
 
     @abstractmethod
-    async def put(self, item: I) -> None:
+    async def put(self, item: It) -> None:
         """
         :param item: item to place in the queue
         """
@@ -35,7 +35,7 @@ class AbstractAsyncQueue(ABC, Generic[I]):
 Q = TypeVar('Q', "queue.Queue[Any]", "multiprocessing.Queue[Any]")
 
 
-class AsyncQueueAdapter(AbstractAsyncQueue[I]):
+class AsyncQueueAdapter(AbstractAsyncQueue[It]):
     """
     Adapt a non-async queue to be asynchronous (via polling)
 
@@ -47,7 +47,7 @@ class AsyncQueueAdapter(AbstractAsyncQueue[I]):
         self._polling_interval = polling_interval
         self._queue: Q = q  # type: ignore
 
-    async def get(self) -> I:
+    async def get(self) -> It:
         item = None
         while not item:
             try:

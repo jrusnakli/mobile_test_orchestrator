@@ -11,7 +11,6 @@ import re
 import subprocess
 import sys
 import time
-from abc import ABC, abstractmethod
 
 from asyncio import AbstractEventLoop, StreamReader
 from contextlib import suppress, asynccontextmanager
@@ -29,7 +28,7 @@ from typing import (
     Optional,
     Union,
     Type,
-    Tuple, TypeVar, Generic)
+    Tuple, TypeVar)
 
 log = logging.getLogger("MTO")
 log.setLevel(logging.WARNING)
@@ -37,7 +36,7 @@ log.setLevel(logging.WARNING)
 
 __all__ = ["Device", "DeviceBased"]
 
-D =  TypeVar('D', bound="Device")
+D = TypeVar('D', bound="Device")
 
 
 class DeviceLock:
