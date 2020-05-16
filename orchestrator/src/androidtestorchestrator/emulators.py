@@ -168,7 +168,7 @@ class Emulator(Device):
                 nonlocal proc
                 nonlocal device_id
 
-                while device.get_state() != Device.State.ONLINE:
+                while proc.poll() is None and device.get_state() != Device.State.ONLINE:
                     print(f">>> STATE IS {device.get_state()}")
                     await asyncio.sleep(1)
                 if proc.poll() is not None:
