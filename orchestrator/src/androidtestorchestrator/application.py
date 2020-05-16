@@ -377,9 +377,9 @@ class Application(DeviceBased):
         self.device.execute_remote_cmd("shell", "am", "kill", self.package_name)
         if self.pid is not None:
             if not self._device_navigation.home_screen_active():
-                raise Exception(f"Failed to background current foreground app. Cannot complete app closure.")
+                raise Exception("Failed to background current foreground app. Cannot complete app closure.")
             else:
-                raise Exception(f"Detected app process is still running. App closure failed.")
+                raise Exception("Detected app process is still running. App closure failed.")
 
     def clear_data(self, regrant_permissions: bool = True) -> None:
         """

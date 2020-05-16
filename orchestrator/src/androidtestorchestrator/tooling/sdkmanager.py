@@ -64,7 +64,7 @@ class SdkManager:
         download/update platform tools within the sdk
         :param version: version to update to or None for latest
         """
-        self.bootstrap(f"platform-tools")
+        self.bootstrap("platform-tools")
         return self
 
     def bootstrap_emulator(self) -> "SdkManager":
@@ -72,7 +72,7 @@ class SdkManager:
         download/update emulator within the sdk
         :param version: version to update to or None for latest
         """
-        self.bootstrap(f"emulator")
+        self.bootstrap("emulator")
         return self
 
     def download_system_img(self, version: str) -> "SdkManager":
