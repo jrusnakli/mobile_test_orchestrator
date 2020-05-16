@@ -78,6 +78,7 @@ class DeviceManager:
 async def device_pool():
     m = multiprocessing.Manager()
     queue = AsyncQueueAdapter(q=m.Queue())
+    print(f">>>>>>> CREATING EMULATOR POOL of {DeviceManager.count()} emulators\n     {DeviceManager.ARGS}")
     async with AsyncEmulatorPool.create(DeviceManager.count(),
                                         DeviceManager.AVD,
                                         DeviceManager.CONFIG,

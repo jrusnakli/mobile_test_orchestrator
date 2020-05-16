@@ -117,6 +117,7 @@ def compile_all(support_app_q: Queue, support_test_app_q: Queue, service_app_q: 
     process.start()
     if wait:
         process.join()
+        print(">>>>>>>  DONE BUILDING APPS")
     return process
 
 
