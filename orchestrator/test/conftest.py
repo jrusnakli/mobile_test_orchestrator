@@ -148,7 +148,7 @@ async def device_pool():
     m = multiprocessing.Manager()
     queue = AsyncQueueAdapter(q=m.Queue())
     if IS_CIRCLECI:
-        Device.ARGS.append("-no-accel")
+        DeviceManager.ARGS.append("-no-accel")
     print(f">>>>>>> CREATING EMULATOR POOL of {DeviceManager.count()} emulators\n     {DeviceManager.ARGS}")
     async with AsyncEmulatorPool.create(DeviceManager.count(),
                                         DeviceManager.AVD,
