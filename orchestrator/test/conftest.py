@@ -86,7 +86,7 @@ def device_queue():
 
         # launch emulators in parallel and wait for all to boot:
         async def launch(index: int):
-            completed = subprocess.run(["/opt/android/sdk/tools/bin/avdmanager list"], stdout=subprocess.PIPE,
+            completed = subprocess.run(["/opt/android/sdk/tools/bin/avdmanager", "list"], stdout=subprocess.PIPE,
                                        stderr=subprocess.STDOUT)
             print(f"AVD LIST: \n {completed.stdout.decode('utf-8')}")
             if index:
