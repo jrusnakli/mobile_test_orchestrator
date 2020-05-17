@@ -143,6 +143,7 @@ async def device_pool():
     queue = AsyncQueueAdapter(q=m.Queue(DeviceManager.count()))
     if IS_CIRCLECI:
         DeviceManager.ARGS.append("-no-accel")
+        DeviceManager.ARGS.append("-no-snapshot")
     async with AsyncEmulatorPool.create(DeviceManager.count(),
                                         DeviceManager.AVD,
                                         DeviceManager.CONFIG,
