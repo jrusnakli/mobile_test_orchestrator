@@ -32,9 +32,6 @@ jobs:
             chmod gou+rwx ~/.android/avd/MTO_emulator.avd/snapshots
             chmod gou+rwx ~/.android/avd/MTO_emulator.avd/snapshots/default_boot
             chmod gou+rw ~/.android/avd/MTO_emulator.avd/snapshots/default_boot/ram.img
-            ls -ld ~/.android/avd/MTO_emulator.avd/snapshots
-            ls -ld ~/.android/avd/MTO_emulator.avd/snapshots/default_boot
-            ls -ld ~/.android/avd/MTO_emulator.avd/snapshots/default_boot/ram.img
       - run:
           name: build androidtestorchestrator
           command: |
@@ -55,6 +52,9 @@ jobs:
       - run:
           name: Running tests
           command: |
+            ls -ld ~/.android/avd/MTO_emulator.avd/snapshots
+            ls -ld ~/.android/avd/MTO_emulator.avd/snapshots/default_boot
+            ls -ld ~/.android/avd/MTO_emulator.avd/snapshots/default_boot/ram.img
             . venv/bin/activate
             cd orchestrator/test
             mkdir -p test-reports/tmp
