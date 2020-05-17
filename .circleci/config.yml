@@ -44,6 +44,7 @@ jobs:
             . venv/bin/activate
             cd orchestrator/test
             mkdir -p test-reports/tmp
+            /opt/android/sdk/emulator/emulator -list-avds
             CIRCLECI=1 pytest -s -v -m "not localonly" --html  test-reports/report.html --junitxml=test-reports/all-result.xml --basetemp=test-reports/tmp --cov=../src . --cov-report html:test-reports/coverage
       - run:
           name: directory
