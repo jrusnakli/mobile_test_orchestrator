@@ -29,7 +29,7 @@ jobs:
             mkdir -p ~/.android/avd/MTO_emulator.avd/snapshots/default_boot
             find ~/.android/avd
             ls -ld ~/.android/avd/MTO_emulator.avd/snapshots
-            ls -ld ~/.android/avd/MTO_emulator.avd/snapshots/default_host
+            ls -ld ~/.android/avd/MTO_emulator.avd/snapshots/default_boot
             chmod u+rwx ~/.android/avd/MTO_emulator.avd/snapshots
             chmod u+rwx ~/.android/avd/MTO_emulator.avd/snapshots/default_boot
       - run:
