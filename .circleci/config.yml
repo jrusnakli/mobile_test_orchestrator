@@ -46,16 +46,6 @@ jobs:
             sudo chown circleci $ANDROID_AVD_HOME
             /opt/android/sdk/tools/bin/sdkmanager "system-images;android-28;default;x86_64"
             echo no | /opt/android/sdk/tools/bin/avdmanager create avd -n "MTO_emulator2" -k "system-images;android-28;default;x86_64" -d "pixel_xl" --force --abi x86_64
-            mkdir -p $ANDROID_AVD_HOME/MTO_emulator.avd/snapshots/default_boot
-            touch $ANDROID_AVD_HOME/MTO_emulator.avd/snapshots/default_boot/ram.img
-            find $ANDROID_AVD_HOME
-            chmod gou+rwx $ANDROID_AVD_HOME/MTO_emulator.avd/snapshots
-            chmod gou+rwx $ANDROID_AVD_HOME/MTO_emulator.avd/snapshots/default_boot
-            chmod gou+rw $ANDROID_AVD_HOME/MTO_emulator.avd/snapshots/default_boot/ram.img
-            ls -l $ANDROID_AVD_HOME/MTO_emulator.avd/snapshots
-            ls -l $ANDROID_AVD_HOME/MTO_emulator.avd/snapshots/default_boot
-            ls -l $ANDROID_AVD_HOME/MTO_emulator.avd/snapshots/default_boot/ram.img
-            test -f $ANDROID_AVD_HOME/MTO_emulator.avd/snapshots/default_boot/ram.img
             . venv/bin/activate
             cd orchestrator/test
             mkdir -p test-reports/tmp
