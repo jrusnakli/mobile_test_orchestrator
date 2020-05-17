@@ -1,7 +1,7 @@
 version: 2
 jobs:
   build:
-    working_directory: ~/code
+    working_directory: /home/circleci/code
     docker:
       - image: liwjohnson/android-api-28
     environment:
@@ -43,15 +43,15 @@ jobs:
           command: |
             /opt/android/sdk/tools/bin/sdkmanager "system-images;android-28;default;x86_64"
             echo no | /opt/android/sdk/tools/bin/avdmanager create avd -n "MTO_emulator" -k "system-images;android-28;default;x86_64" -d "pixel_xl" --force --abi x86_64
-            mkdir -p ~/.android/avd/MTO_emulator.avd/snapshots/default_boot
-            touch ~/.android/avd/MTO_emulator.avd/snapshots/default_boot/ram.img
-            find ~/.android/avd
-            chmod gou+rwx ~/.android/avd/MTO_emulator.avd/snapshots
-            chmod gou+rwx ~/.android/avd/MTO_emulator.avd/snapshots/default_boot
-            chmod gou+rw ~/.android/avd/MTO_emulator.avd/snapshots/default_boot/ram.img
-            ls -ld ~/.android/avd/MTO_emulator.avd/snapshots
-            ls -ld ~/.android/avd/MTO_emulator.avd/snapshots/default_boot
-            ls -ld ~/.android/avd/MTO_emulator.avd/snapshots/default_boot/ram.img
+            mkdir -p /home/circleci/.android/avd/MTO_emulator.avd/snapshots/default_boot
+            touch /home/circleci/.android/avd/MTO_emulator.avd/snapshots/default_boot/ram.img
+            find /home/circleci/.android/avd
+            chmod gou+rwx /home/circleci/.android/avd/MTO_emulator.avd/snapshots
+            chmod gou+rwx /home/circleci/.android/avd/MTO_emulator.avd/snapshots/default_boot
+            chmod gou+rw /home/circleci/.android/avd/MTO_emulator.avd/snapshots/default_boot/ram.img
+            ls -ld /home/circleci/.android/avd/MTO_emulator.avd/snapshots
+            ls -ld /home/circleci/.android/avd/MTO_emulator.avd/snapshots/default_boot
+            ls -ld /home/circleci/.android/avd/MTO_emulator.avd/snapshots/default_boot/ram.img
             . venv/bin/activate
             cd orchestrator/test
             mkdir -p test-reports/tmp
