@@ -139,7 +139,7 @@ class Emulator(Device):
         proc: Optional[subprocess.Popen] = None  # type: ignore
         try:
             while retries >= 0:
-                print(f">>>>>> Launching emulator with {' '.join(cmd)} with ANDROID_AVD_HOME as ${ANDROID_AVD_HOME}")
+                print(f">>>>>> Launching emulator with {' '.join(cmd)} with ANDROID_AVD_HOME as {environ['ANDROID_AVD_HOME']}")
                 proc = subprocess.Popen(cmd,
                                         stderr=subprocess.STDOUT,
                                         stdout=subprocess.PIPE,
