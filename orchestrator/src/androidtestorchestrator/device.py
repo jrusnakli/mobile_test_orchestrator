@@ -2,6 +2,7 @@
 This package contains the core elements for device interaction: to query aspects of the device,
 change or get settings and properties, and core API for raw execution of commands on the device (via adb), etc.
 """
+from __future__ import annotations  # to correct mypy stubs vs run-time discrepancies
 
 import asyncio
 import datetime
