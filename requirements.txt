@@ -3,7 +3,7 @@ importlib_resources
 pathlib
 shiv
 flake8
-mypy==0.720
+mypy
 pytest
 pytest-html
 pytest-cov

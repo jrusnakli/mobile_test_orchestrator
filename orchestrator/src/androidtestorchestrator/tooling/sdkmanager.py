@@ -48,8 +48,10 @@ class SdkManager:
         print(f"Downloading to {self._sdk_dir}\n  {self._sdk_manager_path} {application}")
         completed = subprocess.Popen([self._sdk_manager_path, application], stdout=subprocess.PIPE, bufsize=0,
                                      stderr=subprocess.PIPE, stdin=subprocess.PIPE)
+        assert completed.stdin is not None  # make mypy happy
         for _ in range(10):
             completed.stdin.write(b'y\n')
+        assert completed.stdout is not None
         for line in iter(completed.stdout.readline, b''):
             if line:
                 print(line.decode('utf-8'))
@@ -57,7 +59,8 @@ class SdkManager:
                 break
         stdout, stderr = completed.communicate()
         if completed.returncode != 0:
-            raise Exception(f"Failed to download/update {application}: {stdout} {stderr}")
+            raise Exception(
+                f"Failed to download/update {application}: {stdout.decode('utf-8')} {stderr.decode('utf-8')}")
 
     def bootstrap_platform_tools(self) -> "SdkManager":
         """

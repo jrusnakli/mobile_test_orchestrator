@@ -60,8 +60,8 @@ class Application(DeviceBased):
         self._device_navigation = DeviceInteraction(device)
         self._version: Optional[str] = None  # loaded on-demand first time self.version called
         self._package_name: str = manifest.package_name if isinstance(manifest, AXMLParser) \
-            else manifest.get("package_name", None)
-        if self._package_name is None:
+            else manifest.get("package_name", "")
+        if not self._package_name:
             raise ValueError("manifest argument as dictionary must contain \"package_name\" as key")
         self._permissions: Set[str] = set(manifest.permissions if isinstance(manifest, AXMLParser) else
                                           manifest.get("permissions", []))

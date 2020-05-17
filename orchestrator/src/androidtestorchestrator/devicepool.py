@@ -9,7 +9,7 @@ import subprocess
 from abc import ABC, abstractmethod
 from asyncio import Queue
 from contextlib import asynccontextmanager, suppress
-from typing import AsyncGenerator, Callable, Optional, Dict, Union, Set, Coroutine, Any, List, TypeVar, Generic
+from typing import Any, AsyncGenerator, Callable, Generic, List, Optional, TypeVar
 
 from androidtestorchestrator.device import Device
 from androidtestorchestrator.emulators import Emulator, EmulatorBundleConfiguration, log
@@ -145,11 +145,12 @@ class AsyncDevicePool(BaseDevicePool):
         :return: a reserved Device
         """
         devices = []
-        queue_empty  = False
+        queue_empty = False
         for _ in range(count):
-            device = await self._q.get()
+            device = await self._q.get()  # type: ignore
             if device is None:
-                await self._q.put(device)  # other threads may need to know this to
+                # other threads may need to know this to:
+                await self._q.put(device)  # type: ignore
                 queue_empty = True
                 break
             devices.append(device)
@@ -228,7 +229,7 @@ class AsyncEmulatorPool(AsyncDevicePool):
         emulators: List[Emulator] = []
         error_count = 0
 
-        async def launch_one(index: int, avd: str, config: EmulatorBundleConfiguration, *args: str):
+        async def launch_one(index: int, avd: str, config: EmulatorBundleConfiguration, *args: str) -> None:
             nonlocal error_count
             nonlocal emulators
 
@@ -236,13 +237,14 @@ class AsyncEmulatorPool(AsyncDevicePool):
             port = Emulator.PORTS[index]
             try:
                 if max_lease_time:
-                    leased_emulator = await cls.LeasedEmulator.launch(port, avd, config, *args,
-                                                                      retries=AsyncEmulatorPool.MAX_BOOT_RETRIES)
+                    leased_emulator: Optional[Emulator] = await cls.LeasedEmulator.launch(
+                        port, avd, config, *args, retries=AsyncEmulatorPool.MAX_BOOT_RETRIES)
                     leased_emulator.set_timer(expiry=max_lease_time)  # type: ignore
                 else:
                     leased_emulator = await Emulator.launch(port, avd, config, *args)
-                emulators.append(leased_emulator)
-            except Exception as e:
+                if leased_emulator:
+                    emulators.append(leased_emulator)
+            except Exception:
                 log.exception(f"Failure in booting emulator on port {port}")
                 error_count += 1
                 if error_count == count:
@@ -250,7 +252,7 @@ class AsyncEmulatorPool(AsyncDevicePool):
                     leased_emulator = None
                 else:
                     raise
-            await queue.put(leased_emulator)
+            await queue.put(leased_emulator)  # type: ignore
 
         futures = [asyncio.create_task(launch_one(index, avd, config, *args)) for index in range(count)]
         if wait_for_startup:

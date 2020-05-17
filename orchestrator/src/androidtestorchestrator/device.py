@@ -402,7 +402,7 @@ class Device:
                            stdout: Union[None, int, IO[AnyStr]] = subprocess.DEVNULL,
                            stderr: Union[None, int, IO[AnyStr]] = subprocess.PIPE,
                            fail_on_error_code: Callable[[int], bool] = lambda x: x != 0) \
-            -> subprocess.CompletedProcess:
+            -> subprocess.CompletedProcess[str]:
         """
         Execute a command on this device (via adb)
 
@@ -427,14 +427,14 @@ class Device:
             encoding='utf-8', errors='ignore'
         )
         if fail_on_error_code(completed.returncode):
-            stderr = completed.stderr.replace('\n', '\n\t')  # indent
+            stderr_output = completed.stderr.replace('\n', '\n\t')  # indent
             raise self.CommandExecutionFailure(
                 completed.returncode,
-                f"Failed to execute '{' '.join(args)}' on device {self.device_id}\n\t{stderr}")
+                f"Failed to execute '{' '.join(args)}' on device {self.device_id}\n\t{stderr_output}")
         return completed
 
     def execute_remote_cmd_background(self, *args: str, stdout: Union[None, int, IO[AnyStr]] = subprocess.PIPE,
-                                      **kwargs: Any) -> subprocess.Popen:  # noqa
+                                      **kwargs: Any) -> subprocess.Popen[AnyStr]:
         """
         Run the given command args in the background.
 

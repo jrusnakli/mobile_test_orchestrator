@@ -133,7 +133,7 @@ class Emulator(Device):
         environ["ANDROID_AVD_HOME"] = str(config.avd_dir)
         environ["ANDROID_SDK_HOME"] = str(config.sdk)
         booted = False
-        proc: Optional[subprocess.Popen] = None
+        proc: Optional[subprocess.Popen] = None  # type: ignore
         try:
             while retries >= 0:
                 print(f">>>>>> Launching emulator with {' '.join(cmd)}")
@@ -144,9 +144,8 @@ class Emulator(Device):
                                         encoding='utf-8',
                                         env=environ)
 
-                async def wait_for_boot() -> None:
+                async def wait_for_boot(proc: subprocess.Popen) -> None:  # type: ignore
                     nonlocal booted
-                    nonlocal proc
                     nonlocal device_id
                     nonlocal retries
                     while proc.poll() is None and device.get_state() != Device.State.ONLINE:
@@ -172,8 +171,9 @@ class Emulator(Device):
                             else:
                                 raise Emulator.FailedBootError(port, stdout)
 
-                await asyncio.wait_for(wait_for_boot(), config.boot_timeout)
+                await asyncio.wait_for(wait_for_boot(proc), config.boot_timeout)
                 return cls(port, config=config, launch_cmd=cmd, env=environ)
+            raise Emulator.FailedBootError(port, "Failed to launch emulator; unknown cause")
         finally:
             if not booted and proc is not None:
                 with suppress(Exception):

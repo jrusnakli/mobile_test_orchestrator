@@ -36,7 +36,7 @@ class DeviceLog(DeviceBased):
 
         def __init__(self, device: Device, output_path: str):
             super(DeviceLog.LogCapture, self).__init__(device)
-            self._proc: Optional[Popen] = None
+            self._proc: Optional[Popen[str]] = None
             if os.path.exists(output_path):
                 raise Exception(f"Path {output_path} already exists; will not overwrite")
             self._output_file: TextIO = open(output_path, 'w')
