@@ -545,7 +545,7 @@ class Device:
             return output.rstrip()
         except Exception as e:
             if verbose:
-                log.error(f"Unable to get system property {key} [{str(e)}]")
+                log.warning(f"Unable to get system property {key} [{str(e)}]")
             return None
 
     def set_system_property(self, key: str, value: str) -> Optional[str]:
@@ -612,8 +612,12 @@ class Device:
             mapping = {"device": Device.State.ONLINE,
                        "offline": Device.State.OFFLINE}
             return mapping.get(state, Device.State.UNKNOWN)
-        except Exception:
-            return Device.State.NON_EXISTENT
+        except Device.CommandExecutionFailure as e:
+            if "device offline" in str(e):
+                return Device.State.OFFLINE
+            elif "not found" in str(e):
+                return Device.State.NON_EXISTENT
+            return Device.State.UNKNOWN
 
     def get_version(self, package: str) -> Optional[str]:
         """

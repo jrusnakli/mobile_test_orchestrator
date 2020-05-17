@@ -1,23 +1,17 @@
-import asyncio
 import multiprocessing
 
 import getpass
 import os
-import shutil
-import socket
-import tempfile
-from contextlib import suppress, closing, contextmanager
 from multiprocessing import Semaphore
-from multiprocessing.managers import BaseManager
 
 from pathlib import Path
 
 import pytest
-from typing import Optional, Tuple, List
+from typing import Optional
 
 from androidtestorchestrator.application import Application, TestApplication, ServiceApplication
-from androidtestorchestrator.device import Device, DeviceLock
-from androidtestorchestrator.emulators import EmulatorBundleConfiguration, Emulator
+from androidtestorchestrator.device import Device
+from androidtestorchestrator.emulators import EmulatorBundleConfiguration
 from androidtestorchestrator.devicepool import AsyncEmulatorPool, AsyncQueueAdapter
 from . import support
 from .support import uninstall_apk
@@ -144,12 +138,11 @@ class AppManager:
 @pytest.fixture(scope='node')
 async def device_pool():
     if IS_CIRCLECI:
-        AppManager.singleton()  # force build to happen fist in serial
+        AppManager.singleton()  # force build to happen fist, in serial
     m = multiprocessing.Manager()
-    queue = AsyncQueueAdapter(q=m.Queue())
+    queue = AsyncQueueAdapter(q=m.Queue(DeviceManager.count()))
     if IS_CIRCLECI:
         DeviceManager.ARGS.append("-no-accel")
-    print(f">>>>>>> CREATING EMULATOR POOL of {DeviceManager.count()} emulators\n     {DeviceManager.ARGS}")
     async with AsyncEmulatorPool.create(DeviceManager.count(),
                                         DeviceManager.AVD,
                                         DeviceManager.CONFIG,

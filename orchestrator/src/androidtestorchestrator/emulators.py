@@ -94,34 +94,9 @@ class Emulator(Device):
         """
         return self._port
 
-    def restart(self) -> None:
-        """
-        Restart this `Emulator` and make it available for use again
-        """
-        if self._launch_cmd is None:
-            raise Exception("This emulator was started externally; cannot restart")
-        subprocess.Popen(self._launch_cmd,
-                         stderr=subprocess.STDOUT,
-                         stdout=subprocess.PIPE,
-                         env=self._env)
-        booted = False
-        seconds = 0
-        # wait to come online
-        while self.get_state() != Device.State.ONLINE:
-            time.sleep(1)
-            seconds += 1
-            if seconds > self._config.boot_timeout:
-                raise TimeoutError("Timeout waiting for emulator to come online")
-        # wait for coplete boot once online
-        while not booted:
-            booted = self.get_system_property("sys.boot_completed") == "1"
-            time.sleep(1)
-            seconds += 1
-            if seconds > self._config.boot_timeout:
-                raise TimeoutError("Timeout waiting for emulator to boot")
-
     @classmethod
-    async def launch(cls, port: int, avd: str, config: EmulatorBundleConfiguration, *args: str) -> "Emulator":
+    async def launch(cls, port: int, avd: str, config: EmulatorBundleConfiguration, *args: str,
+                     retries: int = 0) -> "Emulator":
         """
         Launch an emulator on the given port, with named avd and configuration
 
@@ -129,6 +104,7 @@ class Emulator(Device):
         :param avd: which avd
         :param config: configuration for launching emulator
         :param args:  add'l arguments to pass to emulator command
+        :param retries: allowed number of retries to launch emulator before raising EmulatorFailedBoot exception
         :returns: the newly launched emulator, fully booted
         """
         if port not in cls.PORTS:
@@ -157,39 +133,49 @@ class Emulator(Device):
         environ["ANDROID_AVD_HOME"] = str(config.avd_dir)
         environ["ANDROID_SDK_HOME"] = str(config.sdk)
         booted = False
-        print(f">>>>>> LAUNCHING {cmd}")
-        proc = subprocess.Popen(cmd,
-                                stderr=subprocess.STDOUT,
-                                stdout=subprocess.PIPE,
-                                env=environ)
+        proc: Optional[subprocess.Popen] = None
         try:
-            async def wait_for_boot() -> None:
-                nonlocal booted
-                nonlocal proc
-                nonlocal device_id
+            while retries >= 0:
+                print(f">>>>>> Launching emulator with {' '.join(cmd)}")
+                proc = subprocess.Popen(cmd,
+                                        stderr=subprocess.STDOUT,
+                                        stdout=subprocess.PIPE,
+                                        bufsize=0,
+                                        encoding='utf-8',
+                                        env=environ)
 
-                while proc.poll() is None and device.get_state() != Device.State.ONLINE:
-                    print(f">>> STATE IS {device.get_state()}")
-                    await asyncio.sleep(1)
-                if proc.poll() is not None:
-                    stdout, _ = proc.communicate()
-                    raise Emulator.FailedBootError(port, stdout.decode('utf-8'))
-                start = time.time()
-                while not booted:
-                    booted = device.get_system_property("sys.boot_completed", verbose=False) == "1"
-                    await asyncio.sleep(1)
-                    duration = time.time() - start
-                    print(f">>> [{duration}]  {device.device_id} Booted?: {booted}")
+                async def wait_for_boot() -> None:
+                    nonlocal booted
+                    nonlocal proc
+                    nonlocal device_id
+                    nonlocal retries
+                    while proc.poll() is None and device.get_state() != Device.State.ONLINE:
+                        await asyncio.sleep(1)
+
                     if proc.poll() is not None:
                         stdout, _ = proc.communicate()
-                        raise Emulator.FailedBootError(port, stdout.decode('utf-8'))
+                        if retries:
+                            retries -= 1
+                        else:
+                            raise Emulator.FailedBootError(port, stdout)
+                    start = time.time()
+                    while not booted:
+                        boot_prop = device.get_system_property("dev.bootcomplete", verbose=False)
+                        booted = boot_prop == "1"
+                        await asyncio.sleep(1)
+                        duration = time.time() - start
+                        print(f">>> [{duration}]  {device.device_id} Booted?: {booted} [{boot_prop}]")
+                        if proc.poll() is not None:
+                            stdout, _ = proc.communicate()
+                            if retries:
+                                retries -= 1
+                            else:
+                                raise Emulator.FailedBootError(port, stdout)
 
-            await asyncio.wait_for(wait_for_boot(), config.boot_timeout)
-            return cls(port, config=config, launch_cmd=cmd, env=environ)
-        except Exception as e:
-            raise Emulator.FailedBootError(port, str(e)) from e
+                await asyncio.wait_for(wait_for_boot(), config.boot_timeout)
+                return cls(port, config=config, launch_cmd=cmd, env=environ)
         finally:
-            if not booted:
+            if not booted and proc is not None:
                 with suppress(Exception):
                     proc.kill()
 
