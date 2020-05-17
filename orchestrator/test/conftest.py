@@ -3,6 +3,7 @@ import multiprocessing
 import asyncio
 import getpass
 import os
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -85,6 +86,9 @@ def device_queue():
 
         # launch emulators in parallel and wait for all to boot:
         async def launch(index: int):
+            completed = subprocess.run(["/opt/android/sdk/tools/bin/avdmanager list"], stdout=subprocess.PIPE,
+                                       stderr=subprocess.STDOUT)
+            print(f"AVD LIST: \n {completed.stdout.decode('utf-8')}")
             if index:
                 await asyncio.sleep(index*2)  # stabilizes the launches spacing them out (otherwise, intermittend fail to boot)
             return await Emulator.launch(Emulator.PORTS[index], AVD, CONFIG,*ARGS)
