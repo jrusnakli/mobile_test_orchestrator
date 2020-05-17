@@ -132,8 +132,8 @@ class Emulator(Device):
         environ = dict(os.environ)
         if config.avd_dir:
             environ["ANDROID_AVD_HOME"] = str(config.avd_dir)
-            assert os.path.exists(environ["ANDROID_AVD_HOME"], "MTO_emulator2.ini")
-            assert os.path.exists(environ["ANDROID_AVD_HOME"], "MTO_emulator2.avd")
+            assert os.path.exists(os.path.join(environ["ANDROID_AVD_HOME"], "MTO_emulator2.ini"))
+            assert os.path.exists(os.path.join(environ["ANDROID_AVD_HOME"], "MTO_emulator2.avd"))
         environ["ANDROID_SDK_HOME"] = str(config.sdk)
         booted = False
         proc: Optional[subprocess.Popen] = None  # type: ignore
