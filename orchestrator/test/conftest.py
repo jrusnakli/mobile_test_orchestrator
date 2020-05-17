@@ -37,11 +37,11 @@ else:
 
 class DeviceManager:
 
-    AVD = "MTO_emulator"
+    AVD = "MTO_emulator2"
     if IS_CIRCLECI:
         CONFIG = EmulatorBundleConfiguration(
             sdk=Path(support.find_sdk()),
-            avd_dir=Path("/home/circleci/avd"),
+            avd_dir=Path("/opt/android/avds/"),
             boot_timeout=10 * 60  # seconds
         )
     else:
