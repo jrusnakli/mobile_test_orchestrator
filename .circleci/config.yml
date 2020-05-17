@@ -25,7 +25,8 @@ jobs:
           name: setup emulator
           command: |
             /opt/android/sdk/tools/bin/sdkmanager "system-images;android-28;default;x86"
-            echo no | /opt/android/sdk/tools/bin/avdmanager create avd -n "MTO_emulator" -k "system-images;android-28;default;x86" --force
+            id=`opt/android/sdk/tools/bin/avdmanager list | grep "id: " | grep "android-28" | cut -d ' ' -f 2`
+            echo no | /opt/android/sdk/tools/bin/avdmanager create avd -n "MTO_emulator" -k "system-images;android-28;default;x86" -d $id --force
       - run:
           name: build androidtestorchestrator
           command: |
