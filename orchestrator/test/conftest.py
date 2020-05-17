@@ -38,10 +38,17 @@ else:
 class DeviceManager:
 
     AVD = "MTO_emulator"
-    CONFIG = EmulatorBundleConfiguration(
-        sdk=Path(support.find_sdk()),
-        boot_timeout=10 * 60  # seconds
-    )
+    if IS_CIRCLECI:
+        CONFIG = EmulatorBundleConfiguration(
+            sdk=Path(support.find_sdk()),
+            avd_dir=Path("/home/circleci/avd"),
+            boot_timeout=10 * 60  # seconds
+        )
+    else:
+        CONFIG = EmulatorBundleConfiguration(
+            sdk=Path(support.find_sdk()),
+            boot_timeout=10 * 60  # seconds
+        )
     ARGS = [
         "-no-window",
         "-no-audio",
