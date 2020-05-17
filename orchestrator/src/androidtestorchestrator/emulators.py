@@ -132,6 +132,7 @@ class Emulator(Device):
         environ = dict(os.environ)
         if config.avd_dir:
             environ["ANDROID_AVD_HOME"] = str(config.avd_dir)
+            print(f">>>>> using {environ['ANDROID_AVD_HOME']} as avd home")
             assert os.path.exists(os.path.join(environ["ANDROID_AVD_HOME"], "MTO_emulator2.ini"))
             assert os.path.exists(os.path.join(environ["ANDROID_AVD_HOME"], "MTO_emulator2.avd"))
         environ["ANDROID_SDK_HOME"] = str(config.sdk)
@@ -139,7 +140,7 @@ class Emulator(Device):
         proc: Optional[subprocess.Popen] = None  # type: ignore
         try:
             while retries >= 0:
-                print(f">>>>>> Launching emulator with {' '.join(cmd)} with ANDROID_AVD_HOME as {environ['ANDROID_AVD_HOME']}")
+                print(f">>>>>> Launching emulator with {' '.join(cmd)}")
                 proc = subprocess.Popen(cmd,
                                         stderr=subprocess.STDOUT,
                                         stdout=subprocess.PIPE,
