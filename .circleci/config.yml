@@ -12,7 +12,7 @@ jobs:
     steps:
       - checkout
       - restore_cache:
-          key: image2-{{ .Branch }}-{{ checksum "requirements.txt" }}
+          key: image2-{{ .Branch }}-{{ checksum "checksum.file" }}
       - run:
           name: setup python venv
           command: |
@@ -27,7 +27,7 @@ jobs:
             . venv/bin/activate
             pip install -e ./orchestrator
       - save_cache:
-          key: image2-{{ .Branch }}-{{ checksum "requirements.txt" }}
+          key: image2-{{ .Branch }}-{{ checksum "checksum.file" }}
           paths:
             - "venv"
             - "testsupportapps/.gradle"
@@ -36,7 +36,6 @@ jobs:
           command: |
             . venv/bin/activate
             cd orchestrator/src
-            mypy androidtestorchestrator
             flake8 androidtestorchestrator
       - run:
           name: Running tests
