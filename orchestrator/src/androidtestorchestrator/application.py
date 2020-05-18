@@ -162,6 +162,8 @@ class Application(RemoteDeviceBased):
 
         :param device: Device to install on
         :param apk_path: bundle to install
+        :param callback: if not None, callback to be made on successful push and at start of install; the
+           `Device.Process` that is installing from device storage is passed as the only parameter to the callback
         :raises Device.InsufficientStorageError: if there is not enough space on device
         :raises IOError if push of apk to device was unsuccessful
         """
