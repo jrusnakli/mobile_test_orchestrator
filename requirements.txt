@@ -1,11 +1,10 @@
 apk-bitminer>=1.1.0
-importlib_resources
-pathlib
-shiv
-flake8
-mypy
+psutil
 pytest
 pytest-html
 pytest-cov
 pytest-asyncio
-pytest_mproc
+pytest_mproc>=3.2.3
+mypy==0.720
+typed-ast
+flake8
