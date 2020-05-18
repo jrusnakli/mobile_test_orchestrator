@@ -36,6 +36,7 @@ jobs:
           command: |
             . venv/bin/activate
             cd orchestrator/src
+            mypy androidtestorchestrator
             flake8 androidtestorchestrator
       - run:
           name: Running tests
