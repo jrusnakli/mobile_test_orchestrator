@@ -162,6 +162,7 @@ async def device_pool():
 async def devices(device_pool: AsyncEmulatorPool, app_manager: AppManager, event_loop):
     # convert queue to an async queue.  We specifially want to test with AsyncEmulatorPool,
     # so will not ust the AsynQueueAdapter class.
+    support.ensure_avd(str(DeviceManager.CONFIG.sdk), DeviceManager.AVD)
     count = min(DeviceManager.count(), 2)
     async with device_pool.reserve_many(count) as devs:
         for dev in devs:
