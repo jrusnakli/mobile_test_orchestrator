@@ -45,12 +45,16 @@ jobs:
             export ANDROID_AVD_HOME
             sudo mkdir -p $ANDROID_AVD_HOME
             sudo chown circleci $ANDROID_AVD_HOME
+            sudo chgrp libvirt $ANDROID_VAD_HOME
+            sudo chmod g+s $ANDROID_AVD_HOME
             /opt/android/sdk/tools/bin/sdkmanager "system-images;android-28;default;x86_64"
             /opt/android/sdk/tools/bin/avdmanager create avd -n "MTO_emulator2" -k "system-images;android-28;default;x86_64" -d "pixel_xl" --abi x86_64
             . venv/bin/activate
             cd orchestrator/test
             mkdir -p test-reports/tmp
             find $ANDROID_AVD_HOME
+            test -f /opt/android/avds/MTO_emulator2.ini
+            test -d /opt/android/avds/MTO_emulator2.avd
             CIRCLECI=1 pytest -s -m "not localonly" --html  test-reports/report.html --junitxml=test-reports/all-result.xml --basetemp=test-reports/tmp --cov=../src . --cov-report html:test-reports/coverage
       - save_cache:
           key: image2-{{ .Branch }}-{{ checksum "requirements.txt" }}
