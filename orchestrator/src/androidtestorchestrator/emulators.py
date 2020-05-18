@@ -50,7 +50,7 @@ class Emulator(Device):
             self._port = port
 
         @property
-        def port(self):
+        def port(self) -> int:
             return self._port
 
     def __init__(self, device_id: str,
