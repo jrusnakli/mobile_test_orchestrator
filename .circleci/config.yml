@@ -31,6 +31,7 @@ jobs:
           paths:
             - "venv"
             - "testsupportapps/.gradle"
+            - "testservice/.gradle"
       - run:
           name: Run static analysis
           command: |
