@@ -45,7 +45,6 @@ jobs:
             export ANDROID_AVD_HOME
             sudo mkdir -p $ANDROID_AVD_HOME
             sudo chown circleci $ANDROID_AVD_HOME
-            sudo chgrp libvirt $ANDROID_AVD_HOME
             sudo chmod g+s $ANDROID_AVD_HOME
             /opt/android/sdk/tools/bin/sdkmanager emulator
             /opt/android/sdk/tools/bin/sdkmanager "system-images;android-28;default;x86_64"
