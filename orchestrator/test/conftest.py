@@ -38,17 +38,12 @@ else:
 class DeviceManager:
 
     AVD = "MTO_emulator"
-    if IS_CIRCLECI:
-        CONFIG = EmulatorBundleConfiguration(
-            sdk=Path(support.find_sdk()),
-            avd_dir=Path("/home/circleci/.android/avd"),
-            boot_timeout=10 * 60  # seconds
-        )
-    else:
-        CONFIG = EmulatorBundleConfiguration(
-            sdk=Path(support.find_sdk()),
-            boot_timeout=10 * 60  # seconds
-        )
+    avd_path = os.environ.get("ANDROID_AVD_HOME", os.path.join(os.path.expanduser("~"), ".android", "avd"))
+    CONFIG = EmulatorBundleConfiguration(
+        sdk=Path(support.find_sdk()),
+        avd_dir=Path(avd_path),
+        boot_timeout=10 * 60  # seconds
+    )
     ARGS = [
         "-no-window",
         "-no-audio",
@@ -144,6 +139,7 @@ class AppManager:
 
 @pytest.fixture(scope='node')
 async def device_pool():
+    support.ensure_avd(str(DeviceManager.CONFIG.sdk), DeviceManager.AVD, DeviceManager.CONFIG.avd_dir)
     if IS_CIRCLECI:
         AppManager.singleton()  # force build to happen fist, in serial
     m = multiprocessing.Manager()
@@ -162,7 +158,6 @@ async def device_pool():
 async def devices(device_pool: AsyncEmulatorPool, app_manager: AppManager, event_loop):
     # convert queue to an async queue.  We specifially want to test with AsyncEmulatorPool,
     # so will not ust the AsynQueueAdapter class.
-    support.ensure_avd(str(DeviceManager.CONFIG.sdk), DeviceManager.AVD)
     count = min(DeviceManager.count(), 2)
     async with device_pool.reserve_many(count) as devs:
         for dev in devs:

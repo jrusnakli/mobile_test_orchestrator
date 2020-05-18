@@ -132,7 +132,7 @@ def uninstall_apk(apk, device):
         Application(AXMLParser.parse(apk).package_name, device).uninstall()
 
 
-def ensure_avd(android_sdk: str, avd: str):
+def ensure_avd(android_sdk: str, avd: str, avd_path: str):
     adb_path = os.path.join(android_sdk, "platform-tools", "adb")
     if sys.platform.lower() == 'win32':
         adb_path += ".exe"
@@ -183,6 +183,8 @@ def ensure_avd(android_sdk: str, avd: str):
             stdout, _ = p.communicate()
             raise Exception(f"Failed to download image for AVD {stdout}")
         print(">>>> Download complete.")
+        environ = dict(os.environ)
+        environ.update({"ANDROID_AVD_HOME": avd_path})
         create_avd_cmd = [avdmanager_path, "create", "avd", "-n", avd, "-k", image, "-d", "pixel_xl"]
         p = subprocess.Popen(create_avd_cmd,  stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.PIPE)
         if p.wait() != 0:
