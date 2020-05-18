@@ -274,7 +274,7 @@ class Application(RemoteDeviceBased):
                 self._device_navigation.go_home()
             self.device.execute_remote_cmd("shell", "am", basic_cmd, self.package_name)
         except Exception as e:
-            log.error(f"Failed to (force) stop app {self.package_name} with error: {str(e)}")
+            log.error("Failed to (force) stop app %s with error: %s", self.package_name, str(e))
 
     def clean_kill(self) -> None:
         """
