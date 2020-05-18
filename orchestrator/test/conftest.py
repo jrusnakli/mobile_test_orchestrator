@@ -37,7 +37,7 @@ else:
 
 class DeviceManager:
 
-    AVD = "MTO_emulator2"
+    AVD = "MTO_emulator"
     if IS_CIRCLECI:
         CONFIG = EmulatorBundleConfiguration(
             sdk=Path(support.find_sdk()),
@@ -150,8 +150,6 @@ async def device_pool():
     queue = AsyncQueueAdapter(q=m.Queue(DeviceManager.count()))
     if IS_CIRCLECI:
         DeviceManager.ARGS.append("-no-accel")
-        DeviceManager.ARGS.append("-no-snapshot")
-        DeviceManager.ARGS.append("-no-snapshot-save")
     async with AsyncEmulatorPool.create(DeviceManager.count(),
                                         DeviceManager.AVD,
                                         DeviceManager.CONFIG,
