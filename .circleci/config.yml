@@ -45,10 +45,6 @@ jobs:
             cd orchestrator/test
             mkdir -p test-reports/tmp
             CIRCLECI=1 pytest -s -m "not localonly" --html  test-reports/report.html --junitxml=test-reports/all-result.xml --basetemp=test-reports/tmp --cov=../src . --cov-report html:test-reports/coverage
-      - save_cache:
-          key: image2-{{ .Branch }}-{{ checksum "requirements.txt" }}
-          paths:
-            - "/opt/android/avds"
       - run:
           name: directory
           command: |

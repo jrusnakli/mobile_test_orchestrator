@@ -41,7 +41,7 @@ class DeviceManager:
     if IS_CIRCLECI:
         CONFIG = EmulatorBundleConfiguration(
             sdk=Path(support.find_sdk()),
-            avd_dir=Path("/opt/android/avds/"),
+            avd_dir=Path("/home/circleci/.android/avd"),
             boot_timeout=10 * 60  # seconds
         )
     else:
