@@ -47,6 +47,11 @@ class Emulator(Device):
 
         def __init__(self, port: int, stdout: str):
             super().__init__(f"Failed to start emulator on port {port}:\n{stdout}")
+            self._port = port
+
+        @property
+        def port(self):
+            return self._port
 
     def __init__(self, device_id: str,
                  config: EmulatorBundleConfiguration,

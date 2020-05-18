@@ -49,6 +49,7 @@ class DevicePreparation:
     def verify_network_connection(self, domain: str, count: int = 10, acceptable_loss: int = 3) -> None:
         """
         Verify connection to given domain is active.
+
         :param domain: address to test connection to
         :param count: number of packets to test
         :raises: IOError on failure to successfully ping given number of packets

@@ -22,7 +22,7 @@ _TTestApp = TypeVar('_TTestApp', bound='TestApplication')
 
 class Application(RemoteDeviceBased):
     """
-    Defines an application installed on a remotely USB-connected device. Provides an interfac∂e for stopping,
+    Defines an application installed on a remotely USB-connected device. Provides an interface for stopping,
     starting an application, and such.
 
     An application is distinguished from a bundle (an apk).  A bundle is a package that only after installed
@@ -148,7 +148,7 @@ class Application(RemoteDeviceBased):
 
         :param device: Device to install on
         :param apk_path: local path to the apk to be installed
-        :param as_upgrade: install as upgrade or not
+        :param args: list of additional arguments to pass to he install command (adb install <*args> apk_path)
         """
         cmd = ["install"] + list(args) + [apk_path]
         device.execute_remote_cmd(*cmd, timeout=Device.TIMEOUT_LONG_ADB_CMD)
@@ -202,7 +202,7 @@ class Application(RemoteDeviceBased):
             log.warning("adb command froze on uninstall.  Ignoring issue as device specific")
         except Exception as e:
             if self.package_name in self.device.list_installed_packages():
-                log.error(f"Failed to uninstall app {self.package_name} [{str(e)}]")
+                log.error("Failed to uninstall app %s [%s]", self.package_name, str(e))
 
     def grant_permissions(self, permissions: Optional[Iterable[str]] = None) -> Set[str]:
         """
@@ -423,9 +423,11 @@ class TestApplication(Application):
                 items.append(runner)
         return items
 
-    def run(self, *options: str) -> Device.ProcessContext:
+    def run(self, *options: str) -> Device.AsyncProcessContext:
         """
-        Run an instrumentation test package, yielding lines from std output
+        Run an instrumentation test package, yielding lines from std output.
+        NOTE: Return value is instance of a class that implement __aenter__ and __aexit__ (i.e. is
+          an AsyncContextManager instance and should be used in an async context as shown in example below
 
         :param options: arguments to pass to instrument command
         :returns: return coroutine wrapping an asyncio context manager for iterating over lines
@@ -446,9 +448,11 @@ class TestApplication(Application):
         return self.device.monitor_remote_cmd("shell", "am", "instrument", "-w", *options, "-r",
                                               "/".join([self._package_name, self._runner]))
 
-    def run_orchestrated(self, *options: str) -> Device.ProcessContext:
+    def run_orchestrated(self, *options: str) -> Device.AsyncProcessContext:
         """
         Run an instrumentation test package via Google's test orchestrator that
+        NOTE: Return value is instance of a class that implement __aenter__ and __aexit__ (i.e. is
+          an AsyncContextManager instance and should be used in an async context as shown in example below
 
         :param options: arguments to pass to instrument command
         :returns: coroutine wrapping an asyncio context manager for iterating over lines

@@ -70,7 +70,7 @@ class Device:
         Raised on insufficient storage on device (e.g. in install)
         """
 
-    class ProcessContext:
+    class AsyncProcessContext:
         """
         Wraps the Device.Process class in a context manager to ensure proper cleanup.
         Upon exit of this context, the process will be stopped if it is still running.
@@ -104,11 +104,10 @@ class Device:
                     await self._proc.stop(timeout=3)
             if self._proc.returncode is None:
                 # Second try, force-stop
-                with suppress(Exception):
-                    try:
-                        await self._proc.stop(timeout=3, force=True)
-                    except TimeoutError:
-                        log.error("Failed to kill subprocess while exiting its context")
+                try:
+                    await self._proc.stop(timeout=3, force=True)
+                except TimeoutError:
+                    log.error("Failed to kill subprocess while exiting its context")
 
     class Process:
         """
@@ -486,7 +485,7 @@ class Device:
                                 stderr=subprocess.PIPE,
                                 **kwargs)
 
-    def monitor_remote_cmd(self, *args: str) -> "Device.ProcessContext":
+    def monitor_remote_cmd(self, *args: str) -> "Device.AsyncProcessContext":
         """
         Coroutine for executing a command on this remote device asynchronously, allowing the client to iterate over
         lines of output.
@@ -509,7 +508,7 @@ class Device:
             stderr=asyncio.subprocess.STDOUT,
             bufsize=0
         )
-        return self.ProcessContext(proc_future)
+        return self.AsyncProcessContext(proc_future)
 
     ###################
     # Device settings/properties

@@ -206,7 +206,7 @@ class DeviceLog(RemoteDeviceBased):
         """
         self.device.execute_remote_cmd("logcat", "-b", buffer, "-c")
 
-    def logcat(self, *options: str) -> Device.ProcessContext:
+    def logcat(self, *options: str) -> Device.AsyncProcessContext:
         """
         async generator to continually output lines from logcat until client
         exits processing (exist async iterator), at which point process is killed
