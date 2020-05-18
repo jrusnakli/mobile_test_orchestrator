@@ -42,10 +42,11 @@ jobs:
           name: Running tests
           command: |
             ANDROID_AVD_HOME=/opt/android/avds
+            export ANDROID_AVD_HOME
             sudo mkdir -p $ANDROID_AVD_HOME
             sudo chown circleci $ANDROID_AVD_HOME
             /opt/android/sdk/tools/bin/sdkmanager "system-images;android-28;default;x86_64"
-            echo no | /opt/android/sdk/tools/bin/avdmanager create avd -n "MTO_emulator2" -k "system-images;android-28;default;x86_64" -d "pixel_xl" --force --abi x86_64 -p $ANDROID_AVD_HOME
+            /opt/android/sdk/tools/bin/avdmanager create avd -n "MTO_emulator2" -k "system-images;android-28;default;x86_64" -d "pixel_xl" --abi x86_64
             . venv/bin/activate
             cd orchestrator/test
             mkdir -p test-reports/tmp
