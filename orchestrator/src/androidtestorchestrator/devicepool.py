@@ -128,7 +128,9 @@ class AsyncDevicePool(BaseDevicePool):
         """
         :return: a reserved Device
         """
+        print(">>>> GETTING DEVICE>..")
         device = await self._q.get()  # type: ignore
+        print(f">>> GOT DEVICE {device.device_id}")
         try:
             if device is None:
                 raise queue.Empty("No emulators found.  Possibly failed to launch any")
@@ -252,6 +254,7 @@ class AsyncEmulatorPool(AsyncDevicePool):
                     leased_emulator = None
                 else:
                     raise
+            print(f">>>>> Putting {leased_emulator.device_id} in the queue...")
             await queue.put(leased_emulator)  # type: ignore
 
         futures = [asyncio.create_task(launch_one(index, avd, config, *args)) for index in range(count)]
