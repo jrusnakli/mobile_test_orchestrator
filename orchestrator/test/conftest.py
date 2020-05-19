@@ -37,7 +37,7 @@ else:
 
 class DeviceManager:
 
-    AVD = "MTO_emulator"
+    AVD = "MTO_test_emulator"
     avd_path = os.environ.get("ANDROID_AVD_HOME", os.path.join(os.path.expanduser("~"), ".android", "avd"))
     CONFIG = EmulatorBundleConfiguration(
         sdk=Path(support.find_sdk()),
@@ -137,9 +137,11 @@ class AppManager:
         return AppManager._singleton
 
 
+support.ensure_avd(str(DeviceManager.CONFIG.sdk), DeviceManager.AVD, DeviceManager.CONFIG.avd_dir)
+
+
 @pytest.fixture(scope='node')
 async def device_pool():
-    support.ensure_avd(str(DeviceManager.CONFIG.sdk), DeviceManager.AVD, DeviceManager.CONFIG.avd_dir)
     if IS_CIRCLECI:
         AppManager.singleton()  # force build to happen fist, in serial
     m = multiprocessing.Manager()
