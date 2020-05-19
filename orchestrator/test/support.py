@@ -165,6 +165,7 @@ def ensure_avd(android_sdk: str, avd: str, avd_path: str):
     list_emulators_cmd = [emulator_path, "-list-avds"]
     if is_no_window:
         list_emulators_cmd.append("-no-window")
+    print(f">>>> Executing {list_emulators_cmd}")
     completed = subprocess.run(list_emulators_cmd, timeout=10, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                encoding='utf-8', shell=shell)
     if completed.returncode != 0:
@@ -173,7 +174,7 @@ def ensure_avd(android_sdk: str, avd: str, avd_path: str):
         image = "system-images;android-28;default;x86_64"
         download_emulator_cmd = [sdkmanager_path, image]
         p = subprocess.Popen(download_emulator_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
-        print(">>>> Downloading system image to create avd...(May take some time)")
+        print(f">>>> Downloading system image to create avd...(May take some time) {download_emulator_cmd}")
         while p.returncode is None:
             bytes = p.stdout.read(100)
             if not bytes:
@@ -186,6 +187,7 @@ def ensure_avd(android_sdk: str, avd: str, avd_path: str):
         environ = dict(os.environ)
         environ.update({"ANDROID_AVD_HOME": avd_path})
         create_avd_cmd = [avdmanager_path, "create", "avd", "-n", avd, "-k", image, "-d", "pixel_xl"]
+        print(f">>>> Executing {create_avd_cmd}")
         p = subprocess.Popen(create_avd_cmd,  stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.PIPE)
         if p.wait() != 0:
             stdout, stderr = p.communicate()
