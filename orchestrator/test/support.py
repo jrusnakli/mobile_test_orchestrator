@@ -171,7 +171,7 @@ def ensure_avd(android_sdk: str, avd: str):
             raise Exception(f"Failed to download image for AVD {stdout}")
         print(">>>> Download complete.")
         create_avd_cmd = [avdmanager_path, "create", "avd", "-n", avd, "-k", image, "-d", "pixel_xl"]
-        print(f">>>> EXECUTING {create_avd_cmd_cmd}")
+        print(f">>>> EXECUTING {create_avd_cmd}")
         p = subprocess.Popen(create_avd_cmd,  stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.PIPE)
         if p.wait() != 0:
             stdout, stderr = p.communicate()
