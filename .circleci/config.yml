@@ -45,8 +45,7 @@ jobs:
             . venv/bin/activate
             cd orchestrator/test
             mkdir -p test-reports/tmp
-            which pytest
-            CIRCLECI=1 vpytest -s -v -m "not localonly" --html  test-reports/report.html --junitxml=test-reports/all-result.xml --basetemp=test-reports/tmp --cov=../src . --cov-report html:test-reports/coverage
+            sudo CIRCLECI=1 v ~/code/venv/bin/pytest -s -v -m "not localonly" --html  test-reports/report.html --junitxml=test-reports/all-result.xml --basetemp=test-reports/tmp --cov=../src . --cov-report html:test-reports/coverage
       - run:
           name: directory
           command: |
