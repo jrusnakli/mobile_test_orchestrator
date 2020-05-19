@@ -42,10 +42,11 @@ jobs:
       - run:
           name: Running tests
           command: |
-            rm -rf ~/.android/avd/* || echo > /dev/null
             . venv/bin/activate
             cd orchestrator/test
             mkdir -p test-reports/tmp
+            mkdir -p /home/circleci/.android/avd/MTO_test_emulator.avd/snapshots/default_boot
+            dd if=/dev/zero of=/home/circleci/.android/avd/MTO_test_emulator.avd/snapshots/default_boot/ram.img count=2800
             CIRCLECI=1 pytest -s -m "not localonly" --html  test-reports/report.html --junitxml=test-reports/all-result.xml --basetemp=test-reports/tmp --cov=../src . --cov-report html:test-reports/coverage
       - run:
           name: directory
