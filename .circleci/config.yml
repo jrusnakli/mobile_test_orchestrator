@@ -45,7 +45,6 @@ jobs:
             . venv/bin/activate
             cd orchestrator/test
             mkdir -p test-reports/tmp
-            mkdir -p /home/circleci/.android/avd/MTO_test_emulator.avd/snapshots/default_boot
             CIRCLECI=1 pytest -s -m "not localonly" --html  test-reports/report.html --junitxml=test-reports/all-result.xml --basetemp=test-reports/tmp --cov=../src . --cov-report html:test-reports/coverage
       - run:
           name: directory
