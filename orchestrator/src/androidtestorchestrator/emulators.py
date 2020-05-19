@@ -148,7 +148,7 @@ class Emulator(Device):
                     nonlocal device_id
                     nonlocal retries
                     while proc.poll() is None and device.get_state() != Device.State.ONLINE:
-                        await asyncio.sleep(5)
+                        await asyncio.sleep(1)
 
                     if proc.poll() is not None:
                         stdout, _ = proc.communicate()
@@ -160,7 +160,7 @@ class Emulator(Device):
                     while not booted:
                         boot_prop = device.get_system_property("dev.bootcomplete", verbose=False)
                         booted = boot_prop == "1"
-                        await asyncio.sleep(1)
+                        await asyncio.sleep(5)
                         duration = time.time() - start
                         print(f">>> [{duration}]  {device.device_id} Booted?: {booted} [{boot_prop}]")
                         if proc.poll() is not None:
