@@ -160,7 +160,7 @@ def ensure_avd(android_sdk: str, avd: str, avd_path: str):
         else:
             emulator_path = os.path.join(android_sdk, "emulator", "emulator")
         if not os.path.isfile(emulator_path):
-            raise Exception("Unable to find path to 'emulator' command")
+            raise Exception(f"Unable to find path to 'emulator' command in {android_sdk}")
         is_no_window = True
     list_emulators_cmd = [emulator_path, "-list-avds"]
     if is_no_window:
@@ -200,4 +200,3 @@ def ensure_avd(android_sdk: str, avd: str, avd_path: str):
             raise Exception("Unable to create AVD for testing")
 
 
-find_sdk()
