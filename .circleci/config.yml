@@ -45,6 +45,7 @@ jobs:
             . venv/bin/activate
             cd orchestrator/test
             mkdir -p test-reports/tmp
+            /opt/android/sdk/tools/bin/sdkmanager --update
             /opt/android/sdk/tools/bin/sdkmanager emulator
             CIRCLECI=1 ~/code/venv/bin/pytest -s -x -v -m "not localonly" --html  test-reports/report.html --junitxml=test-reports/all-result.xml --basetemp=test-reports/tmp --cov=../src . --cov-report html:test-reports/coverage
       - run:
