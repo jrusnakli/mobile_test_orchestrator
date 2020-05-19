@@ -50,7 +50,7 @@ class DeviceManager:
     ARGS = [
         "-no-window",
         "-no-audio",
-        "-wipe-data",
+        # "-wipe-data",
         "-gpu", "off",
         "-no-boot-anim",
         "-skin", "320x640",
