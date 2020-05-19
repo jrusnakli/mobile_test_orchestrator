@@ -130,11 +130,6 @@ class Emulator(Device):
             cmd += ["-ramdisk", str(config.ramdisk)]
         cmd += args
         environ = dict(os.environ)
-        if config.avd_dir:
-            environ["ANDROID_AVD_HOME"] = str(config.avd_dir)
-            print(f">>>>> using {environ['ANDROID_AVD_HOME']} as avd home")
-            assert os.path.exists(os.path.join(environ["ANDROID_AVD_HOME"], "MTO_emulator.ini"))
-            assert os.path.exists(os.path.join(environ["ANDROID_AVD_HOME"], "MTO_emulator.avd"))
         environ["ANDROID_SDK_HOME"] = str(config.sdk)
         booted = False
         proc: Optional[subprocess.Popen] = None  # type: ignore
