@@ -42,6 +42,7 @@ jobs:
       - run:
           name: Running tests
           command: |
+            rm -rf ~/.android/avd/* || echo > /dev/null
             . venv/bin/activate
             cd orchestrator/test
             mkdir -p test-reports/tmp
