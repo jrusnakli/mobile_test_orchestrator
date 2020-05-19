@@ -42,7 +42,7 @@ class DeviceManager:
 
     AVD = "MTO_test_emulator"
     avd_path = os.environ.get("ANDROID_AVD_HOME", os.path.join(os.path.expanduser("~"), ".android", "avd"))
-    if IS_CIRCLECI:
+    if IS_CIRCLECI and os.path.exists("/opt/android/sdk"):
         sdk_dir = "/opt/android/sdk"
     else:
         sdk_dir = support.find_sdk()
