@@ -33,6 +33,9 @@ else:
 #############
 # Device related fixtures
 ############
+if IS_CIRCLECI:
+    Device.TIMEOUT_ADB_CMD *= 10  # slow machine
+    Device.TIMEOUT_LONG_ADB_CMD = 10*60  # circleci may need more time
 
 
 class DeviceManager:
