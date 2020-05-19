@@ -42,8 +42,12 @@ class DeviceManager:
 
     AVD = "MTO_test_emulator"
     avd_path = os.environ.get("ANDROID_AVD_HOME", os.path.join(os.path.expanduser("~"), ".android", "avd"))
+    if IS_CIRCLECI:
+        sdk_dir = "/opt/android/sdk"
+    else:
+        sdk_dir = support.find_sdk()
     CONFIG = EmulatorBundleConfiguration(
-        sdk=Path(support.find_sdk()),
+        sdk=Path(sdk_dir),
         avd_dir=Path(avd_path),
         boot_timeout=10 * 60  # seconds
     )
