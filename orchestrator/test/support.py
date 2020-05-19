@@ -184,8 +184,6 @@ def ensure_avd(android_sdk: str, avd: str, avd_path: str):
             stdout, _ = p.communicate()
             raise Exception(f"Failed to download image for AVD {stdout}")
         print(">>>> Download complete.")
-        environ = dict(os.environ)
-        environ.update({"ANDROID_AVD_HOME": avd_path})
         create_avd_cmd = [avdmanager_path, "create", "avd", "-n", avd, "-k", image, "-d", "pixel_xl"]
         print(f">>>> Executing {create_avd_cmd}")
         p = subprocess.Popen(create_avd_cmd,  stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.PIPE)
@@ -198,5 +196,3 @@ def ensure_avd(android_sdk: str, avd: str, avd_path: str):
             raise Exception("Command '%s -list-avds' failed with code %d" % (emulator_path, completed.returncode))
         if avd not in completed.stdout:
             raise Exception("Unable to create AVD for testing")
-
-

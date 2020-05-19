@@ -148,7 +148,7 @@ class Emulator(Device):
                     nonlocal device_id
                     nonlocal retries
                     while proc.poll() is None and device.get_state() != Device.State.ONLINE:
-                        await asyncio.sleep(1)
+                        await asyncio.sleep(5)
 
                     if proc.poll() is not None:
                         stdout, _ = proc.communicate()
