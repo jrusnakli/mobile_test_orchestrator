@@ -45,7 +45,7 @@ jobs:
             . venv/bin/activate
             cd orchestrator/test
             mkdir -p test-reports/tmp
-            CIRCLECI=1 ~/code/venv/bin/pytest -s -v -m "not localonly" --html  test-reports/report.html --junitxml=test-reports/all-result.xml --basetemp=test-reports/tmp --cov=../src . --cov-report html:test-reports/coverage
+            CIRCLECI=1 ~/code/venv/bin/pytest -s -v -m "not localonly" --html  test-reports/report.html --junitxml=test-reports/all-result.xml --basetemp=test-reports/tmp --cov=../src . --cov-report html:test-reports/coverage || ls -l ~/.android/avd/MTO_test_emulator.avd/snapshots/default_boot/ram.img
       - run:
           name: directory
           command: |
