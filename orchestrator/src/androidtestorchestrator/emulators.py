@@ -131,7 +131,7 @@ class Emulator(Device):
 
                 while device.get_state().strip() != 'device':
                     await asyncio.sleep(1)
-                    reads = True
+                    reads = (True, True)
                     while reads:
                         reads = select.select([proc.stdout], [], [], 0)
                         if reads[0]:
@@ -142,7 +142,7 @@ class Emulator(Device):
                 start = time.time()
                 while not booted:
                     booted = device.get_system_property("sys.boot_completed", ) == "1"
-                    reads = True
+                    reads = (True, True)
                     while reads:
                         reads = select.select([proc.stdout], [], [], 0)
                         if reads[0]:
