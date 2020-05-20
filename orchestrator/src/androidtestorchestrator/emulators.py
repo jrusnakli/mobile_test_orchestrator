@@ -1,7 +1,6 @@
 import asyncio
 import logging
 import os
-import select
 import subprocess
 import sys
 import time
