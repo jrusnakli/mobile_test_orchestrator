@@ -84,7 +84,7 @@ class TestAndroidDevice:
         else:
             with pytest.raises(Exception) as exc_info:
                 device.set_system_property("nosuchkey", "value")
-            assert "setprop: failed to set property 'nosuchkey' to 'value'" in str(exc_info.value)
+            assert f"setprop nosuchkey value' on device {device.device_id}" in str(exc_info.value)
 
     def test_get_set_system_property(self, device: Device):
         device.set_system_property("debug.mock2", "5555")
@@ -142,7 +142,7 @@ class TestAndroidDevice:
 
     def test_invalid_cmd_execution(self, device: Device):
         async def execute():
-            async with await device.execute_remote_cmd_async("some", "bad", "command") as proc:
+            async with device.monitor_remote_cmd("some", "bad", "command") as proc:
                 async for _ in proc.output(unresponsive_timeout=10):
                     pass
             assert proc.returncode is not None
@@ -152,9 +152,6 @@ class TestAndroidDevice:
     def test_get_locale(self, device: Device):
         locale = device.get_locale()
         assert locale == "en_US"
-
-    def test_check_network_connect(self, device: Device):
-        assert device.check_network_connection("localhost", count=3) == 0
 
     def test_get_device_properties(self, device: Device):
         device_properties = device.get_device_properties()

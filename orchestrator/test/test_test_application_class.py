@@ -24,7 +24,7 @@ class TestTestApplication(object):
 
         # More robust testing of this is done in test of AndroidTestOrchestrator
         async def parse_output():
-            async with await test_app.run("-e", "class", "com.linkedin.mtotestapp.InstrumentedTestAllSuccess#useAppContext") \
+            async with test_app.run("-e", "class", "com.linkedin.mtotestapp.InstrumentedTestAllSuccess#useAppContext") \
                     as proc:
                 async for line in proc.output(unresponsive_timeout=120):
                     log.debug(line)

@@ -18,64 +18,64 @@ class TestDeviceLog:
         log.set_logcat_buffer_size(DeviceLog.DEFAULT_LOGCAT_BUFFER_SIZE)
         assert log.logcat_buffer_size == '5Mb'
 
-    @pytest.mark.localonly
-    def test_logcat_and_clear(self, device: Device, android_service_app: ServiceApplication):
+    @pytest.mark.asyncio
+    async def test_logcat_and_clear(self, device: Device, android_service_app: ServiceApplication):
         output = []
         # call here waits for emulator startup, allowing other fixtures to complete in parallel
         device_log = DeviceLog(device)
-        device_log.clear()  # ensure logcat is clean before the test
-        counter = 2
-        logcat_proc = None
+        done_parsing = False
 
-        async def parse_logcat():
-            nonlocal logcat_proc
-            async with await device_log.logcat("-v", "brief", "-s", "MTO-TEST") as proc:
-                logcat_proc = proc
-                async for line in proc.output(unresponsive_timeout=120):
-                    nonlocal output
+        async def parse_logcat(counter, output):
+            nonlocal done_parsing
+            async with device_log.logcat("-v", "brief", "-s", "MTO-TEST") as proc:
+                async for line in proc.output(unresponsive_timeout=3):
                     # makes easy to debug on circleci when emulator accel is not available
-                    print(f"test_logcat_and_clear:DEBUG: {line}")
                     if line.startswith("----"):
                         continue
                     output.append(line)
                     if len(output) >= counter:
                         break
-                await proc.stop(timeout=10)
+                await proc.stop(timeout=10, force=True)
+                await proc.wait(timeout=10)
+                done_parsing = True
 
-        async def timer():
-            await asyncio.wait_for(parse_logcat(), timeout=120)
-
-        for _ in range(counter):
-            android_service_app.broadcast(".MTOBroadcastReceiver", "--es", "command", "old_line",
+        async def populate_logcat(counter):
+            nonlocal done_parsing
+            for index in range(counter):
+                android_service_app.broadcast(".MTOBroadcastReceiver", "--es", "command", "old_line",
                                           action="com.linkedin.mto.FOR_TEST_ONLY_SEND_CMD")
-            time.sleep(2)
-        asyncio.get_event_loop().run_until_complete(timer())
+                await asyncio.sleep(0.2)
+                if done_parsing:
+                    break
+
+        await asyncio.wait([parse_logcat(10, output), populate_logcat(20)],  timeout=120, return_when=asyncio.FIRST_EXCEPTION)
+        time.sleep(4)
+        try:
+            device_log.clear()
+        except Device.CommandExecutionFailure:
+            device_log.clear()  # intermittently android "fails to clear main log"
+        time.sleep(4)
+
         for line in output:
             assert "old_line" in line
-        assert logcat_proc.returncode is not None  # proc is terminated/completed
-        output_before = output[:]
-        retries = 3
-        try:
-            time.sleep(5)  # give enough time for testapp to receive the intent and emmit log to logcat
-            device_log.clear()
-        except Device.CommandExecutionFailureException as e:
-            if retries > 0 and "Failed to clear" in str(e):
-                retries -= 1
-            else:
-                raise
-
         # capture more lines of output and make sure they don't match any in previous capture
         output = []
-        # now emitting some new logs
-        for _ in range(counter):
-            android_service_app.broadcast(".MTOBroadcastReceiver", "--es", "command", "new_line",
-                                          action="com.linkedin.mto.FOR_TEST_ONLY_SEND_CMD")
-            time.sleep(1)
+        done_parsing = False
 
-        asyncio.get_event_loop().run_until_complete(timer())
+        # now emitting some new logs
+        async def populate_logcat2(counter):
+            nonlocal done_parsing
+            for index in range(counter):
+                android_service_app.broadcast(".MTOBroadcastReceiver", "--es", "command", "new_line",
+                                              action="com.linkedin.mto.FOR_TEST_ONLY_SEND_CMD")
+                await asyncio.sleep(0.2)
+                if done_parsing:
+                    break
+
+        await asyncio.wait([parse_logcat(1, output), populate_logcat2(20)],  timeout=120, return_when=asyncio.FIRST_EXCEPTION)
         for line in output:
+            assert "old_line" not in line
             assert "new_line" in line
-            assert line not in output_before
 
     def test_capture_mark_start_stop(self, device: Device, mp_tmp_dir):
         device_log = DeviceLog(device)

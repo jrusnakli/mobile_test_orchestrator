@@ -47,6 +47,11 @@ class Emulator(Device):
 
         def __init__(self, port: int, stdout: str):
             super().__init__(f"Failed to start emulator on port {port}:\n{stdout}")
+            self._port = port
+
+        @property
+        def port(self) -> int:
+            return self._port
 
     def __init__(self, device_id: str,
                  config: EmulatorBundleConfiguration,
@@ -170,7 +175,7 @@ class EmulatorQueue:
 
     async def start_async(self, avd: str, config: EmulatorBundleConfiguration, *args: str) -> None:
         """
-        Aynchronous start of an emaulator
+        Aynchronous start of an emulator
 
         :param avd: name of avd to launch
         :param config: emulator bundle config

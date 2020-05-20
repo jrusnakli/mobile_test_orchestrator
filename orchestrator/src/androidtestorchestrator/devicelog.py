@@ -1,6 +1,6 @@
 import os
 import signal
-from asyncio import AbstractEventLoop
+import subprocess
 
 import logging
 from subprocess import Popen
@@ -12,7 +12,7 @@ except Exception:
     psutil = None
 
 from contextlib import suppress
-from typing import AsyncContextManager, Dict, Tuple, Optional, TextIO, Type, Any
+from typing import Dict, Tuple, Optional, TextIO, Type
 
 from .timing import StopWatch
 from .parsing import LineParser
@@ -180,8 +180,9 @@ class DeviceLog(RemoteDeviceBased):
 
         :return: the logcat buffer size for given channel, or None if not defined
         """
-        output = self.device.execute_remote_cmd("logcat", "-g", capture_stdout=True)
-        for line in output.splitlines():
+        completed = self.device.execute_remote_cmd("logcat", "-g", stdout=subprocess.PIPE)
+        stdout: str = completed.stdout
+        for line in stdout.splitlines():
             if line.startswith(channel):
                 "format is <channel>: ring buffer is <size>"
                 return line.split()[4]
@@ -195,14 +196,17 @@ class DeviceLog(RemoteDeviceBased):
         """
         self.device.execute_remote_cmd("logcat", "-G", size_spec)
 
-    def clear(self) -> None:
+    def clear(self, buffer: str = "all") -> None:
         """
         clear device log on the device and start fresh
-        """
-        self.device.execute_remote_cmd("logcat", "-b", "all", "-c", capture_stdout=False)
 
-    async def logcat(self, *options: str, loop: Optional[AbstractEventLoop] = None
-                     ) -> AsyncContextManager[Any]:
+        NOTE: Android has intermittent failures not clearing the main log. In particaular, this
+        operation seems somehsat asynchronous and can interfere or be interered with if other
+        logcat call are made in a short time window around this call.
+        """
+        self.device.execute_remote_cmd("logcat", "-b", buffer, "-c")
+
+    def logcat(self, *options: str) -> Device.AsyncProcessContext:
         """
         async generator to continually output lines from logcat until client
         exits processing (exist async iterator), at which point process is killed
@@ -213,7 +217,7 @@ class DeviceLog(RemoteDeviceBased):
 
         :raises: asyncio.TimeoutError if timeout is not None and timeout is reached
         """
-        return await self.device.execute_remote_cmd_async("logcat", *options, loop=loop)
+        return self.device.monitor_remote_cmd("logcat", *options)
 
     def capture_to_file(self, output_path: str) -> "LogCapture":
         """
