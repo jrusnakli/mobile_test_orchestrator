@@ -155,14 +155,11 @@ async def device_pool():
     queue = AsyncQueueAdapter(q=m.Queue(DeviceManager.count()))
     if IS_CIRCLECI:
         DeviceManager.ARGS.append("-no-accel")
-        DeviceManager.ARGS.append("-verbose")
-        DeviceManager.ARGS.append("-no-snapshot")
     async with AsyncEmulatorPool.create(DeviceManager.count(),
                                         DeviceManager.AVD,
                                         DeviceManager.CONFIG,
                                         *DeviceManager.ARGS,
                                         external_queue=queue) as pool:
-        print(">>>> Emulator started Yielding pool....")
         yield pool
 
 
@@ -176,7 +173,6 @@ async def devices(device_pool: AsyncEmulatorPool, app_manager: AppManager, event
             uninstall_apk(app_manager.app(), dev)
             uninstall_apk(app_manager.test_app(), dev)
             uninstall_apk(app_manager.service_app(), dev)
-        print(f">>> Yielding {count} devices in group")
         yield devs
 
 
@@ -189,7 +185,6 @@ async def device(device_pool: AsyncEmulatorPool, app_manager):
         uninstall_apk(app_manager.app(), device)
         uninstall_apk(app_manager.test_app(), device)
         uninstall_apk(app_manager.service_app(), device)
-        print(f">>> Yielding device {device.device_id}")
         yield device
 
 

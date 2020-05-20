@@ -425,7 +425,7 @@ class Device:
             self._formulate_adb_cmd(*args), timeout=timeout, bufsize=0,
             stderr=stderr,
             stdout=stdout,
-            encoding='utf-8', errors='ignore'
+            encoding='utf-8', errors='ignore',
         )
         if fail_on_error_code(completed.returncode):
             stderr_output = completed.stderr.replace('\n', '\n\t')  # indent
@@ -608,11 +608,18 @@ class Device:
         :return: current state of emulaor ("device", "offline", "non-existent", ...)
         """
         try:
-            completed = self.execute_remote_cmd("get-state", timeout=10, stdout=subprocess.PIPE)
+            completed = self.execute_remote_cmd("get-state", timeout=10, stdout=subprocess.PIPE,
+                                                stderr=subprocess.STDOUT,
+                                                fail_on_error_code=lambda x: False)
             state: str = completed.stdout.strip()
-            mapping = {"device": Device.State.ONLINE,
-                       "offline": Device.State.OFFLINE}
-            return mapping.get(state, Device.State.UNKNOWN)
+            if "offline" in state:
+                return Device.State.OFFLINE
+            elif state == "device":
+                return Device.State.ONLINE
+            elif "not found" in state:
+                return Device.State.NON_EXISTENT
+            else:
+                return Device.State.UNKNOWN
         except Device.CommandExecutionFailure as e:
             if "device offline" in str(e):
                 return Device.State.OFFLINE

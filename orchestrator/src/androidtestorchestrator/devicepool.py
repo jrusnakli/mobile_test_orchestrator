@@ -128,9 +128,7 @@ class AsyncDevicePool(BaseDevicePool):
         """
         :return: a reserved Device
         """
-        print(">>>> GETTING DEVICE>..")
         device = await self._q.get()  # type: ignore
-        print(f">>> GOT DEVICE {device.device_id}")
         try:
             if device is None:
                 raise queue.Empty("No emulators found.  Possibly failed to launch any")

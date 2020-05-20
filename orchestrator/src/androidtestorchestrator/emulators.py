@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import select
 import subprocess
 import sys
 import time
@@ -147,28 +148,27 @@ class Emulator(Device):
                     nonlocal booted
                     nonlocal device_id
                     nonlocal retries
-                    while proc.poll() is None and device.get_state() != Device.State.ONLINE:
-                        await asyncio.sleep(1)
-
+                    state = device.get_state()
+                    time_marker = time.time()
+                    start = time_marker
+                    while proc.poll() is None and state != Device.State.ONLINE:
+                        print(f"Device is in {state} [{time.time() - start}]")
+                        await asyncio.sleep(max(0.0, 1.0 - time.time() + time_marker))
+                        time_marker = time.time()
+                        state = device.get_state()
+                    print(f"Device is in {state} [{time.time() - start}]")
+                    time_marker = start
+                    while proc.poll() is None and not booted:
+                        boot_prop = device.get_system_property("sys.boot_completed", verbose=False)
+                        booted = boot_prop == "1"
+                        print(f">>> {device.device_id} Booted?: {booted} [{time.time() - start}]")
+                        await asyncio.sleep(max(0.0, 1.0 - time.time() + time_marker))
                     if proc.poll() is not None:
                         stdout, _ = proc.communicate()
                         if retries:
                             retries -= 1
                         else:
                             raise Emulator.FailedBootError(port, stdout)
-                    start = time.time()
-                    while not booted:
-                        boot_prop = device.get_system_property("dev.bootcomplete", verbose=False)
-                        booted = boot_prop == "1"
-                        await asyncio.sleep(5)
-                        duration = time.time() - start
-                        print(f">>> [{duration}]  {device.device_id} Booted?: {booted} [{boot_prop}]")
-                        if proc.poll() is not None:
-                            stdout, _ = proc.communicate()
-                            if retries:
-                                retries -= 1
-                            else:
-                                raise Emulator.FailedBootError(port, stdout)
 
                 await asyncio.wait_for(wait_for_boot(proc), config.boot_timeout)
                 return cls(port, config=config, launch_cmd=cmd, env=environ)
