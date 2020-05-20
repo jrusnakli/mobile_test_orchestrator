@@ -1,3 +1,4 @@
+import select
 import sys
 import time
 
@@ -111,10 +112,12 @@ class Emulator(Device):
         if config.ramdisk:
             cmd += ["-ramdisk", str(config.ramdisk)]
         cmd += args
+        cmd += ["-verbose"]
         environ = dict(os.environ)
         environ["ANDROID_AVD_HOME"] = str(config.avd_dir)
         environ["ANDROID_SDK_HOME"] = str(config.sdk)
         booted = False
+        print(f">>>>>>> LAUNCHING WITH {' '.join(cmd)}")
         proc = subprocess.Popen(cmd,
                                 stderr=subprocess.STDOUT,
                                 stdout=subprocess.PIPE,
@@ -128,16 +131,25 @@ class Emulator(Device):
 
                 while device.get_state().strip() != 'device':
                     await asyncio.sleep(1)
+                    reads = True
+                    while reads:
+                        reads = select.select([proc.stdout], [], [], 0)
+                        if reads[0]:
+                            print(reads[0][0].readline().decode('utf-8').strip())
                 if proc.poll() is not None:
                     stdout, _ = proc.communicate()
                     raise Emulator.FailedBootError(port, stdout.decode('utf-8'))
                 start = time.time()
                 while not booted:
                     booted = device.get_system_property("sys.boot_completed", ) == "1"
+                    reads = True
+                    while reads:
+                        reads = select.select([proc.stdout], [], [], 0)
+                        if reads[0]:
+                            print(reads[0][0].readline().decode('utf-8').strip())
                     await asyncio.sleep(1)
                     duration = time.time() - start
                     print(f">>> {device.device_id} [{duration}] Booted?: {booted}")
-
             await asyncio.wait_for(wait_for_boot(), config.boot_timeout)
             return Emulator(device_id, config=config, launch_cmd=cmd, env=environ)
         except Exception as e:

@@ -48,6 +48,8 @@ jobs:
             cat ~/.android/avd/MTO_emulator.ini || echo "NO ini"
             cat ~/.android/avd/MTO_emulator.avd/config.ini || echo "NO ini"
             CIRCLECI=1 pytest -s -v -m "not localonly" --html  test-reports/report.html --junitxml=test-reports/all-result.xml --basetemp=test-reports/tmp --cov=../src . --cov-report html:test-reports/coverage
+            cat ~/.android/avd/MTO_emulator.ini
+            cat ~/.android/avd/MTO_emulator.avd/config.ini
       - run:
           name: directory
           command: |
