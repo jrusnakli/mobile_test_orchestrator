@@ -131,22 +131,24 @@ class Emulator(Device):
 
                 while device.get_state().strip() != 'device':
                     await asyncio.sleep(1)
-                    reads = (True, True)
-                    while reads:
+                    while True:
                         reads = select.select([proc.stdout], [], [], 0)
                         if reads[0]:
                             print(reads[0][0].readline().decode('utf-8').strip())
+                        else:
+                            break
                 if proc.poll() is not None:
                     stdout, _ = proc.communicate()
                     raise Emulator.FailedBootError(port, stdout.decode('utf-8'))
                 start = time.time()
                 while not booted:
                     booted = device.get_system_property("sys.boot_completed", ) == "1"
-                    reads = (True, True)
-                    while reads:
+                    while True:
                         reads = select.select([proc.stdout], [], [], 0)
                         if reads[0]:
                             print(reads[0][0].readline().decode('utf-8').strip())
+                        else:
+                            break
                     await asyncio.sleep(1)
                     duration = time.time() - start
                     print(f">>> {device.device_id} [{duration}] Booted?: {booted}")
