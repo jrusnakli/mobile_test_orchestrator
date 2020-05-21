@@ -128,6 +128,8 @@ class Emulator(Device):
         if config.ramdisk:
             cmd += ["-ramdisk", str(config.ramdisk)]
         cmd += args
+        if "-no-window" not in cmd:
+            cmd.append("-no-window")
         if "-verbose" not in cmd:
             cmd.append("-verbose")
         environ = dict(os.environ)
@@ -142,10 +144,21 @@ class Emulator(Device):
                                                                              bufsize=0)
                 start = time.time()
                 proc: Device.Process = Device.Process(async_proc)
-                async for line in proc.output(unresponsive_timeout=5*60):
-                    print(f"[{time.time() - start:.3f}] {line.strip()}")
-                    if "boot" in line and "complete" in line:
-                        break
+
+                async def monitor():
+                    nonlocal booted
+                    async for line in proc.output(unresponsive_timeout=10*60):
+                        print(f"\n[{time.time() - start:.3f}] {line.strip()}", end='')
+                        if "boot" in line and "complete" in line:
+                            booted = True
+                            break
+
+                async def ticker():
+                    while not booted:
+                        os.write(sys.stderr.fileno(), b'.')
+                        await asyncio.sleep(1)
+
+                await asyncio.gather(ticker(), monitor())
                 if proc.returncode is not None:
                     print(f">>> [{time.time() - start:.3f}] ERROR: failed to boot emulator ({retries} retries left) [{proc.returncode}]")
                     retries -= 1

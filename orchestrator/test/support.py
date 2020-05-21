@@ -163,8 +163,6 @@ def ensure_avd(android_sdk: str, avd: str, avd_path: str):
             raise Exception(f"Unable to find path to 'emulator' command in {android_sdk}")
         is_no_window = True
     list_emulators_cmd = [emulator_path, "-list-avds"]
-    if is_no_window:
-        list_emulators_cmd.append("-no-window")
     print(f">>>> Executing {list_emulators_cmd}")
     completed = subprocess.run(list_emulators_cmd, timeout=10, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                encoding='utf-8', shell=shell)
