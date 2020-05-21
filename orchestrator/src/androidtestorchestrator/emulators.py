@@ -145,7 +145,7 @@ class Emulator(Device):
                 start = time.time()
                 proc: Device.Process = Device.Process(async_proc)
 
-                async def monitor():
+                async def monitor() -> None:
                     nonlocal booted
                     async for line in proc.output(unresponsive_timeout=10*60):
                         print(f"\n[{time.time() - start:.3f}] {line.strip()}", end='')
@@ -153,7 +153,7 @@ class Emulator(Device):
                             booted = True
                             break
 
-                async def ticker():
+                async def ticker() -> None:
                     while not booted:
                         os.write(sys.stderr.fileno(), b'.')
                         await asyncio.sleep(1)
