@@ -147,7 +147,7 @@ class Emulator(Device):
                     if "boot" in line and "complete" in line:
                         break
                 if proc.returncode is not None:
-                    print(f">>> ERROR: failed to boot emulator, retyring ({retries} retries left)")
+                    print(f">>> [{time.time() - start:.3f}] ERROR: failed to boot emulator ({retries} retries left) [{proc.returncode}]")
                     retries -= 1
                     continue
                 return cls(port, config=config, launch_cmd=cmd, env=environ)
