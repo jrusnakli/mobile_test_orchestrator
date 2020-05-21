@@ -1,3 +1,4 @@
+import asyncio
 import multiprocessing
 
 import getpass
@@ -62,7 +63,6 @@ class DeviceManager:
     ]
 
     _process: multiprocessing.Process = None
-    _reservation_gate = multiprocessing.Semaphore(1)
 
     @staticmethod
     def count():
@@ -149,8 +149,6 @@ support.ensure_avd(str(DeviceManager.CONFIG.sdk), DeviceManager.AVD, DeviceManag
 
 @pytest.fixture(scope='node')
 async def device_pool():
-    if IS_CIRCLECI:
-        AppManager.singleton()  # force build to happen fist, in serial
     m = multiprocessing.Manager()
     queue = AsyncQueueAdapter(q=m.Queue(DeviceManager.count()))
     if IS_CIRCLECI:
@@ -160,6 +158,9 @@ async def device_pool():
                                         DeviceManager.CONFIG,
                                         *DeviceManager.ARGS,
                                         external_queue=queue) as pool:
+        if IS_CIRCLECI:
+            print(">>> No hw accel, so waiting for emulator to settle in...")
+            await asyncio.sleep(30)
         yield pool
 
 

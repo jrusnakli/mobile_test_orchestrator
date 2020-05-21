@@ -8,7 +8,7 @@ import pytest
 IS_CIRCLECI = getpass.getuser() == 'circleci' or "CIRCLECI" in os.environ
 
 
-@pytest.mark.skipif(IS_CIRCLECI, "Tests have too long a time without output")
+@pytest.mark.skipif(IS_CIRCLECI, reason="Tests have too long a time without output")
 class TestSdkManager:
 
     def test_emulator_path(self, mp_tmp_dir: Path):

@@ -251,6 +251,8 @@ class AndroidTestOrchestrator:
                     released = False
                     try:
                         async with devices.reserve() as device:
+                            if device is None:
+                                raise Exception("Device queue is empty; unable to reserve device")
                             # this synchronizes reservation of device with outer loop to prevent it from spinning
                             # its wheels.  This task blocks if until a device is available and the sem therefore
                             # blocks the outer loop on the same condition

@@ -481,7 +481,6 @@ class Device:
         proc = await asyncio.subprocess.create_subprocess_exec(*cmd,
                                                                stdout=asyncio.subprocess.PIPE,
                                                                stderr=asyncio.subprocess.STDOUT,
-                                                               loop=loop or asyncio.events.get_running_loop(),
                                                                bufsize=0)  # noqa
         return self.Process(proc)
 

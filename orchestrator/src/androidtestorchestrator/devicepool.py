@@ -9,7 +9,7 @@ import subprocess
 from abc import ABC, abstractmethod
 from asyncio import Queue
 from contextlib import asynccontextmanager, suppress
-from typing import Any, AsyncGenerator, Callable, Generic, List, Optional, TypeVar
+from typing import Any, AsyncGenerator, Callable, Generic, List, Optional, TypeVar, Type, Union
 
 from androidtestorchestrator.device import Device
 from androidtestorchestrator.emulators import Emulator, EmulatorBundleConfiguration, log
@@ -64,18 +64,19 @@ class AsyncQueueAdapter(AbstractAsyncQueue[It]):
                 await asyncio.sleep(self._polling_interval)
 
 
-AsyncQ = TypeVar('AsyncQ', AbstractAsyncQueue[Any], asyncio.Queue)  # type: ignore
+AsyncQ = TypeVar('AsyncQ', bound=Union[AbstractAsyncQueue, Queue])  # type: ignore
+Pool = TypeVar('Pool', bound="BaseDevicePool")
 
 
 class BaseDevicePool(ABC):
     """
     Abstract base class for all device queues.
     """
-    def __init__(self, queue: AsyncQ):
+    def __init__(self, queue: Union[AbstractAsyncQueue[Device], Queue[Device]]):
         """
         :param queue: queue to server Device's from.
         """
-        self._q: AsyncQ = queue  # type: ignore
+        self._q = queue
 
     @staticmethod
     def _list_devices(filt: Callable[[str], bool]) -> List[str]:
@@ -89,8 +90,8 @@ class BaseDevicePool(ABC):
                     device_ids.append(device_id)
         return device_ids
 
-    @staticmethod
-    async def discover(filt: Callable[[str], bool] = lambda x: True) -> "BaseDevicePool":
+    @classmethod
+    async def discover(cls: Type[Pool], filt: Callable[[str], bool] = lambda x: True) -> Pool:
         """
         Discover all online devices and create a DeviceQueue with them
 
@@ -104,7 +105,26 @@ class BaseDevicePool(ABC):
             raise queue.Empty("Empty queue. No device were discovered based on any filter critera.")
         for device_id in device_ids:
             await q.put(Device(device_id))
-        return BaseDevicePool(q)
+        return cls(q)
+
+    @asynccontextmanager
+    @abstractmethod
+    async def reserve(self) -> AsyncGenerator[Optional[Device], None]:
+        """
+        :return: Generator for device reserved from queue, or None if device pool is empty
+        """
+        yield None
+
+    @asynccontextmanager
+    @abstractmethod
+    async def reserve_many(self, count: int) -> AsyncGenerator[List[Device], None]:
+        """
+        Reserve more than one device
+        :param count: number of devices to reserver
+        :return: generator of list of devices that have been reserved, which may be less than requested if
+           pool does not contain enough devices/emulators (or if empty, will return an empty list)
+        """
+        yield []
 
 
 class AsyncDevicePool(BaseDevicePool):
@@ -124,19 +144,19 @@ class AsyncDevicePool(BaseDevicePool):
         super().__init__(queue)
 
     @asynccontextmanager
-    async def reserve(self) -> AsyncGenerator[Device, None]:
+    async def reserve(self) -> AsyncGenerator[Optional[Device], None]:
         """
         :return: a reserved Device
         """
-        device = await self._q.get()  # type: ignore
+        device = await self._q.get()
         try:
             if device is None:
                 raise queue.Empty("No emulators found.  Possibly failed to launch any")
             yield device
         finally:
             if hasattr(device, "reset_lease"):
-                device.reset_lease()
-            await self._q.put(device)  # type: ignore
+                device.reset_lease()  # type: ignore
+            await self._q.put(device)
 
     @asynccontextmanager
     async def reserve_many(self, count: int) -> AsyncGenerator[List[Device], None]:
@@ -147,10 +167,10 @@ class AsyncDevicePool(BaseDevicePool):
         devices = []
         queue_empty = False
         for _ in range(count):
-            device = await self._q.get()  # type: ignore
+            device = await self._q.get()
             if device is None:
                 # other threads may need to know this to:
-                await self._q.put(device)  # type: ignore
+                await self._q.put(device)
                 queue_empty = True
                 break
             devices.append(device)
@@ -161,8 +181,8 @@ class AsyncDevicePool(BaseDevicePool):
         finally:
             for device in devices:
                 if hasattr(device, "reset_lease"):
-                    device.reset_lease()
-                await self._q.put(device)  # type: ignore
+                    device.reset_lease()  # type: ignore
+                await self._q.put(device)
 
     @staticmethod
     def from_external(queue: multiprocessing.Queue) -> "AsyncDevicePool":  # type: ignore
