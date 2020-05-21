@@ -149,6 +149,9 @@ support.ensure_avd(str(DeviceManager.CONFIG.sdk), DeviceManager.AVD, DeviceManag
 
 @pytest.fixture(scope='node')
 async def device_pool():
+    if IS_CIRCLECI:
+        AppManager.singleton()  # force build to happen fist, in serial
+
     m = multiprocessing.Manager()
     queue = AsyncQueueAdapter(q=m.Queue(DeviceManager.count()))
     if IS_CIRCLECI:
