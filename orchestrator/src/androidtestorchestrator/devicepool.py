@@ -2,6 +2,7 @@
 The package *devicepool" contains *DevicePool* classes for reserving `Device`'s and `Emulator`'s from a queue.
 The interface for setting and expiration on reserved Device's/Emulator's is also provided through these classes.
 """
+from __future__ import annotations  # to correct mypy stubs vs run-time discrepancies
 import asyncio
 import multiprocessing
 import queue
