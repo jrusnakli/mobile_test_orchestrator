@@ -154,7 +154,7 @@ class Emulator(Device):
                             break
 
                 async def ticker() -> None:
-                    while not booted:
+                    while not booted and proc.returncode is None:
                         os.write(sys.stderr.fileno(), b'.')
                         await asyncio.sleep(1)
 
