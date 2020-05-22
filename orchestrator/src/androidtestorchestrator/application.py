@@ -96,6 +96,7 @@ class Application(RemoteDeviceBased):
 
     @classmethod
     async def from_apk_async(cls: Type[_TApp], apk_path: str, device: Device, as_upgrade: bool = False,
+                             timeout: Optional[int] = Device.TIMEOUT_LONG_ADB_CMD,
                              callback: Optional[Callable[[Device.Process], None]] = None) -> _TApp:
         """
         Install provided application asynchronously.  This allows the output of the install to be processed
@@ -106,10 +107,12 @@ class Application(RemoteDeviceBased):
         :param apk_path: path to apk
         :param device: device to install on
         :param as_upgrade: whether to install as upgrade or not
+        :param timeout: raises TimeoutError if specified and install takes too long
         :param callback: if not None, callback to be made on successful push and at start of install; the
            `Device.Process` that is installing from device storage is passed as the only parameter to the callback
         :return: remote installed application
         :raises: Exception if failure of install or verify installation
+        :raises; TimeoutError if fails to install withint timeout parameter, if specified
 
         >>> async def install():
         ...     async with Application.from_apk_async("/some/local/path/to/apk", device) as stdout:
@@ -120,41 +123,47 @@ class Application(RemoteDeviceBased):
         """
         parser = AXMLParser.parse(apk_path)
         args = ["-r"] if as_upgrade else []
-        await cls._monitor_install(device, apk_path, *args, callback=callback)
+        await cls._monitor_install(device, apk_path, *args, callback=callback, timeout=timeout)
         return cls(device, parser)
 
     @classmethod
-    def from_apk(cls: Type[_TApp], apk_path: str, device: Device, as_upgrade: bool = False) -> _TApp:
+    def from_apk(cls: Type[_TApp], apk_path: str, device: Device, as_upgrade: bool = False,
+                 timeout: Optional[int] = Device.TIMEOUT_LONG_ADB_CMD) -> _TApp:
         """
         Install provided application, blocking until install is complete
 
         :param apk_path: path to apk
         :param device: device to install on
         :param as_upgrade: whether to install as upgrade or not
+        :param timeout: raises TimeoutError if specified and install takes too long
         :return: remote installed application
         :raises: Exception if failure ot install or verify installation
+        :raises; TimeoutError if fails to install withint timeout parameter, if specified
 
         >>> app = Application.from_apk("/local/path/to/apk", device, as_upgrade=True)
         """
         parser = AXMLParser.parse(apk_path)
         args = ["-r"] if as_upgrade else []
-        cls._install(device, apk_path, *args)
+        cls._install(device, apk_path, *args, timeout=timeout)
         return cls(device, parser)
 
     @classmethod
-    def _install(cls, device: Device, apk_path: str, *args: str) -> None:
+    def _install(cls, device: Device, apk_path: str, *args: str, timeout: Optional[int] = Device.TIMEOUT_LONG_ADB_CMD) -> None:
         """
         install the given bundle, blocking until complete
 
         :param device: Device to install on
         :param apk_path: local path to the apk to be installed
+        :param timeout: timeout if install takes too long
         :param args: list of additional arguments to pass to he install command (adb install <*args> apk_path)
+        :raises TimeoutError: if install takes more than specified timeout parameter, if specified
         """
         cmd = ["install"] + list(args) + [apk_path]
-        device.execute_remote_cmd(*cmd, timeout=Device.TIMEOUT_LONG_ADB_CMD)
+        device.execute_remote_cmd(*cmd, timeout=timeout)
 
     @classmethod
     async def _monitor_install(cls, device: Device, apk_path: str, *args: str,
+                               timeout: Optional[int] = Device.TIMEOUT_LONG_ADB_CMD,
                                callback: Optional[Callable[[Device.Process], None]] = None) -> None:
         """
         Install given apk asynchronously, monitoring output for messages containing any of the given conditions,
@@ -162,10 +171,12 @@ class Application(RemoteDeviceBased):
 
         :param device: Device to install on
         :param apk_path: bundle to install
+        :param timeout: timeout if install takes too long
         :param callback: if not None, callback to be made on successful push and at start of install; the
            `Device.Process` that is installing from device storage is passed as the only parameter to the callback
         :raises Device.InsufficientStorageError: if there is not enough space on device
         :raises IOError if push of apk to device was unsuccessful
+        :raises TimeoutError: if install takes more than specified timeout parameter, if specified
         """
         parser = AXMLParser.parse(apk_path)
         package = parser.package_name
@@ -174,7 +185,7 @@ class Application(RemoteDeviceBased):
             # We try Android Studio's method of pushing to device and installing from there, but if push is
             # unsuccessful, we fallback to plain adb install
             push_cmd = ("push", apk_path, remote_data_path)
-            device.execute_remote_cmd(*push_cmd, timeout=Device.TIMEOUT_LONG_ADB_CMD)
+            device.execute_remote_cmd(*push_cmd, timeout=timeout)
 
             # Execute the installation of the app, monitoring output for completion in order to invoke any extra
             # commands or detect insufficient storage issues
@@ -487,37 +498,17 @@ class TestApplication(Application):
 
     @classmethod
     async def from_apk_async(cls: Type[_TTestApp], apk_path: str, device: Device, as_upgrade: bool = False,
+                             timeout: Optional[int] = Device.TIMEOUT_LONG_ADB_CMD,
                              callback: Optional[Callable[[Device.Process], None]] = None) -> _TTestApp:
-        """
-        Install apk as a test application on the given device
-
-        :param apk_path: path to test apk (containing a runner)
-        :param device: device to install on
-        :param as_upgrade: whether to install as upgrade or not
-        :param callback: if not None, callback to be made on successful push and at start of install; the
-           `Device.Process` that is installing from device storage is passed as the only parameter to the callback
-        :return: `TestApplication` of installed apk
-
-        >>> application = await Application.from_apk_async("local/path/to/apk", device)
-        """
         parser = AXMLParser.parse(apk_path)
         args = ["-t"] if not as_upgrade else ["-r", "-t"]
-        await cls._monitor_install(device, apk_path, parser.package_name, *args, callback=callback)
+        await cls._monitor_install(device, apk_path, parser.package_name, *args, callback=callback, timeout=timeout)
         return cls(device, parser)
 
     @classmethod
-    def from_apk(cls: Type[_TTestApp], apk_path: str, device: Device, as_upgrade: bool = False) -> _TTestApp:
-        """
-        Install apk as a test application on the given device
-
-        :param apk_path: path to test apk (containing a runner)
-        :param device: device to install on
-        :param as_upgrade: whether to install as upgrade or not
-        :return: `TestApplication` of installed apk
-
-        >>> test_application = Application.from_apk("/local/path/to/apk", device, as_upgrade=True)
-        """
+    def from_apk(cls: Type[_TTestApp], apk_path: str, device: Device, as_upgrade: bool = False,
+                 timeout: Optional[int] = Device.TIMEOUT_LONG_ADB_CMD) -> _TTestApp:
         parser = AXMLParser.parse(apk_path)
         args = ["-t"] if not as_upgrade else ["-r", "-t"]
-        cls._install(device, apk_path, *args)
+        cls._install(device, apk_path, *args, timeout=timeout)
         return cls(device, parser)

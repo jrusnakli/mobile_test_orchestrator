@@ -124,18 +124,22 @@ class EspressoTestPreparation:
     * Ability to verify network connection to a resource
     """
 
-    def __init__(self, device: Device, path_to_apk: str, path_to_test_apk: str, grant_all_user_permissions: bool = True):
+    def __init__(self, device: Device, path_to_apk: str, path_to_test_apk: str,
+                 timeout: Optional[int] = Device.TIMEOUT_LONG_ADB_CMD,
+                 grant_all_user_permissions: bool = True):
         """
 
         :param device:  device to install and run test app on
         :param path_to_apk: Path to apk bundle for target app
         :param path_to_test_apk: Path to apk bundle for test app
+        :param timeout: if specified, raise TimeoutError if install takes too long
         :param grant_all_user_permissions: If True, grant all user permissions defined in the manifest of the app and
           test app (prevents pop-ups from occurring on first request for a user permission that can interfere
           with tests)
+        :raises TimeoutError: if timeout specified and install does not complete wihtin this time
         """
-        self._app = Application.from_apk(path_to_apk, device=device)
-        self._test_app: TestApplication = TestApplication.from_apk(path_to_test_apk, device=device)
+        self._app = Application.from_apk(path_to_apk, device=device, timeout=timeout)
+        self._test_app: TestApplication = TestApplication.from_apk(path_to_test_apk, device=device, timeout=timeout)
         self._installed = [self._app, self._test_app]
         self._storage = DeviceStorage(device)
         self._data_files: List[str] = []
@@ -182,13 +186,16 @@ class EspressoTestPreparation:
         milliseconds = (time.time() - start) * 1000
         return milliseconds
 
-    def setup_foreign_apps(self, paths_to_foreign_apks: List[str]) -> None:
+    def setup_foreign_apps(self, paths_to_foreign_apks: List[str],
+                           timeout: Optional[int] = Device.TIMEOUT_LONG_ADB_CMD) -> None:
         """
         Install other apps (outside of test app and app under test) in support of testing
         :param paths_to_foreign_apks: string list of paths to the apks to be installed
+        :param timeout: if specified, raise TimeoutError if install takes too long
+        :raises TimeoutError: if timeout specified and install takes more than specified time
         """
         for path in paths_to_foreign_apks:
-            self._installed.append(Application.from_apk(path, device=self._device))
+            self._installed.append(Application.from_apk(path, device=self._device, timeout=timeout))
 
     def cleanup(self) -> None:
         """
