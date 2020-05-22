@@ -168,6 +168,7 @@ class Emulator(Device):
         finally:
             if not booted and proc is not None:
                 with suppress(Exception):
+                    print("Killing emulator due to failure to boot")
                     proc.stop()
 
     def kill(self) -> None:
