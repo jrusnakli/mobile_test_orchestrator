@@ -112,7 +112,7 @@ class Application(RemoteDeviceBased):
            `Device.Process` that is installing from device storage is passed as the only parameter to the callback
         :return: remote installed application
         :raises: Exception if failure of install or verify installation
-        :raises; TimeoutError if fails to install withint timeout parameter, if specified
+        :raises: TimeoutError if install takes more than timeout parameter
 
         >>> async def install():
         ...     async with Application.from_apk_async("/some/local/path/to/apk", device) as stdout:
@@ -138,7 +138,7 @@ class Application(RemoteDeviceBased):
         :param timeout: raises TimeoutError if specified and install takes too long
         :return: remote installed application
         :raises: Exception if failure ot install or verify installation
-        :raises; TimeoutError if fails to install withint timeout parameter, if specified
+        :raises: TimeoutError if install takes more than timeout parameter
 
         >>> app = Application.from_apk("/local/path/to/apk", device, as_upgrade=True)
         """
@@ -156,7 +156,7 @@ class Application(RemoteDeviceBased):
         :param apk_path: local path to the apk to be installed
         :param timeout: timeout if install takes too long
         :param args: list of additional arguments to pass to he install command (adb install <*args> apk_path)
-        :raises TimeoutError: if install takes more than specified timeout parameter, if specified
+        :raises; TimeoutError if install takes more than timeout parameter
         """
         cmd = ["install"] + list(args) + [apk_path]
         device.execute_remote_cmd(*cmd, timeout=timeout)
@@ -176,7 +176,7 @@ class Application(RemoteDeviceBased):
            `Device.Process` that is installing from device storage is passed as the only parameter to the callback
         :raises Device.InsufficientStorageError: if there is not enough space on device
         :raises IOError if push of apk to device was unsuccessful
-        :raises TimeoutError: if install takes more than specified timeout parameter, if specified
+        :raises; TimeoutError if install takes more than timeout parameter
         """
         parser = AXMLParser.parse(apk_path)
         package = parser.package_name

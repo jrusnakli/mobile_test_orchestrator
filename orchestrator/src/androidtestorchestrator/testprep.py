@@ -139,7 +139,8 @@ class EspressoTestPreparation:
         :raises TimeoutError: if timeout specified and install does not complete wihtin this time
         """
         self._app = Application.from_apk(path_to_apk, device=device, timeout=timeout)
-        self._test_app: TestApplication = TestApplication.from_apk(path_to_test_apk, device=device, timeout=timeout)
+        self._test_app: TestApplication = TestApplication.from_apk(apk_path=path_to_test_apk, device=device,
+                                                                   timeout=timeout)
         self._installed = [self._app, self._test_app]
         self._storage = DeviceStorage(device)
         self._data_files: List[str] = []
@@ -195,7 +196,7 @@ class EspressoTestPreparation:
         :raises TimeoutError: if timeout specified and install takes more than specified time
         """
         for path in paths_to_foreign_apks:
-            self._installed.append(Application.from_apk(path, device=self._device, timeout=timeout))
+            self._installed.append(Application.from_apk(apk_path=path, device=self._device, timeout=timeout))
 
     def cleanup(self) -> None:
         """
