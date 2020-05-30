@@ -129,7 +129,7 @@ def uninstall_apk(apk, device):
     :param device: device to uninstall package from
     """
     with suppress(Exception):
-        Application(AXMLParser.parse(apk).package_name, device).uninstall()
+        Application(device, AXMLParser.parse(apk)).uninstall()
 
 
 def ensure_avd(android_sdk: str, avd: str, avd_path: str):

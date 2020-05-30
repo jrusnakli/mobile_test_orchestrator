@@ -143,7 +143,7 @@ class Emulator(Device):
                                                                              stderr=asyncio.subprocess.STDOUT,
                                                                              bufsize=0)
                 start = time.time()
-                proc: Device.Process = Device.Process(async_proc)
+                proc = Device.Process(async_proc)
 
                 async def monitor() -> None:
                     nonlocal booted

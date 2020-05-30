@@ -4,7 +4,7 @@ import sys
 import logging
 import os
 from types import TracebackType
-from typing import AsyncIterator, Dict, Iterator, List, Optional, Tuple, Type, Union, Coroutine, Any
+from typing import AsyncIterator, Dict, Iterator, List, Optional, Tuple, Type, Union, Coroutine, Any, Awaitable
 
 from androidtestorchestrator.worker import TestSuite
 from .testprep import EspressoTestSetup
@@ -20,6 +20,12 @@ log = logging.getLogger(__name__)
 if sys.platform == 'win32':
     loop = asyncio.ProactorEventLoop()
     asyncio.set_event_loop(loop)
+
+
+async def _async_iter_adapter(iter: Iterator[TestSuite]) -> AsyncIterator[TestSuite]:
+    for item in iter:
+        yield item
+        await asyncio.sleep(0)
 
 
 class AndroidTestOrchestrator:
@@ -100,6 +106,28 @@ class AndroidTestOrchestrator:
 
     """
 
+    class WrappedAsyncIterator(AsyncIterator):
+        """
+        Allows orchestrator class to monitor an underlying AsyncIterator to tell whether it is
+        exhausted
+        """
+        def __init__(self, base_iterator: AsyncIterator[TestSuite]):
+            self._base_iterator = _async_iter_adapter(base_iterator) if isinstance(base_iterator, Iterator) else \
+                base_iterator
+            self._exhausted = False
+
+        async def __anext__(self) -> Awaitable[TestSuite]:
+            try:
+                item = await self._base_iterator.__anext__()
+                yield item
+            except StopIteration:
+                self._exhausted = True
+                raise
+
+        @property
+        def exhausted(self):
+            return self._exhausted
+
     def __init__(self,
                  artifact_dir: str,
                  max_device_count: Optional[int] = None,
@@ -161,10 +189,8 @@ class AndroidTestOrchestrator:
         :param tag: tag to monitor
         :param handler:  handler to use to process lines of output under that tag
         :param priority: priority level of tag to watch, or "*" for all (see adb logcat usage)
-
         :raises Exception: if attempting to add a monitor to an ongoing test execution.  The only way this
            could happen is if a user defined task attempts to add additional tags to monitor
-
         :raises ValueError: if priority is invalid or is tag is already being monitored
         """
         if self._in_execution:
@@ -217,6 +243,38 @@ class AndroidTestOrchestrator:
         await self.run(test_setup=test_setup, device=device, test_plan=iter([test_suite]),
                        completion_callback=completion_callback)
 
+    async def _do_work(self, devices: AsyncDevicePool,
+                      test_plan: "AndroidTestOrchestrator.WrappedAsyncIterator",
+                      test_setup: EspressoTestSetup,
+                      start_gate: asyncio.Semaphore) -> None:
+        """
+        Do work by reserving a single device, preparing it for test execution,
+        and starting a worker thread to process tests in the test plan
+
+        :param devices: pool of devices to draw from
+        :param test_plan: test stuite iterator to execute from
+        :param test_setup: definition of test setup (aka which apks to install, files to push, etc)
+        :param start_gate: mechanism to synchronize coordinator with device reservation (prevent spinning of wheels)
+        """
+        released = False
+        try:
+            async with devices.reserve() as device:
+                start_gate.release()
+                released = True
+                if device is None and not test_plan.exhausted:
+                    raise Exception("Device queue is empty; unable to reserve device")
+                elif not test_plan.exhausted:
+                    await self.run(
+                        device=device,
+                        test_setup=test_setup,
+                        test_plan=test_plan
+                    )
+        except Exception:
+            raise
+        finally:
+            if not released:
+                start_gate.release()
+
     async def execute_test_plan(self,
                                 test_setup: EspressoTestSetup,
                                 devices: AsyncDevicePool,
@@ -228,63 +286,24 @@ class AndroidTestOrchestrator:
         :param devices: queue to reserve devices to run on
         :param test_plan: plan of test runs to execute
         """
-        have_tests_to_process = True
         # see comment on acquire() below
         start_gate = asyncio.Semaphore(0)
-
-        async def worker_completion() -> None:
-            """
-            Callback when worker has nothing more to do
-            (when first worker has nothing more to do, this means there are no more tests in the queue)
-            """
-            nonlocal have_tests_to_process
-            have_tests_to_process = False
+        test_plan = self.WrappedAsyncIterator(test_plan)
 
         async def run_loop() -> None:
             worker_tasks: List[asyncio.Task[Any]] = []
-            while have_tests_to_process and (self._max_device_count is None or len(worker_tasks) < self._max_device_count):
+            while not test_plan.exhausted and \
+                    (self._max_device_count is None or len(worker_tasks) < self._max_device_count):
                 # call worker to start processing and running tests from the test plan
                 # (completes when all tests ar exhausted)
-
-                async def do_work() -> None:
-                    nonlocal have_tests_to_process
-                    released = False
-                    try:
-                        async with devices.reserve() as device:
-                            if device is None:
-                                raise Exception("Device queue is empty; unable to reserve device")
-                            # this synchronizes reservation of device with outer loop to prevent it from spinning
-                            # its wheels.  This task blocks if until a device is available and the sem therefore
-                            # blocks the outer loop on the same condition
-                            start_gate.release()
-                            released = True
-                            if not have_tests_to_process:
-                                return
-                            await self.run(
-                                device=device,
-                                test_setup=test_setup,
-                                test_plan=test_plan,
-                                completion_callback=worker_completion()
-                            )
-                    except Exception:
-                        have_tests_to_process = False  # stops outer loop from trying to process more tests
-                        raise
-                    finally:
-                        if not released:
-                            start_gate.release()
-
-                if have_tests_to_process:
-                    task = asyncio.create_task(do_work())
-                    worker_tasks.append(task)
-                    # synchronize, to ensure we don't spin our wheels and that we wait for the device to first
-                    # be reserved.  This is a little quirky, but it also allows the provision of having a simpler
-                    # and safer API on the AsyncDevicePool that ensures reserved devices are always relinquished
-                    # upon completion
-                    await start_gate.acquire()
-            results, pending = await asyncio.wait(worker_tasks, return_when=asyncio.FIRST_EXCEPTION)
-            for task in pending:  # type: ignore
-                task.cancel()
+                task = asyncio.create_task(self._do_work(devices, test_plan, test_setup, start_gate))
+                worker_tasks.append(task)
+                # synchronize, to ensure we don't spin our wheels creating gobs of workers.  this waits on the
+                # newly created worker to grab a device before creating the next one
+                await start_gate.acquire()
+            results, _ = await asyncio.wait(worker_tasks, return_when=asyncio.ALL_COMPLETED)
             [r.result() for r in results]  # will raise any exception caught during task execution
+
         await asyncio.wait_for(run_loop(), timeout=self._instrumentation_timeout)
         log.info("Test execution completed")
 

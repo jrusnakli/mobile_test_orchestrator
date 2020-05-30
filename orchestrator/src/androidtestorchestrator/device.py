@@ -29,7 +29,7 @@ from typing import (
     Optional,
     Union,
     Type,
-    Tuple, TypeVar)
+    Tuple, TypeVar, Coroutine)
 
 log = logging.getLogger("MTO")
 log.setLevel(logging.WARNING)
@@ -103,26 +103,36 @@ class Device:
         def return_code(self) -> int:
             return self._return_code
 
-    class Process:
-        """
-        Provides a basic interface to an underlying asyncio.Subprocess, providing access to an async generator
-        for iterating over lines of output asynchronously
-        """
-        def __init__(self, process: asyncio.subprocess.Process):
-            self._proc = process
+    class AsyncProcessContext:
+        def __init__(self, process_future: Coroutine[asyncio.subprocess.Process]):
+            self._proc_future = process_future
 
         async def __aenter__(self) -> "Device.Process":
-            return self
+            self._proc = Device.Process(await self._proc_future)
+            return self._proc
 
         async def __aexit__(self, exc_type: Optional[Type[BaseException]], exc_val: Optional[BaseException],
                             exc_tb: Optional[TracebackType]) -> None:
             if self._proc.returncode is None:
                 log.info("Terminating process %d", self._proc.pid)
                 try:
-                    await self.stop()
+                    await self._proc.stop()
                 except Exception:
                     with suppress(Exception):
-                        await self.stop(force=True)
+                        await self._proc.stop(force=True)
+
+    class Process:
+        """
+        Provides a basic interface to an underlying asyncio.Subprocess, providing access to an async generator
+        for iterating over lines of output asynchronously
+        """
+
+        def __init__(self, process: asyncio.subprocess.Process):
+            self._proc = process
+
+        @property
+        def pid(self):
+            return self._proc.pid
 
         @property
         def returncode(self) -> Optional[int]:
@@ -162,6 +172,7 @@ class Device:
             :param force: whether to kill (harsh) or simply terminate
             :param timeout: raise TimeoutException if process fails to truly terminate in timeout seconds
             """
+            log.debug(f">>>> Stopping {self._proc.pid}; forced? {force}")
             if force:
                 self._proc.kill()
             else:
@@ -455,9 +466,7 @@ class Device:
                                 stderr=subprocess.PIPE,
                                 **kwargs)
 
-    async def monitor_remote_cmd(self, *args: str,
-                                 loop: Optional[AbstractEventLoop] = None
-                                 ) -> AsyncContextManager[Any]:
+    def monitor_remote_cmd(self, *args: str) -> Device.AsyncProcessContext:
         """
         Coroutine for executing a command on this remote device asynchronously, allowing the client to iterate over
         lines of output.
@@ -468,7 +477,7 @@ class Device:
         :return: AsyncGenerator iterating over lines of output from command
 
         >>> device = Device("some_id", "/path/to/adb")
-        ... async with await device.monitor_remote_cmd("some_cmd", "with", "args", unresponsive_timeout=10) as proc:
+        ... async with device.monitor_remote_cmd("some_cmd", "with", "args", unresponsive_timeout=10) as proc:
         ...     async for line in proc.output():
         ...         # process(line)
 
@@ -478,11 +487,11 @@ class Device:
         # to do the heavy lifting, but they provide a clean external-facing interface to perform those functions).
         cmd = self._formulate_adb_cmd(*args)
         log.debug(f"Executing: {' '.join(cmd)}")
-        proc = await asyncio.subprocess.create_subprocess_exec(*cmd,
-                                                               stdout=asyncio.subprocess.PIPE,
-                                                               stderr=asyncio.subprocess.STDOUT,
-                                                               bufsize=0)  # noqa
-        return self.Process(proc)
+        proc = asyncio.subprocess.create_subprocess_exec(*cmd,
+                                                         stdout=asyncio.subprocess.PIPE,
+                                                         stderr=asyncio.subprocess.STDOUT,
+                                                         bufsize=0)  # noqa
+        return self.AsyncProcessContext(proc)
 
     ###################
     # Setting and getting device settings/properties
@@ -883,7 +892,7 @@ class DeviceNetwork(DeviceBased):
         :return: 0 on success, number of failed packets otherwise
         """
         try:
-            async with await self.device.monitor_remote_cmd("shell", "ping", "-c", str(count), domain) as proc:
+            async with self.device.monitor_remote_cmd("shell", "ping", "-c", str(count), domain) as proc:
                 async for line in proc.output(unresponsive_timeout=5):
                     if "64 bytes" in str(line):
                         count -= 1

@@ -2,8 +2,8 @@ version: 2
 jobs:
   build:
     working_directory: ~/code
-    docker:
-      - image: liwjohnson/android-api-28
+    #docker:
+    #  - image: liwjohnson/android-api-28
     environment:
       JVM_OPTS: -Xmx3200m
       EMULATOR_OPTS: "-no-window -no-audio -no-accel"
@@ -48,12 +48,6 @@ jobs:
             CIRCLECI=1 ~/code/venv/bin/pytest -s -v -m "not localonly" --html  test-reports/report.html --junitxml=test-reports/all-result.xml --basetemp=test-reports/tmp --cov=../src . --cov-report html:test-reports/coverage
             cat ~/.android/avd/MTO_test_emulator.ini
             cat ~/.android/avd/MTO_test_emulator.avd/config.ini
-      - run:
-          name: directory
-          command: |
-            ls /home/circleci/code/testsupportapps/app/build/outputs/apk/androidTest/debug
-            ls /home/circleci/code/testsupportapps/app/build/outputs/apk/debug
-            find /home/circleci/code/orchestrator/ -name \*.apk
       - store_artifacts:
           path: orchestrator/test/test-reports/
           destination: python_app

@@ -106,7 +106,7 @@ class Application(DeviceBased):
 
     @classmethod
     async def _monitor_install(cls, device: Device, apk_path: str, *args: str,
-                               callback: Optional[Callable[[Device.Process], None]] = None) -> None:
+                               callback: Optional[Callable[[Device.AsyncProcessContext], None]] = None) -> None:
         """
         Install given apk asynchronously, monitoring output for messages containing any of the given conditions,
         executing a callback if given when any such condition is met.
@@ -132,7 +132,7 @@ class Application(DeviceBased):
             # commands or detect insufficient storage issues
             cmd: List[str] = ["shell", "pm", "install"] + list(args) + [remote_data_path]
             # Do not allow more than one install at a time on a specific device, as this can be problematic
-            async with _device_lock(device), await device.monitor_remote_cmd(*cmd) as proc:
+            async with _device_lock(device), device.monitor_remote_cmd(*cmd) as proc:
                 if callback:
                     callback(proc)
                 await proc.wait(timeout=Device.TIMEOUT_LONG_ADB_CMD)
@@ -189,7 +189,7 @@ class Application(DeviceBased):
 
     @classmethod
     async def from_apk_async(cls: Type[_TApp], apk_path: str, device: Device, as_upgrade: bool = False,
-                             callback: Optional[Callable[[Device.Process], None]] = None) -> _TApp:
+                             callback: Optional[Callable[[Device.AsyncProcessContext], None]] = None) -> _TApp:
         """
         Install application asynchronously.  This allows the output of the install to be processed
         in a streamed fashion.  This can be useful on some devices that are non-standard android where installs
@@ -206,7 +206,7 @@ class Application(DeviceBased):
         :raises: Exception if failure of install or verify installation
 
         >>> async def install():
-        ...     async with await Application.from_apk_async("/some/local/path/to/apk", device) as stdout:
+        ...     async with Application.from_apk_async("/some/local/path/to/apk", device) as stdout:
         ...         async for line in stdout:
         ...            if "some trigger message" in line:
         ...               perform_tap_to_accept_install()
@@ -312,7 +312,7 @@ class Application(DeviceBased):
         :raises: Exception if app crashes during start and fails to display
         """
         async def launch() -> None:
-            async with await self.device.monitor_remote_cmd(
+            async with self.device.monitor_remote_cmd(
                     "logcat", "-s", "ActivityManager:I", "ActivityTaskManager:I", "AndroidRuntime:E",
                     "-T", "1") as logcat_proc:
                 # catch the logcat stream first befor launching, just to be sure
@@ -509,9 +509,11 @@ class TestApplication(Application):
                 items.append(runner)
         return items
 
-    async def run(self, *options: str) -> AsyncContextManager[Device.Process]:
+    def run(self, *options: str) -> Device.AsyncProcessContext:
         """
         Run an instrumentation test package, yielding lines from std output
+        NOTE: this returns an object implementing the AsyncContextManager interface, intended for use in
+           an "async with" call, even though it is itself not a Coroutine
 
         :param options: arguments to pass to instrument command
         :param loop: event loop to execute under, or None for default event loop
@@ -523,7 +525,7 @@ class TestApplication(Application):
         >>> app = TestApplication.fromApk("some.apk", device)
         ...
         ... async def run():
-        ...     async with await app.run() as stdout:
+        ...     async with app.run() as stdout:
         ...         async  for line in stdout:
         ...             print(line)
         """
@@ -531,12 +533,14 @@ class TestApplication(Application):
             raise Exception("App under test, as designatee by this test app's manifest, is not installed!")
         # surround each arg with quotes to preserve spaces in any arguments when sent to remote device:
         options = tuple('"%s"' % arg if not arg.startswith('"') and not arg.startswith("-") else arg for arg in options)
-        return await self.device.monitor_remote_cmd("shell", "am", "instrument", "-w", *options, "-r",
-                                                    "/".join([self._package_name, self._runner]))
+        return self.device.monitor_remote_cmd("shell", "am", "instrument", "-w", *options, "-r",
+                                              "/".join([self._package_name, self._runner]))
 
-    async def run_orchestrated(self, *options: str) -> AsyncContextManager[Device.Process]:
+    def run_orchestrated(self, *options: str) -> Device.AsyncProcessContext:
         """
         Run an instrumentation test package via Google's test orchestrator that
+        NOTE: this returns an object implementing the AsyncContextManager interface, intended for use in
+           an "async with" call, even though it is itself not a Coroutine
 
         :param options: arguments to pass to instrument command
         :returns: return coroutine wrapping an asyncio context manager for iterating over lines
@@ -551,7 +555,7 @@ class TestApplication(Application):
         # surround each arg with quotes to preserve spaces in any arguments when sent to remote device:
         options_text = " ".join(['"%s"' % arg if not arg.startswith('"') and not arg.startswith("-") else arg
                                  for arg in options])
-        return await self.device.monitor_remote_cmd(
+        return self.device.monitor_remote_cmd(
             "shell",
             "CLASSPATH=$(pm path android.support.test.services) "
             + "app_process / android.support.test.services.shellexecutor.ShellMain am instrument "
@@ -560,7 +564,7 @@ class TestApplication(Application):
 
     @classmethod
     async def from_apk_async(cls: Type[_TTestApp], apk_path: str, device: Device, as_upgrade: bool = False,
-                             callback: Optional[Callable[[Device.Process], None]] = None) -> _TTestApp:
+                             callback: Optional[Callable[[Device.AsyncProcessContext], None]] = None) -> _TTestApp:
         """
         Install apk as a test application on the given device
 

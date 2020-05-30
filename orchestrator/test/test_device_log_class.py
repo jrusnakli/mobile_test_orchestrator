@@ -31,7 +31,7 @@ class TestDeviceLog:
 
         async def parse_logcat():
             nonlocal logcat_proc
-            async with await device_log.logcat("-v", "brief", "-s", "MTO-TEST") as proc:
+            async with device_log.logcat("-v", "brief", "-s", "MTO-TEST") as proc:
                 logcat_proc = proc
                 async for line in proc.output(unresponsive_timeout=120):
                     nonlocal output

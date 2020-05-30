@@ -40,18 +40,11 @@ class TestSuite:
     clean_data_on_start: bool = False
 
 
-async def _async_iter_adapter(iter: Iterator[TestSuite]) -> AsyncIterator[TestSuite]:
-    for item in iter:
-        yield item
-        await asyncio.sleep(0)
-
-
 class Worker:
 
     def __init__(self,
                  device: Device,
-                 tests: Union[AsyncIterator[TestSuite],
-                              Iterator[TestSuite]],
+                 tests: AsyncIterator[TestSuite],
                  test_setup: EspressoTestSetup,
                  artifact_dir: str,
                  listeners: List[TestExecutionListener]):
@@ -61,10 +54,7 @@ class Worker:
         :param artifact_dir: path to place file articats created furing run
         :param listeners: List of listeners to watch test execution
         """
-        if isinstance(tests, Iterator):
-            self._tests = _async_iter_adapter(tests)
-        else:
-            self._tests = tests
+        self._tests = tests
         self._test_setup = test_setup
         self._artifact_dir = artifact_dir
         # CAUTION: this is a reference to what is passed in and held by a client, and will
@@ -85,7 +75,7 @@ class Worker:
             logcat_demuxer = LogcatTagDemuxer(monitor_tags)
             device_log = DeviceLog(device)
             keys = ['%s:%s' % (k, v[0]) for k, v in monitor_tags.items()]
-            async with await device_log.logcat("-v", "brief", "-s", *keys) as proc:
+            async with device_log.logcat("-v", "brief", "-s", *keys) as proc:
                 self._logcat_proc = proc
                 async for line in proc.output():
                     logcat_demuxer.parse_line(line)
@@ -116,11 +106,9 @@ class Worker:
                     test_args: List[str] = []
                     for key, value in test_run.test_parameters.items():
                         test_args += ["-e", key, value]
-                    if under_orchestration:
-                        run_future = test_app.run_orchestrated(*test_args)
-                    else:
-                        run_future = test_app.run(*test_args)
-                    async with await run_future as proc:
+                    run_future = test_app.run_orchestrated(*test_args) if under_orchestration else \
+                        test_app.run(*test_args)
+                    async with run_future as proc:
                         async for line in proc.output(unresponsive_timeout=test_timeout):
                             instrumentation_parser.parse_line(line)
                         await proc.wait(timeout=test_timeout)
@@ -164,13 +152,11 @@ class Worker:
             method(*args, **kargs)
 
     async def run(self,
-                  completion_callback: Optional[Coroutine[None, None, None]],
                   under_orchestration: bool = False,
                   test_timeout: Optional[int] = None,
                   monitor_tags: Optional[Dict[str, Tuple[str, LineParser]]] = None) -> None:
         """
         Worker coroutine where test execution against a given test application (on a single device) happens
-        :param completion_callback: corouting that is awaited on upon completion, or None
         :param under_orchestration: whether to run under orchestration or not
         :param test_timeout: raises TimeoutError after this many seconds if not None and test exceution has not
            completed
@@ -180,7 +166,6 @@ class Worker:
         """
 
         device_log = DeviceLog(self._device)
-        # log_capture is to listen to test status to mark beginning/end of each test run:
         logcat_output_path = os.path.join(self._artifact_dir, f"logcat-{self._device.device_id}.txt")
         logcat_task = None
         if monitor_tags:
@@ -199,8 +184,3 @@ class Worker:
             if logcat_task:
                 if logcat_task.exception():
                     log.error(f"Exception found in task processing logcat tags/commands: {logcat_task.exception()}")
-            if completion_callback:
-                try:
-                    await completion_callback
-                except Exception:
-                    log.exception("Error in completion callback on worker task")

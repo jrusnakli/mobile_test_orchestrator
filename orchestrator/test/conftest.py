@@ -3,7 +3,8 @@ import multiprocessing
 
 import getpass
 import os
-from multiprocessing import Semaphore
+import shutil
+import tempfile
 
 from pathlib import Path
 
@@ -14,6 +15,7 @@ from androidtestorchestrator.application import Application, TestApplication, Se
 from androidtestorchestrator.device import Device
 from androidtestorchestrator.emulators import EmulatorBundleConfiguration
 from androidtestorchestrator.devicepool import AsyncEmulatorPool, AsyncQueueAdapter
+from androidtestorchestrator.tooling.sdkmanager import SdkManager
 from . import support
 from .support import uninstall_apk
 
@@ -42,14 +44,16 @@ if IS_CIRCLECI:
 class DeviceManager:
 
     AVD = "MTO_test_emulator"
-    avd_path = os.environ.get("ANDROID_AVD_HOME", os.path.join(os.path.expanduser("~"), ".android", "avd"))
-    if IS_CIRCLECI and os.path.exists("/opt/android/sdk"):
-        sdk_dir = "/opt/android/sdk"
-    else:
-        sdk_dir = support.find_sdk()
+    TMP_DIR = str(tempfile.mkdtemp(suffix="-ANDROID"))
+    TMP_SDK_DIR = os.path.join(TMP_DIR, "SDK")
+    os.mkdir(TMP_SDK_DIR)
+    TMP_AVD_DIR = os.path.join(TMP_DIR, "AVD")
+    os.mkdir(TMP_AVD_DIR)
+    AVD_PATH = os.environ.get("ANDROID_AVD_HOME", TMP_AVD_DIR)
+    SDK_PATH = os.environ.get("ANDROID_SDK_ROOT", TMP_SDK_DIR)
     CONFIG = EmulatorBundleConfiguration(
-        sdk=Path(sdk_dir),
-        avd_dir=Path(avd_path),
+        sdk=Path(SDK_PATH),
+        avd_dir=Path(AVD_PATH),
         boot_timeout=10 * 60  # seconds
     )
     ARGS = [
@@ -144,27 +148,35 @@ class AppManager:
         return AppManager._singleton
 
 
-support.ensure_avd(str(DeviceManager.CONFIG.sdk), DeviceManager.AVD, DeviceManager.CONFIG.avd_dir)
-
-
 @pytest.fixture(scope='node')
 async def device_pool():
-    if IS_CIRCLECI:
-        AppManager.singleton()  # force build to happen fist, in serial
-
-    m = multiprocessing.Manager()
-    queue = AsyncQueueAdapter(q=m.Queue(DeviceManager.count()))
-    if IS_CIRCLECI:
-        DeviceManager.ARGS.append("-no-accel")
-    async with AsyncEmulatorPool.create(DeviceManager.count(),
-                                        DeviceManager.AVD,
-                                        DeviceManager.CONFIG,
-                                        *DeviceManager.ARGS,
-                                        external_queue=queue) as pool:
+    try:
         if IS_CIRCLECI:
-            print(">>> No hw accel, so waiting for emulator to settle in...")
-            await asyncio.sleep(30)
-        yield pool
+            AppManager.singleton()  # force build to happen fist, in serial
+        sdk_manager = SdkManager(DeviceManager.CONFIG.sdk, bootstrap=True)
+        print(">>> Bootstrapping Android SDK platform tools...")
+        sdk_manager.bootstrap_platform_tools()
+        print(">>> Bootstrapping Android SDK emulator...")
+        sdk_manager.bootstrap_emulator()
+        print(">>> Creating Android emulator AVD...")
+        image = "android-28;default;x86_64"
+        sdk_manager.create_avd(avd_dir=DeviceManager.CONFIG.avd_dir, avd_name=DeviceManager.AVD, image=image,
+                               device_type="pixel_xl")
+        m = multiprocessing.Manager()
+        queue = AsyncQueueAdapter(q=m.Queue(DeviceManager.count()))
+        if IS_CIRCLECI:
+            DeviceManager.ARGS.append("-no-accel")
+        async with AsyncEmulatorPool.create(DeviceManager.count(),
+                                            DeviceManager.AVD,
+                                            DeviceManager.CONFIG,
+                                            *DeviceManager.ARGS,
+                                            external_queue=queue) as pool:
+            if IS_CIRCLECI:
+                print(">>> No hw accel, so waiting for emulator to settle in...")
+                await asyncio.sleep(30)
+            yield pool
+    finally:
+        shutil.rmtree(DeviceManager.TMP_DIR)
 
 
 @pytest.fixture()

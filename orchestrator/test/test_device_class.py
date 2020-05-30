@@ -163,7 +163,7 @@ class TestAndroidDevice:
 
     @pytest.mark.asyncio
     async def test_invalid_cmd_execution(self, device: Device):
-        async with await device.monitor_remote_cmd("some", "bad", "command") as proc:
+        async with device.monitor_remote_cmd("some", "bad", "command") as proc:
             async for _ in proc.output(unresponsive_timeout=10):
                 pass
         assert proc.returncode is not None
@@ -209,7 +209,7 @@ class TestAndroidDevice:
     @pytest.mark.asyncio
     async def test_invalid_cmd_execution_unresponsive(self, device: Device, support_app: str):
         with pytest.raises(asyncio.TimeoutError):
-            async with await device.monitor_remote_cmd("install", support_app) as proc:
+            async with device.monitor_remote_cmd("install", support_app) as proc:
                 async for _ in proc.output(unresponsive_timeout=0.01):
                     pass
 

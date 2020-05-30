@@ -95,20 +95,25 @@ class DeviceLog(DeviceBased):
         """
         clear device log on the device and start fresh
         """
-        self.device.execute_remote_cmd("logcat", "-b", "all", "-c")
+        try:
+            self.device.execute_remote_cmd("logcat", "-b", "all", "-c")
+        except Device.CommandExecutionFailure as e:
+            if "failed to clear the 'main' log" in str(e):
+                # try again
+                self.device.execute_remote_cmd("logcat", "-b", "all", "-c")
 
-    async def logcat(self, *options: str, loop: Optional[AbstractEventLoop] = None
-                     ) -> AsyncContextManager[Any]:
+    def logcat(self, *options: str) -> Device.AsyncProcessContext:
         """
         async generator to continually output lines from logcat until client
         exits processing (exist async iterator), at which point process is killed
+        NOTE: this returns an object implementing the AsyncContextManager interface, intended for use in
+           an "async with" call, even though it is itself not a Coroutine
 
         :param options: list of string options to provide to logcat command
-        :param loop: specific asyncio loop to use or None for default
         :return: AsyncGenerator to iterate over lines of logcat
         :raises: asyncio.TimeoutError if timeout is not None and timeout is reached
         """
-        return await self.device.monitor_remote_cmd("logcat", *options, loop=loop)
+        return self.device.monitor_remote_cmd("logcat", *options)
 
     def capture_to_file(self, output_path: str) -> "LogCapture":
         """
