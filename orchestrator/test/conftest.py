@@ -162,6 +162,7 @@ async def device_pool():
         image = "android-28;default;x86_64"
         sdk_manager.create_avd(avd_dir=DeviceManager.CONFIG.avd_dir, avd_name=DeviceManager.AVD, image=image,
                                device_type="pixel_xl")
+        os.environ["ANDROID_SDK_ROOT"] = str(DeviceManager.CONFIG.sdk)
         m = multiprocessing.Manager()
         queue = AsyncQueueAdapter(q=m.Queue(DeviceManager.count()))
         if IS_CIRCLECI:

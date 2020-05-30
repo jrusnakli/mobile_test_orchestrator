@@ -108,7 +108,8 @@ class TestLeasedEmulator:
 
     @pytest.mark.asyncio
     async def test_lease(self, device: Emulator):
-        os.environ["ANDRDOID_SDK_ROOT"] = find_sdk()
+        if not "ANDROID_SDK_ROOT" in os.environ:
+            os.environ["ANDRDOID_SDK_ROOT"] = find_sdk()
         default_config = EmulatorBundleConfiguration(sdk=Path(find_sdk()))
         leased_emulator = AsyncEmulatorPool.LeasedEmulator(device.port, config=default_config)
         await leased_emulator.set_timer(expiry=1)
