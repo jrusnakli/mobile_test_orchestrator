@@ -15,7 +15,7 @@ import time
 from contextlib import suppress
 
 from apk_bitminer.parsing import AXMLParser  # type: ignore
-from typing import List, TypeVar, Type, Optional, AsyncContextManager, Dict, Union, Set, Tuple, Callable, Iterable
+from typing import List, TypeVar, Type, Optional, Dict, Union, Set, Tuple, Callable, Iterable
 
 from .device import Device, DeviceBased, _device_lock, DeviceInteraction
 
@@ -106,7 +106,7 @@ class Application(DeviceBased):
 
     @classmethod
     async def _monitor_install(cls, device: Device, apk_path: str, *args: str,
-                               callback: Optional[Callable[[Device.AsyncProcessContext], None]] = None) -> None:
+                               callback: Optional[Callable[[Device.Process], None]] = None) -> None:
         """
         Install given apk asynchronously, monitoring output for messages containing any of the given conditions,
         executing a callback if given when any such condition is met.
@@ -189,7 +189,7 @@ class Application(DeviceBased):
 
     @classmethod
     async def from_apk_async(cls: Type[_TApp], apk_path: str, device: Device, as_upgrade: bool = False,
-                             callback: Optional[Callable[[Device.AsyncProcessContext], None]] = None) -> _TApp:
+                             callback: Optional[Callable[[Device.Process], None]] = None) -> _TApp:
         """
         Install application asynchronously.  This allows the output of the install to be processed
         in a streamed fashion.  This can be useful on some devices that are non-standard android where installs
@@ -564,7 +564,7 @@ class TestApplication(Application):
 
     @classmethod
     async def from_apk_async(cls: Type[_TTestApp], apk_path: str, device: Device, as_upgrade: bool = False,
-                             callback: Optional[Callable[[Device.AsyncProcessContext], None]] = None) -> _TTestApp:
+                             callback: Optional[Callable[[Device.Process], None]] = None) -> _TTestApp:
         """
         Install apk as a test application on the given device
 

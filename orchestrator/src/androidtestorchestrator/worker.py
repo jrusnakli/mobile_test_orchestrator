@@ -4,7 +4,7 @@ import os
 from contextlib import suppress
 from dataclasses import dataclass, field
 
-from typing import Any, AsyncIterator, List, Optional, Dict, Tuple, Iterator, Union, Coroutine
+from typing import Any, AsyncIterator, List, Optional, Dict, Tuple
 
 from androidtestorchestrator import TestApplication
 from .device import Device

@@ -13,14 +13,13 @@ import subprocess
 import sys
 import time
 
-from asyncio import AbstractEventLoop, StreamReader
+from asyncio import StreamReader
 from contextlib import suppress, asynccontextmanager
 from enum import Enum
 from types import TracebackType
 from typing import (
     Any,
     AnyStr,
-    AsyncContextManager,
     AsyncIterator,
     Callable,
     Dict,
@@ -104,7 +103,7 @@ class Device:
             return self._return_code
 
     class AsyncProcessContext:
-        def __init__(self, process_future: Coroutine[asyncio.subprocess.Process]):
+        def __init__(self, process_future: Coroutine[Any, Any, asyncio.subprocess.Process]):
             self._proc_future = process_future
 
         async def __aenter__(self) -> "Device.Process":
@@ -131,7 +130,7 @@ class Device:
             self._proc = process
 
         @property
-        def pid(self):
+        def pid(self) -> int:
             return self._proc.pid
 
         @property

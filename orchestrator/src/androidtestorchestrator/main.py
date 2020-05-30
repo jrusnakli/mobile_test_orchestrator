@@ -244,9 +244,9 @@ class AndroidTestOrchestrator:
                        completion_callback=completion_callback)
 
     async def _do_work(self, devices: AsyncDevicePool,
-                      test_plan: "AndroidTestOrchestrator.WrappedAsyncIterator",
-                      test_setup: EspressoTestSetup,
-                      start_gate: asyncio.Semaphore) -> None:
+                       test_plan: "AndroidTestOrchestrator.WrappedAsyncIterator",
+                       test_setup: EspressoTestSetup,
+                       start_gate: asyncio.Semaphore) -> None:
         """
         Do work by reserving a single device, preparing it for test execution,
         and starting a worker thread to process tests in the test plan

@@ -137,8 +137,6 @@ def ensure_avd(android_sdk: str, avd: str, avd_path: str):
     if sys.platform.lower() == 'win32':
         adb_path += ".exe"
 
-    is_no_window = False
-
     if sys.platform == 'win32':
         emulator_path = os.path.join(android_sdk, "emulator", "emulator-headless.exe")
     else:
@@ -161,7 +159,6 @@ def ensure_avd(android_sdk: str, avd: str, avd_path: str):
             emulator_path = os.path.join(android_sdk, "emulator", "emulator")
         if not os.path.isfile(emulator_path):
             raise Exception(f"Unable to find path to 'emulator' command in {android_sdk}")
-        is_no_window = True
     list_emulators_cmd = [emulator_path, "-list-avds"]
     print(f">>>> Executing {list_emulators_cmd}")
     completed = subprocess.run(list_emulators_cmd, timeout=10, stdout=subprocess.PIPE, stderr=subprocess.PIPE,

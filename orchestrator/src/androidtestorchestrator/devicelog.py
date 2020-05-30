@@ -3,14 +3,13 @@ The *devielog* package provides the API for streaming, capturing and manipulatin
 """
 import os
 import subprocess
-from asyncio import AbstractEventLoop
 
 import logging
 from subprocess import Popen
 from types import TracebackType
 
 from contextlib import suppress
-from typing import AsyncContextManager, Optional, TextIO, Type, Any
+from typing import Optional, TextIO, Type
 
 from .device import Device, DeviceBased
 

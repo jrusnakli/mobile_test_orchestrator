@@ -1,7 +1,4 @@
-import os
 from typing import Optional, Any
-
-import pytest
 
 from androidtestorchestrator.parsing import InstrumentationOutputParser
 from androidtestorchestrator.reporting import TestExecutionListener
@@ -219,7 +216,7 @@ at android.app.Instrumentation$InstrumentationThread.run(Instrumentation.java:17
         parser.add_execution_listener(Listener())
 
         for line in self.example_output.splitlines():
-           parser.parse_line(line)
+            parser.parse_line(line)
 
         assert got_test_passed is True
         assert got_test_assumption_failure is True
@@ -248,14 +245,14 @@ at android.app.Instrumentation$InstrumentationThread.run(Instrumentation.java:17
 
         parser = InstrumentationOutputParser("test_run", Listener())
         parser._current_test = InstrumentationOutputParser.TestParsingResult()
-        parser._current_test.test_name="some_test"
-        parser._current_test.test_class="TestClass"
+        parser._current_test.test_name = "some_test"
+        parser._current_test.test_class = "TestClass"
         parser._parse_status_code(str(parser.CODE_ASSUMPTION_VIOLATION))
         assert got_test_assumption_failure, "Failed to report skipped test"
         assert not got_test_error, "Got unexpected test error"
         parser._current_test = InstrumentationOutputParser.TestParsingResult()
-        parser._current_test.test_name="some_test2"
-        parser._current_test.test_class="TestClass2"
+        parser._current_test.test_name = "some_test2"
+        parser._current_test.test_class = "TestClass2"
         parser._parse_status_code("42")  # unknown code raises exception
         assert got_test_error, "Failed to detect test failure/error"
 
