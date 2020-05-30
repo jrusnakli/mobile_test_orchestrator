@@ -4,7 +4,7 @@ import sys
 import logging
 import os
 from types import TracebackType
-from typing import AsyncIterator, Dict, Iterator, List, Optional, Tuple, Type, Union, Coroutine, Any, Awaitable
+from typing import AsyncIterator, Dict, Iterator, List, Optional, Tuple, Type, Union, Any
 
 from androidtestorchestrator.worker import TestSuite
 from .testprep import EspressoTestSetup
