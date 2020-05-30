@@ -96,7 +96,10 @@ class DeviceStorage(DeviceBased):
             log.warning("File %s already exists when pulling. Potential to overwrite files." % local_path)
         async with self.device.monitor_remote_cmd('pull', '%s' % remote_path, '%s' % local_path) as proc:
             await proc.wait(timeout)
-        if proc.returncode != 0:
+        if proc.returncode is None:
+            raise Device.CommandExecutionFailure(-255, f"Failed to pull {remote_path} "
+                                                 "from device: process did not end as expected")
+        elif proc.returncode != 0:
             raise Device.CommandExecutionFailure(proc.returncode, f"Failed to pull {remote_path} from device")
 
     def make_dir(self, path: str, run_as: Optional[str] = None) -> None:

@@ -106,26 +106,26 @@ class AndroidTestOrchestrator:
 
     """
 
-    class WrappedAsyncIterator(AsyncIterator):
+    class WrappedAsyncIterator(AsyncIterator[TestSuite]):
         """
         Allows orchestrator class to monitor an underlying AsyncIterator to tell whether it is
         exhausted
         """
-        def __init__(self, base_iterator: AsyncIterator[TestSuite]):
+        def __init__(self, base_iterator: Union[Iterator[TestSuite], AsyncIterator[TestSuite]]):
             self._base_iterator = _async_iter_adapter(base_iterator) if isinstance(base_iterator, Iterator) else \
                 base_iterator
             self._exhausted = False
 
-        async def __anext__(self) -> Awaitable[TestSuite]:
+        async def __anext__(self) -> TestSuite:
             try:
                 item = await self._base_iterator.__anext__()
-                yield item
-            except StopIteration:
+                return item
+            except (StopAsyncIteration, StopIteration):
                 self._exhausted = True
                 raise
 
         @property
-        def exhausted(self):
+        def exhausted(self) -> bool:
             return self._exhausted
 
     def __init__(self,
@@ -204,16 +204,15 @@ class AndroidTestOrchestrator:
     async def run(self,
                   device: Device,
                   test_setup: EspressoTestSetup,
-                  test_plan: Union[Iterator[TestSuite], AsyncIterator[TestSuite]],
-                  completion_callback: Optional[Coroutine[None, None, None]] = None) -> None:
+                  test_plan: Union[Iterator[TestSuite], AsyncIterator[TestSuite]]) -> None:
         """
         Run a collection test suites against a single device, pulling each test suite from an externally supplied iterator
 
         :param test_setup: information to prepare device for test execution
         :param device: device to run against
         :param test_plan: iterator of test suites to pull from
-        :param completion_callback: coroutine to be awaited upon completion, or None
         """
+        test_plan = self.WrappedAsyncIterator(test_plan)
         # monitor requested logcat tags
         worker = Worker(device=device,
                         tests=test_plan,
@@ -221,7 +220,6 @@ class AndroidTestOrchestrator:
                         artifact_dir=self._artifact_dir,
                         listeners=self._run_listeners)
         await worker.run(
-            completion_callback=completion_callback,
             under_orchestration=self._run_under_orchestration,
             test_timeout=self._test_timeout,
             monitor_tags=self._tag_monitors
@@ -230,18 +228,15 @@ class AndroidTestOrchestrator:
     async def run_single_test_suite(self,
                                     test_setup: EspressoTestSetup,
                                     device: Device,
-                                    test_suite: TestSuite,
-                                    completion_callback: Optional[Coroutine[None, None, None]] = None) -> None:
+                                    test_suite: TestSuite) -> None:
         """
         Convenience method to execute a single test suite against a single device
 
         :param test_setup: information to prepare device for test execution
         :param device: which device to run against
         :param test_suite: the test suite to run
-        :param completion_callback: coroutine to be awaited upon completion, or None
         """
-        await self.run(test_setup=test_setup, device=device, test_plan=iter([test_suite]),
-                       completion_callback=completion_callback)
+        await self.run(test_setup=test_setup, device=device, test_plan=iter([test_suite]))
 
     async def _do_work(self, devices: AsyncDevicePool,
                        test_plan: "AndroidTestOrchestrator.WrappedAsyncIterator",
@@ -263,7 +258,7 @@ class AndroidTestOrchestrator:
                 released = True
                 if device is None and not test_plan.exhausted:
                     raise Exception("Device queue is empty; unable to reserve device")
-                elif not test_plan.exhausted:
+                elif device and not test_plan.exhausted:
                     await self.run(
                         device=device,
                         test_setup=test_setup,
@@ -288,15 +283,15 @@ class AndroidTestOrchestrator:
         """
         # see comment on acquire() below
         start_gate = asyncio.Semaphore(0)
-        test_plan = self.WrappedAsyncIterator(test_plan)
+        test_plan_ = self.WrappedAsyncIterator(test_plan)
 
         async def run_loop() -> None:
             worker_tasks: List[asyncio.Task[Any]] = []
-            while not test_plan.exhausted and \
+            while not test_plan_.exhausted and \
                     (self._max_device_count is None or len(worker_tasks) < self._max_device_count):
                 # call worker to start processing and running tests from the test plan
                 # (completes when all tests ar exhausted)
-                task = asyncio.create_task(self._do_work(devices, test_plan, test_setup, start_gate))
+                task = asyncio.create_task(self._do_work(devices, test_plan_, test_setup, start_gate))
                 worker_tasks.append(task)
                 # synchronize, to ensure we don't spin our wheels creating gobs of workers.  this waits on the
                 # newly created worker to grab a device before creating the next one

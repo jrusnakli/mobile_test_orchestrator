@@ -27,11 +27,13 @@ class SdkManager:
 
     def __init__(self, sdk_dir: Path, bootstrap: bool = False):
         self._sdk_dir = sdk_dir
+        self._env = dict(os.environ)
+        self._env.update({'ANDROID_SDK_ROOT': str(self._sdk_dir)})
         self._sdk_manager_path = sdk_dir.joinpath("tools", "bin", "sdkmanager")
         self._avd_manager_path = sdk_dir.joinpath("tools", "bin", "avdmanager")
         if sys.platform.lower() == 'win32':
-            self._sdk_manager_path += ".bat"
-            self._avd_manager_path += ".bat"
+            self._sdk_manager_path = self._sdk_manager_path.with_suffix(".bat")
+            self._avd_manager_path = self._avd_manager_path.with_suffix(".bat")
             self._shell = True
         else:
             self._shell = False
@@ -50,7 +52,6 @@ class SdkManager:
             raise FileNotFoundError(f"Did not locate sdkmanager tool at expected location {self._avd_manager_path}")
         os.chmod(str(self._sdk_manager_path), stat.S_IRWXU)
         os.chmod(str(self._avd_manager_path), stat.S_IRWXU)
-        self._env = dict(os.environ).update({'ANDROID_SDK_ROOT': str(self._sdk_dir)})
 
     @property
     def emulator_path(self) -> Path:
@@ -76,29 +77,28 @@ class SdkManager:
             raise Exception(
                 f"Failed to download/update {application}: {stderr.decode('utf-8')}")
 
-    def bootstrap_platform_tools(self) -> "None":
+    def bootstrap_platform_tools(self) -> None:
         """
         download/update platform tools within the sdk
         :param version: version to update to or None for latest
         """
         self.bootstrap("platform-tools")
-        return self
 
-    def bootstrap_emulator(self) -> "None":
+    def bootstrap_emulator(self) -> None:
         """
         download/update emulator within the sdk
         :param version: version to update to or None for latest
         """
         self.bootstrap("emulator")
 
-    def download_system_img(self, version: str) -> "None":
+    def download_system_img(self, version: str) -> None:
         """
         download/update system image with version
         :param version: version to download
         """
         self.bootstrap("system-images", version)
 
-    def create_avd(self, avd_dir: Path, avd_name: str, image: str, device_type: str, *args: str):
+    def create_avd(self, avd_dir: Path, avd_name: str, image: str, device_type: str, *args: str) -> None:
         """
         Create an android emulator definition
 
@@ -114,11 +114,9 @@ class SdkManager:
                           "-d", device_type]
         create_avd_cmd += args
         print(f">>>> Executing {' '.join(create_avd_cmd)}")
-        if not self._env:
-            self._env = dict(os.environ)
-        self._env.update({"ANDROID_AVD_HOME": avd_dir})
+        self._env.update({"ANDROID_AVD_HOME": str(avd_dir)})
         p = subprocess.Popen(create_avd_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                              stdin=subprocess.PIPE, shell=self._shell, env=self._env)
         if p.wait() != 0:
             stdout, stderr = p.communicate()
-            raise Exception(f"Failed to create avd: {stdout}\n{stderr}")
+            raise Exception(f"Failed to create avd: {stdout.decode('utf-8')}\n{stderr.decode('utf-8')}")

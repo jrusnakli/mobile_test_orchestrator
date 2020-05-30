@@ -137,8 +137,10 @@ class Application(DeviceBased):
                     callback(proc)
                 await proc.wait(timeout=Device.TIMEOUT_LONG_ADB_CMD)
                 if proc.returncode != 0:
-                    raise Device.CommandExecutionFailure(proc.returncode,
-                                                         f"Install of {apk_path} failed: {await proc.communicate()}")
+                    output = await proc.communicate() or b""
+                    raise Device.CommandExecutionFailure(
+                        proc.returncode or -255,
+                        f"Install of {apk_path} failed: {output.decode('utf-8')}")
         finally:
             with suppress(Exception):
                 rm_cmd = ("shell", "rm", remote_data_path)

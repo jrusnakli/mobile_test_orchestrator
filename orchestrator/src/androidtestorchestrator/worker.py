@@ -60,7 +60,7 @@ class Worker:
         # CAUTION: this is a reference to what is passed in and held by a client, and will
         # be updated as the client's listeners get updated
         self._run_listeners = listeners
-        self._logcat_proc = None  # if active, process that monitors logcat tags for commands to process
+        self._logcat_proc: Optional[Device.Process] = None
         self._device = device
 
     async def _process_logcat_tags(self, device: Device, monitor_tags: Dict[str, Tuple[str, LineParser]]) -> None:
@@ -180,7 +180,7 @@ class Worker:
         finally:
             if self._logcat_proc:
                 with suppress(Exception):
-                    self._logcat_proc.kill()
+                    self._logcat_proc.stop(force=True)
             if logcat_task:
                 if logcat_task.exception():
                     log.error(f"Exception found in task processing logcat tags/commands: {logcat_task.exception()}")
