@@ -153,7 +153,7 @@ class AppManager:
 
 @pytest.fixture(scope='node')
 def device_pool():
-    sdk_manager = SdkManager(DeviceManager.CONFIG.sdk, bootstrap=True)
+    sdk_manager = SdkManager(DeviceManager.CONFIG.sdk, bootstrap=IS_CIRCLECI)
     if not "ANDROID_SDK_ROOT" in os.environ:
         print(">>> Bootstrapping Android SDK platform tools...")
         sdk_manager.bootstrap_platform_tools()

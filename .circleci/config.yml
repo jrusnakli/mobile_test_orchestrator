@@ -17,7 +17,10 @@ jobs:
           name: setup java venv
           command: |
             cat /etc/*release
-            sudo apt-get -y install default-jdk
+            sudo echo "" | sudo apt-get install software-properties-common
+            wget -qO - https://adoptopenjdk.jfrog.io/adoptopenjdk/api/gpg/key/public | sudo apt-key add -
+            sudo add-apt-repository --yes https://adoptopenjdk.jfrog.io/adoptopenjdk/deb/
+            sudo apt-get update && sudo apt-get install adoptopenjdk-8-hotspot
             java -version
             sudo apt-get install git-lfs
             git lfs pull
