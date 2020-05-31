@@ -25,8 +25,8 @@ jobs:
           command: |
             echo "" | sudo apt-get install software-properties-common
             sudo apt-get update
-            sudo add-apt-repository ppa:webupd8team/java
-            sudo apt-get update
+            sudo add-apt-repository -r ppa:webupd8team/java
+            sudo apt-get update -q
       - run:
           name: setup java venv
           command: |
