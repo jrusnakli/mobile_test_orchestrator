@@ -168,6 +168,8 @@ def device_pool():
     image = "android-28;default;x86_64"
     sdk_manager.create_avd(DeviceManager.CONFIG.avd_dir, DeviceManager.AVD, image,
                            "pixel_xl", "--force")
+    assert os.path.exists(DeviceManager.CONFIG.avd_dir.joinpath(DeviceManager.AVD).with_suffix(".ini"))
+    assert os.path.exists(DeviceManager.CONFIG.avd_dir.joinpath(DeviceManager.AVD).with_suffix(".avd"))
     m = multiprocessing.Manager()
     queue = m.Queue(DeviceManager.count())
     pool_q = m.Queue(2)
@@ -180,7 +182,7 @@ def device_pool():
         asyncio.run(create_device_pool(config, DeviceManager.AVD, queue, pool_q, done_q,
                                        *DeviceManager.ARGS))
 
-    p = multiprocessing.Process(target=em_pool, args=(DeviceManager.CONFIG))
+    p = multiprocessing.Process(target=em_pool, args=(DeviceManager.CONFIG,))
     try:
         p.start()
         print(">>>>> WAITING FOR POOL")
