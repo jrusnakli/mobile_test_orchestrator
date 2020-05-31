@@ -244,7 +244,6 @@ class AsyncEmulatorPool(AsyncDevicePool):
         :return: new EmulatorQueue populated with requested emulators
         :raises: TimeoutError if *wait_for_startup* is specified and emulaors not started in time
         """
-        print(f">>>>>> CREATING POOL OF {count}")
         if count > len(Emulator.PORTS):
             raise Exception(f"Can have at most {count} emulators at one time")
         queue: Queue[Emulator] = external_queue or Queue(count)  # type: ignore
@@ -254,7 +253,6 @@ class AsyncEmulatorPool(AsyncDevicePool):
         async def launch_one(index: int, avd: str, config: EmulatorBundleConfiguration, *args: str) -> None:
             nonlocal error_count
             nonlocal emulators
-            print(f">>>> LAUNCING INDEX {index}")
             await asyncio.sleep(index * 3)  # space out launches as this can help with avoiding instability
             port = Emulator.PORTS[index]
             try:
@@ -280,7 +278,6 @@ class AsyncEmulatorPool(AsyncDevicePool):
             await queue.put(leased_emulator)  # type: ignore
 
         futures = [asyncio.create_task(launch_one(index, avd, config, *args)) for index in range(count)]
-        print(f">>>>>>> FUTURE LAUNCHES ARE {futures}")
         if wait_for_startup:
             for future in futures:
                 queue.put(await future)

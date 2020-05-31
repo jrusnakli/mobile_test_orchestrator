@@ -158,6 +158,7 @@ def device_pool():
         sdk_manager.bootstrap_platform_tools()
     os.environ["ANDROID_SDK_ROOT"] = str(DeviceManager.CONFIG.sdk)
     os.environ["ANDROID_HOME"] = str(DeviceManager.CONFIG.sdk)
+    os.environ["ANDROID_AVD_HOME"] = str(DeviceManager.CONFIG.avd_dir)
     if IS_CIRCLECI:
         AppManager.singleton()  # force build to happen fist, in serial
     print(">>> Creating Android emulator AVD...")
