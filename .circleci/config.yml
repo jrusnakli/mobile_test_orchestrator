@@ -23,7 +23,7 @@ jobs:
       - run:
           name: setup java venv
           command: |
-            lsb_release -a
+            cat /etc/*release
             sudo apt-get -y install openjdk-8-jre-headless
             sudo apt-get install git-lfs
             git lfs pull
