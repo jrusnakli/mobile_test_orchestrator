@@ -157,13 +157,14 @@ def device_pool():
     if not "ANDROID_SDK_ROOT" in os.environ:
         print(">>> Bootstrapping Android SDK platform tools...")
         sdk_manager.bootstrap_platform_tools()
-        print(">>> Bootstrapping Android SDK emulator...")
-        sdk_manager.bootstrap_emulator()
     os.environ["ANDROID_SDK_ROOT"] = str(DeviceManager.CONFIG.sdk)
     os.environ["ANDROID_HOME"] = str(DeviceManager.CONFIG.sdk)
     if IS_CIRCLECI:
         AppManager.singleton()  # force build to happen fist, in serial
     print(">>> Creating Android emulator AVD...")
+    if not "ANDROID_SDK_ROOT" in os.environ:
+        print(">>> Bootstrapping Android SDK emulator...")
+        sdk_manager.bootstrap_emulator()
     image = "android-28;default;x86_64"
     sdk_manager.create_avd(DeviceManager.CONFIG.avd_dir, DeviceManager.AVD, image,
                            "pixel_xl", "--force")
