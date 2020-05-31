@@ -20,7 +20,7 @@ jobs:
             . venv/bin/activate
             pip install --upgrade -r requirements.txt
             sudo apt-get install libpulse0
-            sudo apt-get install oracle-java8-installer
+            sudo apt-get install openjdk-8-jdk
             sudo apt-get install git-lfs
             git lfs pull
       - run:
