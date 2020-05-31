@@ -173,11 +173,14 @@ def device_pool():
     pool_q = m.Queue(2)
     done_q = m.Queue(2)
 
-    def em_pool():
-        asyncio.run(create_device_pool(DeviceManager.CONFIG, DeviceManager.AVD, queue, pool_q, done_q,
+    def em_pool(config: EmulatorBundleConfiguration):
+        os.environ["ANDROID_SDK_ROOT"] = str(config.sdk)
+        os.environ["ANDROID_HOME"] = str(config.sdk)
+        os.environ["ANDROID_AVD_HOME"] = str(config.avd_dir)
+        asyncio.run(create_device_pool(config, DeviceManager.AVD, queue, pool_q, done_q,
                                        *DeviceManager.ARGS))
 
-    p = multiprocessing.Process(target=em_pool)
+    p = multiprocessing.Process(target=em_pool, args=(DeviceManager.CONFIG))
     try:
         p.start()
         print(">>>>> WAITING FOR POOL")
