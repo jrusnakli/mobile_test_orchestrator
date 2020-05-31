@@ -113,7 +113,6 @@ class SdkManager:
         create_avd_cmd = [str(self._avd_manager_path), "create", "avd", "-n", avd_name, "-k", f"system-images;{image}",
                           "-d", device_type]
         create_avd_cmd += args
-        print(f">>>> Executing {' '.join(create_avd_cmd)}")
         self._env.update({"ANDROID_AVD_HOME": str(avd_dir)})
         p = subprocess.Popen(create_avd_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                              stdin=subprocess.PIPE, shell=self._shell, env=self._env)

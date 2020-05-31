@@ -46,28 +46,14 @@ def find_sdk():
 
 
 class TestEmulator:
-    ARGS = [
-        "-wipe-data",
-        "-gpu", "off",
-        "-no-boot-anim",
-        "-skin", "320x640",
-        "-no-window",
-        "-no-audio",
-        "-partition-size", "1024"
-    ]
-    if "CIRCLECI" in os.environ:
-        ARGS.append("-no-accel")
-    EMULATOR_CONFIG = EmulatorBundleConfiguration(
-        sdk=Path(find_sdk()),
-        boot_timeout=10 * 60  # seconds
-    )
-    AVD = "MTO_emulator"  # set up before tests execute
+
 
     @pytest.mark.skipif(getpass.getuser() == 'circleci' or True,
                         reason="Unable to run multiple emulators in circleci without upgrading machine")
     @pytest.mark.asyncio
-    async def test_launch(self):
-        emulator = await Emulator.launch(5584, self.AVD, self.EMULATOR_CONFIG, *self.ARGS)
+    async def test_launch(self, emulator_config):
+        emulator = await Emulator.launch(5584, emulator_config.AVD, emulator_config.EMULATOR_CONFIG,
+                                         *emulator_config.ARGS)
         assert emulator.is_alive
         emulator.kill()
         if emulator.is_alive:
@@ -76,9 +62,9 @@ class TestEmulator:
         assert not emulator.is_alive
 
     @pytest.mark.asyncio
-    async def test_launch_bad_port(self):
+    async def test_launch_bad_port(self, emulator_config):
         with pytest.raises(ValueError):
-            await Emulator.launch(2345, self.AVD, self.EMULATOR_CONFIG, *self.ARGS)
+            await Emulator.launch(2345, emulator_config.AVD, emulator_config.EMULATOR_CONFIG, *emulator_config.ARGS)
 
 
 class TestEmulatorPool:
@@ -86,8 +72,9 @@ class TestEmulatorPool:
     @pytest.mark.asyncio
     @pytest.mark.skipif("STANDALONE_Q_TEST" not in os.environ,
                         reason="Can only run this standalone, as testing in the mainstream brings up emulators already")
-    async def test_start_queue(self):
-        async with AsyncEmulatorPool.create(2, TestEmulator.AVD, TestEmulator.EMULATOR_CONFIG, *self.ARGS) as queue:
+    async def test_start_queue(self, emulator_config):
+        async with AsyncEmulatorPool.create(2, emulator_config.AVD, emulator_config.EMULATOR_CONFIG,
+                                            *emulator_config.ARGS) as queue:
             async with queue.reserve(timeout=10*60) as emulator1:
                 # stagger the async-with's so that emulator2 is releinquished by itself
                 async with queue.reserve(timeout=10*60) as emulator2:
@@ -108,8 +95,6 @@ class TestLeasedEmulator:
 
     @pytest.mark.asyncio
     async def test_lease(self, device: Emulator):
-        if not "ANDROID_SDK_ROOT" in os.environ:
-            os.environ["ANDRDOID_SDK_ROOT"] = find_sdk()
         default_config = EmulatorBundleConfiguration(sdk=Path(find_sdk()))
         leased_emulator = AsyncEmulatorPool.LeasedEmulator(device.port, config=default_config)
         await leased_emulator.set_timer(expiry=1)

@@ -19,7 +19,6 @@ jobs:
             python3.7 -m venv venv
             . venv/bin/activate
             pip install --upgrade -r requirements.txt
-            echo 'export ANDROID_SDK_ROOT="$ANDROID_HOME"' >> $BASH_ENV
             sudo apt-get install libpulse0
       - run:
           name: build androidtestorchestrator

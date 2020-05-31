@@ -60,11 +60,6 @@ class TestWorker:
                                                path_to_test_apk=support_test_app).resolve()
         worker = Worker(device, iter(test_suites), test_setup, artifact_dir=mp_tmp_dir, listeners=[expectations])
         completion_called = False
-
-        async def done():
-            nonlocal completion_called
-            completion_called = True
-
-        await worker.run(completion_callback=done(), test_timeout=20)
+        await worker.run(test_timeout=20)
         assert completion_called
         assert expectations.test_count == 6

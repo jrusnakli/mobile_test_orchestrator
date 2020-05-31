@@ -1,4 +1,6 @@
+import _queue
 import asyncio
+import concurrent.futures
 import multiprocessing
 
 import getpass
@@ -7,6 +9,7 @@ import shutil
 import tempfile
 
 from pathlib import Path
+from queue import Queue
 
 import pytest
 from typing import Optional
@@ -149,35 +152,80 @@ class AppManager:
 
 
 @pytest.fixture(scope='node')
-async def device_pool():
-    try:
-        if IS_CIRCLECI:
-            AppManager.singleton()  # force build to happen fist, in serial
-        sdk_manager = SdkManager(DeviceManager.CONFIG.sdk, bootstrap=True)
+def device_pool():
+    if IS_CIRCLECI:
+        AppManager.singleton()  # force build to happen fist, in serial
+    sdk_manager = SdkManager(DeviceManager.CONFIG.sdk, bootstrap=True)
+    if not "ANDROID_SDK_ROOT" in os.environ:
         print(">>> Bootstrapping Android SDK platform tools...")
         sdk_manager.bootstrap_platform_tools()
         print(">>> Bootstrapping Android SDK emulator...")
         sdk_manager.bootstrap_emulator()
-        print(">>> Creating Android emulator AVD...")
-        image = "android-28;default;x86_64"
-        sdk_manager.create_avd(avd_dir=DeviceManager.CONFIG.avd_dir, avd_name=DeviceManager.AVD, image=image,
-                               device_type="pixel_xl")
-        os.environ["ANDROID_SDK_ROOT"] = str(DeviceManager.CONFIG.sdk)
-        m = multiprocessing.Manager()
-        queue = AsyncQueueAdapter(q=m.Queue(DeviceManager.count()))
+    print(">>> Creating Android emulator AVD...")
+    image = "android-28;default;x86_64"
+    sdk_manager.create_avd(DeviceManager.CONFIG.avd_dir, DeviceManager.AVD, image,
+                           "pixel_xl", "--force")
+    os.environ["ANDROID_SDK_ROOT"] = str(DeviceManager.CONFIG.sdk)
+    os.environ["ANDROID_HOME"] = str(DeviceManager.CONFIG.sdk)
+    m = multiprocessing.Manager()
+    queue = m.Queue(DeviceManager.count())
+    pool_q = m.Queue(2)
+    done_q = m.Queue(2)
+
+    def em_pool():
+        asyncio.run(create_device_pool(DeviceManager.CONFIG, DeviceManager.AVD, queue, pool_q, done_q,
+                                       *DeviceManager.ARGS))
+
+    p = multiprocessing.Process(target=em_pool)
+    try:
+        p.start()
+        print(">>>>> WAITING FOR POOL")
+        if pool_q.get() is not True:
+            print(">>>> ERROR GETTING POOL")
+            raise Exception("Error creating emulator pool")
+        print(">>>> POOL CREATED")
+        yield AsyncEmulatorPool(AsyncQueueAdapter(queue))
+        done_q.put(True)
+    finally:
+        done_q.put(False)
+
+
+async def create_device_pool(config: EmulatorBundleConfiguration,
+                             avd: str,
+                             queue: multiprocessing.Queue,
+                             pool_q: multiprocessing.Queue, done_q: multiprocessing.Queue,
+                             *config_args: str):
+    queue = AsyncQueueAdapter(queue)
+    os.environ["ANDROID_SDK_ROOT"] = str(config.sdk)
+    os.environ["ANDROID_HOME"] = str(config.sdk)
+    try:
         if IS_CIRCLECI:
-            DeviceManager.ARGS.append("-no-accel")
+            config_args = list(config_args) + ["-no-accel"]
+
         async with AsyncEmulatorPool.create(DeviceManager.count(),
-                                            DeviceManager.AVD,
-                                            DeviceManager.CONFIG,
-                                            *DeviceManager.ARGS,
+                                            avd,
+                                            config,
+                                            *config_args,
                                             external_queue=queue) as pool:
             if IS_CIRCLECI:
                 print(">>> No hw accel, so waiting for emulator to settle in...")
                 await asyncio.sleep(30)
-            yield pool
+            pool_q.put(True)
+            while True:
+                # have to loop/poll to not block emaultor-launch asyncio tasks
+                try:
+                    done_q.get_nowait()
+                    break
+                except _queue.Empty:
+                    await asyncio.sleep(1)
     finally:
         shutil.rmtree(DeviceManager.TMP_DIR)
+        pool_q.put(False)
+
+
+@pytest.fixture(scope='node')
+def emulator_config() -> EmulatorBundleConfiguration:
+    return DeviceManager.CONFIG
 
 
 @pytest.fixture()

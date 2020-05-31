@@ -148,7 +148,7 @@ class Emulator(Device):
                 async def monitor() -> None:
                     nonlocal booted
                     async for line in proc.output(unresponsive_timeout=10*60):
-                        print(f"\n[{time.time() - start:.3f}] {line.strip()}", end='')
+                        print(f"\n[{time.time() - start:.3f}] emulator-{port}: {line.strip()}", end='')
                         if "boot" in line and "complete" in line:
                             booted = True
                             break
@@ -160,7 +160,8 @@ class Emulator(Device):
 
                 await asyncio.gather(ticker(), monitor())
                 if proc.returncode is not None:
-                    print(f">>> [{time.time() - start:.3f}] ERROR: failed to boot emulator ({retries} retries left) [{proc.returncode}]")
+                    print(f">>> [{time.time() - start:.3f}] emulator-{port}: " +
+                          f"ERROR: failed to boot emulator ({retries} retries left) [{proc.returncode}]")
                     retries -= 1
                     continue
                 return cls(port, config=config, launch_cmd=cmd, env=environ)
