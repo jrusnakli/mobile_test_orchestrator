@@ -20,10 +20,16 @@ jobs:
             . venv/bin/activate
             pip install --upgrade -r requirements.txt
             sudo apt-get install libpulse0
+      - run:
+          name: setup apt env
+          command: |
             sudo apt-get -y install software-properties-common
             sudo apt-get update
             sudo add-apt-repository ppa:webupd8team/java
             sudo apt-get update
+      - run:
+          name: setup java venv
+          command: |
             sudo apt-get -y install openjdk-8-jdk
             sudo apt-get install git-lfs
             git lfs pull
