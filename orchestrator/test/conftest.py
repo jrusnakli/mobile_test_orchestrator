@@ -9,7 +9,6 @@ import shutil
 import tempfile
 
 from pathlib import Path
-from queue import Queue
 
 import pytest
 from typing import Optional
@@ -153,8 +152,8 @@ class AppManager:
 
 @pytest.fixture(scope='node')
 def device_pool():
-    sdk_manager = SdkManager(DeviceManager.CONFIG.sdk, bootstrap=IS_CIRCLECI)
-    if not "ANDROID_SDK_ROOT" in os.environ:
+    sdk_manager = SdkManager(DeviceManager.CONFIG.sdk, bootstrap=bool(IS_CIRCLECI))
+    if IS_CIRCLECI:
         print(">>> Bootstrapping Android SDK platform tools...")
         sdk_manager.bootstrap_platform_tools()
     os.environ["ANDROID_SDK_ROOT"] = str(DeviceManager.CONFIG.sdk)
@@ -162,7 +161,7 @@ def device_pool():
     if IS_CIRCLECI:
         AppManager.singleton()  # force build to happen fist, in serial
     print(">>> Creating Android emulator AVD...")
-    if not "ANDROID_SDK_ROOT" in os.environ:
+    if IS_CIRCLECI:
         print(">>> Bootstrapping Android SDK emulator...")
         sdk_manager.bootstrap_emulator()
     image = "android-28;default;x86_64"
