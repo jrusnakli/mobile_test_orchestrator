@@ -3,7 +3,7 @@ import pytest
 from androidtestorchestrator import EspressoTestSetup, TestExecutionListener
 from androidtestorchestrator.worker import Worker, TestSuite
 from typing import Dict, Optional, Any
-
+from androidtestorchestrator.main import _async_iter_adapter
 
 class TestWorker:
 
@@ -58,8 +58,7 @@ class TestWorker:
         expectations = self.Expectations(tests)
         test_setup = EspressoTestSetup.Builder(path_to_apk=support_app,
                                                path_to_test_apk=support_test_app).resolve()
-        worker = Worker(device, iter(test_suites), test_setup, artifact_dir=mp_tmp_dir, listeners=[expectations])
-        completion_called = False
+        worker = Worker(device, _async_iter_adapter(iter(test_suites)),
+        test_setup, artifact_dir=mp_tmp_dir, listeners=[expectations])
         await worker.run(test_timeout=20)
-        assert completion_called
         assert expectations.test_count == 6

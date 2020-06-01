@@ -31,14 +31,22 @@ class TestSdkManager:
         assert sdk_manager.adb_path == mp_tmp_dir.joinpath("platform-tools", "adb")
 
     def test_bootstrap(self, mp_tmp_dir, monkeypatch):
-        self._patch(mp_tmp_dir, monkeypatch)
-        sdk_manager = SdkManager(sdk_dir=mp_tmp_dir, bootstrap=False)
-        sdk_manager.bootstrap("platform-tools")
-        assert sdk_manager.adb_path.exists()
+        asdk = os.environ["ANDROID_SDK_ROOT"]
+        try:
+            del os.environ["ANDROID_SDK_ROOT"]
+            with pytest.raises(FileNotFoundError):
+                # sdkmanager nor avdmanaqger exist and this should raise assertion error since we are not bootstrapping
+                # from internals
+                SdkManager(sdk_dir=mp_tmp_dir, bootstrap=False)
+            sdk_manager = SdkManager(sdk_dir=mp_tmp_dir, bootstrap=True)
+            sdk_manager.bootstrap("platform-tools")
+            assert sdk_manager.adb_path.exists()
+        finally:
+            os.environ["ANDROID_SDK_ROOT"] = asdk
 
     def test_bootstrap_platform_tools(self, mp_tmp_dir, monkeypatch):
-        self._patch(mp_tmp_dir, monkeypatch)
-        sdk_manager = SdkManager(sdk_dir=mp_tmp_dir)
+        self._patch(mp_tmp_dir, monkeypatch)  # contains assertion
+        sdk_manager = SdkManager(sdk_dir=mp_tmp_dir, bootstrap=False)
         sdk_manager.bootstrap_platform_tools()
 
     def test_bootstrap_emulator(self, mp_tmp_dir):

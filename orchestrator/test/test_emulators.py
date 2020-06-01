@@ -46,14 +46,22 @@ def find_sdk():
 
 
 class TestEmulator:
-
+    ARGS = [
+        "-no-window",
+        "-no-audio",
+        # "-wipe-data",
+        "-gpu", "off",
+        "-no-boot-anim",
+        "-skin", "320x640",
+        "-partition-size", "1024"
+    ]
 
     @pytest.mark.skipif(getpass.getuser() == 'circleci' or True,
                         reason="Unable to run multiple emulators in circleci without upgrading machine")
     @pytest.mark.asyncio
     async def test_launch(self, emulator_config):
         emulator = await Emulator.launch(5584, emulator_config.AVD, emulator_config.EMULATOR_CONFIG,
-                                         *emulator_config.ARGS)
+                                         *self.ARGS)
         assert emulator.is_alive
         emulator.kill()
         if emulator.is_alive:
@@ -62,9 +70,9 @@ class TestEmulator:
         assert not emulator.is_alive
 
     @pytest.mark.asyncio
-    async def test_launch_bad_port(self, emulator_config):
+    async def test_launch_bad_port(self, emulator_config: EmulatorBundleConfiguration):
         with pytest.raises(ValueError):
-            await Emulator.launch(2345, emulator_config.AVD, emulator_config.EMULATOR_CONFIG, *emulator_config.ARGS)
+            await Emulator.launch(2345, "MTO_test_emaultor", emulator_config, *self.ARGS)
 
 
 class TestEmulatorPool:
