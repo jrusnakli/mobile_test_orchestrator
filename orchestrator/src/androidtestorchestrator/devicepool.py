@@ -286,7 +286,6 @@ class AsyncEmulatorPool(AsyncDevicePool):
             yield emulator_q
         finally:
             if not wait_for_startup:
-                print("!!!!!!! CANCELLING FUTURES")
                 for task in futures:
                     if not task.done():
                         with suppress(Exception):

@@ -7,6 +7,7 @@ import getpass
 import os
 import shutil
 import tempfile
+from contextlib import suppress
 
 from pathlib import Path
 
@@ -224,9 +225,12 @@ async def create_device_pool(config: EmulatorBundleConfiguration,
                     break
                 except _queue.Empty:
                     await asyncio.sleep(1)
+                except BrokenPipeError:
+                    break
     finally:
         shutil.rmtree(DeviceManager.TMP_DIR)
-        pool_q.put(False)
+        with suppress(Exception):
+            pool_q.put(False)
 
 
 @pytest.fixture(scope='node')
