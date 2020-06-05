@@ -1,13 +1,9 @@
-import _queue
-import asyncio
-import concurrent.futures
 import multiprocessing
 
 import getpass
 import os
 import shutil
 import tempfile
-from contextlib import suppress
 
 from pathlib import Path
 
@@ -97,9 +93,9 @@ class AppManager:
     """
 
     _proc, _app_queue, _test_app_queue, _service_app_queue = None, None, None, None
+    _m = multiprocessing.Manager()
 
     def __init__(self):
-        self._m = multiprocessing.Manager()
         self._app_queue = self._m.Queue(1)
         self._test_app_queue = self._m.Queue(1)
         self._service_app_queue = self._m.Queue(1)
@@ -153,7 +149,7 @@ class AppManager:
 
 
 @pytest.fixture(scope='node')
-def device_pool():
+def device_pool_q():
     sdk_manager = SdkManager(DeviceManager.CONFIG.sdk, bootstrap=bool(IS_CIRCLECI))
     if IS_CIRCLECI:
         print(">>> Bootstrapping Android SDK platform tools...")
@@ -174,63 +170,30 @@ def device_pool():
     assert os.path.exists(DeviceManager.CONFIG.avd_dir.joinpath(DeviceManager.AVD).with_suffix(".avd"))
     m = multiprocessing.Manager()
     queue = m.Queue(DeviceManager.count())
-    pool_q = m.Queue(2)
-    done_q = m.Queue(2)
-
-    def em_pool(config: EmulatorBundleConfiguration, *args: str):
-        os.environ["ANDROID_SDK_ROOT"] = str(config.sdk)
-        os.environ["ANDROID_HOME"] = str(config.sdk)
-        os.environ["ANDROID_AVD_HOME"] = str(config.avd_dir)
-        asyncio.run(create_device_pool(config, DeviceManager.AVD, queue, pool_q, done_q, *args))
-
-    p = multiprocessing.Process(target=em_pool, args=(DeviceManager.CONFIG, *DeviceManager.ARGS))
-    try:
-        p.start()
-        print(">>>>> WAITING FOR POOL")
-        if pool_q.get() is not True:
-            print(">>>> ERROR GETTING POOL")
-            raise Exception("Error creating emulator pool")
-        print(">>>> POOL CREATED")
-        yield AsyncEmulatorPool(AsyncQueueAdapter(queue))
-        done_q.put(True)
-    finally:
-        done_q.put(False)
+    return queue
 
 
-async def create_device_pool(config: EmulatorBundleConfiguration,
-                             avd: str,
-                             queue: multiprocessing.Queue,
-                             pool_q: multiprocessing.Queue, done_q: multiprocessing.Queue,
-                             *config_args: str):
-    queue = AsyncQueueAdapter(queue)
+@pytest.fixture(scope='session')
+async def device_pool(device_pool_q):
+    config = DeviceManager.CONFIG
+    config_args = DeviceManager.ARGS
     os.environ["ANDROID_SDK_ROOT"] = str(config.sdk)
     os.environ["ANDROID_HOME"] = str(config.sdk)
+    os.environ["ANDROID_AVD_HOME"] = str(config.avd_dir)
+
+    queue = AsyncQueueAdapter(device_pool_q)
     try:
         if IS_CIRCLECI:
             config_args = list(config_args) + ["-no-accel"]
 
         async with AsyncEmulatorPool.create(DeviceManager.count(),
-                                            avd,
+                                            DeviceManager.AVD,
                                             config,
                                             *config_args,
                                             external_queue=queue) as pool:
-            if IS_CIRCLECI:
-                print(">>> No hw accel, so waiting for emulator to settle in...")
-                await asyncio.sleep(30)
-            pool_q.put(True)
-            while True:
-                # have to loop/poll to not block emaultor-launch asyncio tasks
-                try:
-                    done_q.get_nowait()
-                    break
-                except _queue.Empty:
-                    await asyncio.sleep(1)
-                except BrokenPipeError:
-                    break
+            yield pool
     finally:
         shutil.rmtree(DeviceManager.TMP_DIR)
-        with suppress(Exception):
-            pool_q.put(False)
 
 
 @pytest.fixture(scope='node')
@@ -243,7 +206,7 @@ async def devices(device_pool: AsyncEmulatorPool, app_manager: AppManager, event
     # convert queue to an async queue.  We specifially want to test with AsyncEmulatorPool,
     # so will not ust the AsynQueueAdapter class.
     count = min(DeviceManager.count(), 2)
-    async with device_pool.reserve_many(count) as devs:
+    async with device_pool.reserve_many(count, timeout=100) as devs:
         for dev in devs:
             uninstall_apk(app_manager.app(), dev)
             uninstall_apk(app_manager.test_app(), dev)
@@ -256,7 +219,7 @@ async def device(device_pool: AsyncEmulatorPool, app_manager):
     """
     return a single reserved device
     """
-    async with device_pool.reserve() as device:
+    async with device_pool.reserve(timeout=100) as device:
         uninstall_apk(app_manager.app(), device)
         uninstall_apk(app_manager.test_app(), device)
         uninstall_apk(app_manager.service_app(), device)

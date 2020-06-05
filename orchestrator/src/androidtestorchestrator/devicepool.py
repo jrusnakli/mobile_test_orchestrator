@@ -110,20 +110,24 @@ class BaseDevicePool(ABC):
 
     @asynccontextmanager
     @abstractmethod
-    async def reserve(self) -> AsyncGenerator[Optional[Device], None]:
+    async def reserve(self, timeout: Optional[float] = None) -> AsyncGenerator[Optional[Device], None]:
         """
+        :param timeout: If specified, will timeout if reservation can not be made in time
         :return: Generator for device reserved from queue, or None if device pool is empty
+        :raises: TimeoutError if reservation cannot be made in time
         """
         yield None
 
     @asynccontextmanager
     @abstractmethod
-    async def reserve_many(self, count: int) -> AsyncGenerator[List[Device], None]:
+    async def reserve_many(self, count: int, timeout: Optional[float] = None) -> AsyncGenerator[List[Device], None]:
         """
         Reserve more than one device
-        :param count: number of devices to reserver
+        :param count: number of devices to reserve
+        :param timeout: If specified, will timeout if reservation can not be made in time
         :return: generator of list of devices that have been reserved, which may be less than requested if
            pool does not contain enough devices/emulators (or if empty, will return an empty list)
+        :raises: TimeoutError if reservation cannot be made in time
         """
         yield []
 
@@ -145,11 +149,11 @@ class AsyncDevicePool(BaseDevicePool):
         super().__init__(queue)
 
     @asynccontextmanager
-    async def reserve(self) -> AsyncGenerator[Optional[Device], None]:
-        """
-        :return: a reserved Device
-        """
-        device = await self._q.get()
+    async def reserve(self, timeout: Optional[float] = None) -> AsyncGenerator[Optional[Device], None]:
+        if timeout:
+            device = await asyncio.wait_for(self._q.get(), timeout=timeout)
+        else:
+            device = await self._q.get()
         try:
             if device is None:
                 raise queue.Empty("No emulators found.  Possibly failed to launch any")
@@ -160,15 +164,14 @@ class AsyncDevicePool(BaseDevicePool):
             await self._q.put(device)
 
     @asynccontextmanager
-    async def reserve_many(self, count: int) -> AsyncGenerator[List[Device], None]:
-        """
-        :param count: how many to reserve
-        :return: a reserved Device
-        """
+    async def reserve_many(self, count: int, timeout: Optional[float] = None) -> AsyncGenerator[List[Device], None]:
         devices = []
         queue_empty = False
         for _ in range(count):
-            device = await self._q.get()
+            if timeout:
+                device = await asyncio.wait_for(self._q.get(), timeout=timeout)
+            else:
+                device = await self._q.get()
             if device is None:
                 # other threads may need to know this to:
                 await self._q.put(device)

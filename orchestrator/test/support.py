@@ -54,6 +54,7 @@ def find_sdk():
 
 
 def gradle_build(targets_and_q: Dict[str, List[Tuple[str, Queue, str]]]):
+    find_sdk()  # sets env vars
     for root_build_dir, target_and_q in targets_and_q.items():
         targets = [t for t, _ in target_and_q]
         try:

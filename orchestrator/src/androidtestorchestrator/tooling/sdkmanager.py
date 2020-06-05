@@ -13,8 +13,10 @@ from typing import Optional
 
 import androidtestorchestrator
 from importlib_resources import files  # type: ignore
+import pytest_mproc
 
 
+@pytest_mproc.group("SDK_MANAGER")
 class SdkManager:
     """
     SDK Manager interface for installing components of the Android SDK
