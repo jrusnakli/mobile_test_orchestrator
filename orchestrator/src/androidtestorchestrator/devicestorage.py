@@ -59,7 +59,7 @@ class DeviceStorage(RemoteDeviceBased):
             log.warning("File %s already exists when pulling. Potential to overwrite files.", local_path)
         if run_as:
             with open(local_path, 'w') as out:
-                self.device.execute_remote_cmd('shell', 'run-as', run_as, 'cat', stdout=out)
+                self.device.execute_remote_cmd('shell', 'run-as', run_as, 'cat', remote_path, stdout=out)
         else:
             self.device.execute_remote_cmd('pull', remote_path, local_path)
 
