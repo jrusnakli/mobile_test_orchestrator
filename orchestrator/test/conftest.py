@@ -154,8 +154,8 @@ def support_app():
 
 
 @pytest.fixture
-def fake_sdk(mp_tmpdir_factory: TmpDirFactory):
-    tmpdir = mp_tmpdir_factory.create_tmp_dir("sdk")
+def fake_sdk(mp_tmp_dir_factory: TmpDirFactory):
+    tmpdir = mp_tmp_dir_factory.create_tmp_dir("sdk")
     os.makedirs(os.path.join(str(tmpdir), "platform-tools"))
     with open(os.path.join(str(tmpdir), "platform-tools", "adb"), 'w'):
         pass  # create a dummy file so that test of its existence as file passes
