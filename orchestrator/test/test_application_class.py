@@ -120,7 +120,8 @@ class TestApplicationClass:
         assert not self.pidof(app), f"pidof indicated app is not stopped as expected; output of pidof is: {pidoutput}"
 
     def test_monkey(self, device: Device, support_app):  # noqa
-        app = asyncio.get_event_loop().run_until_complete(Application.from_apk_async(support_app, device))
+        app = asyncio.get_event_loop().run_until_complete(Application.from_apk_async(support_app, device,
+                                                                                     as_test_app=True))
         app.monkey()
         time.sleep(3)
         assert self.pidof(app), "Failed to start app"

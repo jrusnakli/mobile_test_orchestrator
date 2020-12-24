@@ -96,6 +96,7 @@ class Application(RemoteDeviceBased):
 
     @classmethod
     async def from_apk_async(cls: Type[_TApp], apk_path: str, device: Device, as_upgrade: bool = False,
+                             as_test_app: bool = False,
                              timeout: Optional[int] = Device.TIMEOUT_LONG_ADB_CMD,
                              callback: Optional[Callable[[Device.Process], None]] = None) -> _TApp:
         """
@@ -122,12 +123,17 @@ class Application(RemoteDeviceBased):
 
         """
         parser = AXMLParser.parse(apk_path)
-        args = ["-r"] if as_upgrade else []
+        args = []
+        if as_upgrade:
+            args.append("-r")
+        if as_test_app:
+            args.append("-t")
         await cls._monitor_install(device, apk_path, *args, callback=callback, timeout=timeout)
         return cls(device, parser)
 
     @classmethod
     def from_apk(cls: Type[_TApp], apk_path: str, device: Device, as_upgrade: bool = False,
+                 as_test_app: bool = False,
                  timeout: Optional[int] = Device.TIMEOUT_LONG_ADB_CMD) -> _TApp:
         """
         Install provided application, blocking until install is complete
@@ -135,6 +141,7 @@ class Application(RemoteDeviceBased):
         :param apk_path: path to apk
         :param device: device to install on
         :param as_upgrade: whether to install as upgrade or not
+        :param as_test_app: whether app can be isntalled as test app (aka only installable via adb)
         :param timeout: raises TimeoutError if specified and install takes too long
         :return: remote installed application
         :raises: Exception if failure ot install or verify installation
@@ -143,7 +150,11 @@ class Application(RemoteDeviceBased):
         >>> app = Application.from_apk("/local/path/to/apk", device, as_upgrade=True)
         """
         parser = AXMLParser.parse(apk_path)
-        args = ["-r"] if as_upgrade else []
+        args = []
+        if as_upgrade:
+            args.append("-r")
+        if as_test_app:
+            args.append("-t")
         cls._install(device, apk_path, *args, timeout=timeout)
         return cls(device, parser)
 
@@ -498,17 +509,27 @@ class TestApplication(Application):
 
     @classmethod
     async def from_apk_async(cls: Type[_TTestApp], apk_path: str, device: Device, as_upgrade: bool = False,
+                             as_test_app: bool = False,
                              timeout: Optional[int] = Device.TIMEOUT_LONG_ADB_CMD,
                              callback: Optional[Callable[[Device.Process], None]] = None) -> _TTestApp:
         parser = AXMLParser.parse(apk_path)
-        args = ["-t"] if not as_upgrade else ["-r", "-t"]
+        args = []
+        if as_upgrade:
+            args.append("-r")
+        if as_test_app:
+            args.append("-t")
         await cls._monitor_install(device, apk_path, parser.package_name, *args, callback=callback, timeout=timeout)
         return cls(device, parser)
 
     @classmethod
     def from_apk(cls: Type[_TTestApp], apk_path: str, device: Device, as_upgrade: bool = False,
+                 as_test_app: bool = False,
                  timeout: Optional[int] = Device.TIMEOUT_LONG_ADB_CMD) -> _TTestApp:
         parser = AXMLParser.parse(apk_path)
-        args = ["-t"] if not as_upgrade else ["-r", "-t"]
+        args = []
+        if as_upgrade:
+            args.append("-r")
+        if as_test_app:
+            args.append("-t")
         cls._install(device, apk_path, *args, timeout=timeout)
         return cls(device, parser)
