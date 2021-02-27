@@ -2,6 +2,7 @@ import logging
 import os
 # TODO: CAUTION: WE CANNOT USE asyncio.subprocess as we executein in a thread other than made and on unix-like systems, there
 # is bug in Python 3.7.
+import shutil
 import subprocess
 import sys
 from contextlib import suppress
@@ -130,8 +131,8 @@ def ensure_avd(android_sdk: str, avd: str):
     else:
         # latest Android SDK should use $SDK_ROOT/emulator/emulator instead of $SDK_ROOT/tools/emulator
         emulator_path = os.path.join(android_sdk, "emulator", "emulator-headless")
-    sdkmanager_path = os.path.join(android_sdk, "tools", "bin", "sdkmanager")
-    avdmanager_path = os.path.join(android_sdk, "tools", "bin", "avdmanager")
+    sdkmanager_path = shutil.which("sdkmanager") or os.path.join(android_sdk, "tools", "bin", "sdkmanager")
+    avdmanager_path = shutil.which("avdmanager") or os.path.join(android_sdk, "tools", "bin", "avdmanager")
     if sys.platform.lower() == 'win32':
         sdkmanager_path += ".bat"
         avdmanager_path += ".bat"

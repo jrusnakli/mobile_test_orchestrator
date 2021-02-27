@@ -73,7 +73,7 @@ def device_queue():
     else:
         if IS_CIRCLECI:
             Device.TIMEOUT_ADB_CMD *= 10  # slow machine
-            ARGS.append("-no-accel")
+            # ARGS.append("-no-accel")
             # on circleci, do build first to not take up too much
             # memory if emulator were started first
             count = 1
