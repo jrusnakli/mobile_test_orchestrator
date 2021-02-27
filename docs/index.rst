@@ -3,7 +3,7 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-Welcome to AndroidTestOrchestrator's documentation!
+Welcome to MobileTestOrchestrator's documentation!
 ===================================================
 .. contents:: Table of Contents
 
@@ -39,13 +39,13 @@ Executing a Test Plan
 =====================
 
 A test plan is nothing more than an Iterator over a collection of test suites using the AndroidTestOrchestrator class
-in the `androidtestorchestrator` module
+in the `mobiletestorchestrator` module
 
-.. autoclass:: androidtestorchestrator.TestSuite
+.. autoclass:: mobiletestorchestrator.TestSuite
 
 A plan is executed via the top-level class:
 
-.. automodule:: androidtestorchestrator
+.. automodule:: mobiletestorchestrator
    :members: AndroidTestOrchestrator
 
 .. _device_interactions:
@@ -58,29 +58,29 @@ However, for more advanced use cases, this may be useful.
 
 Raw device instractions
 -----------------------
-From the `androidorchestrator.application` device:
+From the `mobiletestorchestrator.application` device:
 
-.. automodule:: androidtestorchestrator.device
+.. automodule:: mobiletestorchestrator.device
    :members: Device
 
 Installing and running applications
 -----------------------------------
 
-From the `androidorchestrator.application` module:
+From the `mobiletestorchestrator.application` module:
 
-.. automodule:: androidtestorchestrator.application
+.. automodule:: mobiletestorchestrator.application
    :members: Application, ServiceApplication, TestApplication
 
 Pushing and Pulling Files to/from Device Storage
 ------------------------------------------------
 
-.. automodule:: androidtestorchestrator.devicestorage
+.. automodule:: mobiletestorchestrator.devicestorage
    :members: DeviceStorage
 
 Accessing logcat
 ----------------
 
-.. automodule:: androidtestorchestrator.devicelog
+.. automodule:: mobiletestorchestrator.devicelog
    :members: DeviceLog
 
 

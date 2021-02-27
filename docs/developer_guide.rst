@@ -1,6 +1,6 @@
 .. _developer_guide:
 
-Welcome to AndroidTestOrchestrator's Developer Guide!
+Welcome to MobileTestOrchestrator's Developer Guide!
 =====================================================
 .. contents:: Table of Contents
 
