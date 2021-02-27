@@ -36,7 +36,6 @@ jobs:
           command: |
             . venv/bin/activate
             cd orchestrator/src
-            mypy androidtestorchestrator
       - run:
           name: Running tests
           command: |

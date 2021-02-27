@@ -1,6 +1,6 @@
 apk-bitminer>=1.1.0
 psutil
-pytest
+pytest==6.0.1
 pytest-html
 pytest-cov
 pytest-asyncio

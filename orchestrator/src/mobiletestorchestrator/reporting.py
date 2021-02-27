@@ -14,7 +14,7 @@ class TestStatus(Enum):
     INCOMPLETE = "INCOMPLETE"
 
     def __repr__(self) -> str:
-        return self.value  # type: ignore
+        return self.value
 
 
 @dataclass(frozen=True)
