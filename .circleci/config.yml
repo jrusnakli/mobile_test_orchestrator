@@ -1,6 +1,8 @@
-version: 2
+version: 2.1
 jobs:
   build:
+    machine:
+      image: android:202102-01
     working_directory: ~/code
     docker:
       - image: liwjohnson/android-api-28
@@ -58,4 +60,7 @@ jobs:
 
       - store_test_results:
           path: orchestrator/test/test-reports/
-
+workflows:
+  build:
+    jobs:
+      - build

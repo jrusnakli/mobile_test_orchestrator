@@ -9,9 +9,9 @@ from collections import defaultdict
 from pipes import quote
 from typing import Any, Callable, DefaultDict, List, Optional, Tuple
 
-from androidtestorchestrator.device import Device
-from androidtestorchestrator.application import Application
-from androidtestorchestrator.reporting import TestRunResult
+from mobiletestorchestrator.device import Device
+from mobiletestorchestrator.application import Application
+from mobiletestorchestrator.reporting import TestRunResult
 
 log = logging.getLogger(__name__)
 log.setLevel(logging.INFO)

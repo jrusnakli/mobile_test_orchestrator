@@ -10,14 +10,14 @@ from typing import Tuple
 
 from apk_bitminer.parsing import AXMLParser
 
-from androidtestorchestrator.application import Application
+from mobiletestorchestrator.application import Application
 
 _BASE_DIR = os.path.join(os.path.dirname(__file__), "..", "..")
 _SRC_BASE_DIR = os.path.join(os.path.dirname(__file__), "..", )
 
 TEST_SUPPORT_APP_DIR = os.path.join(_BASE_DIR, "testsupportapps")
 
-RESOURCES_DIR = os.path.join(_SRC_BASE_DIR, "src", "androidtestorchestrator", "resources")
+RESOURCES_DIR = os.path.join(_SRC_BASE_DIR, "src", "mobiletestorchestrator", "resources")
 SETUP_PATH = os.path.join(_SRC_BASE_DIR, "setup.py")
 
 

@@ -2,7 +2,7 @@ import asyncio
 
 import pytest
 
-from androidtestorchestrator.timing import Timer
+from mobiletestorchestrator.timing import Timer
 
 
 class TestTimer(object):

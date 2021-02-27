@@ -4,9 +4,9 @@ import time
 
 import pytest
 
-from androidtestorchestrator.application import ServiceApplication
-from androidtestorchestrator.device import Device
-from androidtestorchestrator.devicelog import DeviceLog
+from mobiletestorchestrator.application import ServiceApplication
+from mobiletestorchestrator.device import Device
+from mobiletestorchestrator.devicelog import DeviceLog
 
 
 class TestDeviceLog:

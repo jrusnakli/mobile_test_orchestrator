@@ -142,7 +142,7 @@ class TestApplicationClass:
             Application.from_apk("no.such.package", device)
 
     def test_app_uninstall_logs_error(self, device: Device):
-        with patch("androidtestorchestrator.application.log") as mock_logger:
+        with patch("mobiletestorchestrator.application.log") as mock_logger:
             app = Application(manifest={'package_name': "com.android.providers.calendar",
                                         'permissions': [ "android.permission.WRITE_EXTERNAL_STORAGE"]}, device=device)
             app.uninstall()
@@ -150,8 +150,8 @@ class TestApplicationClass:
 
     def test_clean_kill_throws_exception_when_home_screen_not_active(self, install_app, device: Device, support_app: str):
         app = install_app(Application, support_app)
-        with patch('androidtestorchestrator.device.DeviceInteraction.home_screen_active', new_callable=Mock) as mock_home_screen_active, \
-            patch('androidtestorchestrator.application.Application.pid', new_callable=PropertyMock) as mock_pid:
+        with patch('mobiletestorchestrator.device.DeviceInteraction.home_screen_active', new_callable=Mock) as mock_home_screen_active, \
+            patch('mobiletestorchestrator.application.Application.pid', new_callable=PropertyMock) as mock_pid:
             mock_pid.return_value = "21445"
             # Force home_screen_active to be false to indicate clean_kill failed
             mock_home_screen_active.return_value = False
@@ -164,8 +164,8 @@ class TestApplicationClass:
 
     def test_clean_kill_throws_exception_when_pid_still_existing(self, install_app, device: Device, support_app: str):
         app = install_app(Application, support_app)
-        with patch('androidtestorchestrator.device.DeviceInteraction.home_screen_active', new_callable=Mock) as mock_home_screen_active:
-            with patch('androidtestorchestrator.application.Application.pid', new_callable=PropertyMock) as mock_pid:
+        with patch('mobiletestorchestrator.device.DeviceInteraction.home_screen_active', new_callable=Mock) as mock_home_screen_active:
+            with patch('mobiletestorchestrator.application.Application.pid', new_callable=PropertyMock) as mock_pid:
                 # Force home_screen_active to be True to indicate clean_kill made it to the home screen
                 mock_home_screen_active.return_value = True
                 # Force pid to return a fake process id to indicate clean_kill failed
@@ -179,8 +179,8 @@ class TestApplicationClass:
 
     def test_clean_kill_succeeds(self, install_app, device: Device, support_app: str):
         app = install_app(Application, support_app)
-        with patch('androidtestorchestrator.device.DeviceInteraction.home_screen_active', new_callable=Mock) as mock_home_screen_active:
-            with patch('androidtestorchestrator.application.Application.pid', new_callable=PropertyMock) as mock_pid:
+        with patch('mobiletestorchestrator.device.DeviceInteraction.home_screen_active', new_callable=Mock) as mock_home_screen_active:
+            with patch('mobiletestorchestrator.application.Application.pid', new_callable=PropertyMock) as mock_pid:
                 # Force home_screen_active to be True to indicate clean_kill made it to the home screen
                 mock_home_screen_active.return_value = True
                 # Force pid to return None to make it seem like the process was actually killed

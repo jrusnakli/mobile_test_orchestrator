@@ -10,9 +10,9 @@ from pathlib import Path
 
 import pytest
 
-from androidtestorchestrator.application import Application, TestApplication
-from androidtestorchestrator.device import Device, DeviceInteraction
-from androidtestorchestrator.devicestorage import DeviceStorage
+from mobiletestorchestrator.application import Application, TestApplication
+from mobiletestorchestrator.device import Device, DeviceInteraction
+from mobiletestorchestrator.devicestorage import DeviceStorage
 from . import support
 from .conftest import TAG_MTO_DEVICE_ID
 

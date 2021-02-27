@@ -1,6 +1,6 @@
 import subprocess
 
-from androidtestorchestrator.device import Device, DeviceConnectivity
+from mobiletestorchestrator.device import Device, DeviceConnectivity
 
 
 class TestDeviceNetwork:

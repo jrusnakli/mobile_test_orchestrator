@@ -3,9 +3,9 @@ import time
 import pytest
 from unittest.mock import patch, Mock
 
-from androidtestorchestrator import Device
-from androidtestorchestrator.application import Application
-from androidtestorchestrator.device import DeviceInteraction
+from mobiletestorchestrator import Device
+from mobiletestorchestrator.application import Application
+from mobiletestorchestrator.device import DeviceInteraction
 
 
 class TestDeviceInteraction:
@@ -24,7 +24,7 @@ class TestDeviceInteraction:
 
     def test_return_home_succeeds(self, install_app, device: Device, support_app: str):
         app = install_app(Application, support_app)
-        with patch('androidtestorchestrator.device.DeviceInteraction.home_screen_active',
+        with patch('mobiletestorchestrator.device.DeviceInteraction.home_screen_active',
                    new_callable=Mock) as mock_home_screen_active:
             # Have to mock out call since inputting the KEYCODE_BACK event doesn't work for all devices/emulators
             mock_home_screen_active.return_value = True
