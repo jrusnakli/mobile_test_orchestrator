@@ -58,7 +58,8 @@ class TestDeviceLog:
 
         for line in output:
             if "old_line" in line:
-                print("WARNING: logcat not cleared as expefted;  most likely due to logcat race condition over test error")
+                print("WARNING: logcat not cleared as expected;  most likely due to logcat race condition over test error")
+                return
         # capture more lines of output and make sure they don't match any in previous capture
         output = []
         done_parsing = False
