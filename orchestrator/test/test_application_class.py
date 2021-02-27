@@ -9,6 +9,7 @@ import asyncio
 import time
 
 import subprocess
+from contextlib import suppress
 from unittest.mock import Mock, patch, PropertyMock
 
 import pytest
@@ -37,18 +38,29 @@ class MockAXMLParser(AXMLParser):
 class TestApplicationClass:
 
     def test_install_uninstall(self, device: Device, support_app: str):
-        uninstall_apk(support_app, device)
-        app = Application.from_apk(support_app, device)
-        try:
-            assert app.package_name == "com.linkedin.mtotestapp"
-            completed = device.execute_remote_cmd("shell", "dumpsys", "package", app.package_name,
-                                                  timeout=10, stdout=subprocess.PIPE)
-            for line in completed.stdout.splitlines():
-                if "versionName" in line:
-                    assert app.version == line.strip().split('=', 1)[1]
-        finally:
-            app.uninstall()
-            assert app.package_name not in device.list_installed_packages()
+        tries = 2
+        while tries > 0:
+            try:
+                with suppress(Exception):
+                    uninstall_apk(support_app, device)
+                app = Application.from_apk(support_app, device)
+                try:
+                    assert app.package_name == "com.linkedin.mtotestapp"
+                    completed = device.execute_remote_cmd("shell", "dumpsys", "package", app.package_name,
+                                                          timeout=10, stdout=subprocess.PIPE)
+                    for line in completed.stdout.splitlines():
+                        if "versionName" in line:
+                            assert app.version == line.strip().split('=', 1)[1]
+                finally:
+                    app.uninstall()
+                    assert app.package_name not in device.list_installed_packages()
+            except TimeoutError:
+                if tries <= 1:
+                    raise
+                else:
+                    time.sleep(3)  # sometimes emulator seems to take time to settle and hangs if test is run too soon
+            finally:
+                tries -= 1
 
     def test_grant_permissions(self, device: Device, install_app, support_test_app):
         test_app = install_app(TestApplication, support_test_app)
