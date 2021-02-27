@@ -14,9 +14,9 @@ class TestDeviceLog:
     def test_set_get_logcat_buffer_size(self, device: Device):
         log = DeviceLog(device)
         log.set_logcat_buffer_size("20M")
-        assert log.logcat_buffer_size == '20Mb'
+        assert log.logcat_buffer_size.upper() in ['20', '20MB']
         log.set_logcat_buffer_size(DeviceLog.DEFAULT_LOGCAT_BUFFER_SIZE)
-        assert log.logcat_buffer_size == '5Mb'
+        assert log.logcat_buffer_size.upper() in ['5', '5MB']
 
     @pytest.mark.asyncio
     async def test_logcat_and_clear(self, device: Device, android_service_app: ServiceApplication):

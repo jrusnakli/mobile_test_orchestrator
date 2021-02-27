@@ -103,7 +103,7 @@ class TestAndroidDevice:
         assert device.brand == expected_device_info["brand"]
 
     def test_model(self, device: Device):
-        assert device.model == expected_device_info["model"]
+        assert device.model in expected_device_info["model"]
 
     def test_manufacturer(self, device: Device):
         # the emulator used in test has no manufacturer
