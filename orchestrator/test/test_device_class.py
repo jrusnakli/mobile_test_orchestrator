@@ -10,9 +10,9 @@ from pathlib import Path
 
 import pytest
 
-from androidtestorchestrator.application import Application, TestApplication
-from androidtestorchestrator.device import Device, DeviceInteraction
-from androidtestorchestrator.devicestorage import DeviceStorage
+from mobiletestorchestrator.application import Application, TestApplication
+from mobiletestorchestrator.device import Device, DeviceInteraction
+from mobiletestorchestrator.devicestorage import DeviceStorage
 from . import support
 from .conftest import TAG_MTO_DEVICE_ID
 
@@ -103,7 +103,7 @@ class TestAndroidDevice:
         assert device.brand == expected_device_info["brand"]
 
     def test_model(self, device: Device):
-        assert device.model == expected_device_info["model"]
+        assert device.model in expected_device_info["model"]
 
     def test_manufacturer(self, device: Device):
         # the emulator used in test has no manufacturer

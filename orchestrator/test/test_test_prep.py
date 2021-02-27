@@ -1,8 +1,8 @@
 import os
 import pytest
 
-from androidtestorchestrator import DeviceStorage
-from androidtestorchestrator.testprep import EspressoTestPreparation
+from mobiletestorchestrator import DeviceStorage
+from mobiletestorchestrator.testprep import EspressoTestPreparation
 
 
 class TestEspressoTestPreparation:

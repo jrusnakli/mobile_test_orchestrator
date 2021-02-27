@@ -9,9 +9,9 @@ import pytest
 from pytest_mproc.plugin import TmpDirFactory
 from typing import Optional
 
-from androidtestorchestrator.application import Application, TestApplication, ServiceApplication
-from androidtestorchestrator.device import Device
-from androidtestorchestrator.emulators import EmulatorBundleConfiguration, Emulator
+from mobiletestorchestrator.application import Application, TestApplication, ServiceApplication
+from mobiletestorchestrator.device import Device
+from mobiletestorchestrator.emulators import EmulatorBundleConfiguration, Emulator
 from . import support
 from .support import uninstall_apk, find_sdk
 
@@ -73,7 +73,7 @@ def device_queue():
     else:
         if IS_CIRCLECI:
             Device.TIMEOUT_ADB_CMD *= 10  # slow machine
-            ARGS.append("-no-accel")
+            # ARGS.append("-no-accel")
             # on circleci, do build first to not take up too much
             # memory if emulator were started first
             count = 1

@@ -18,23 +18,23 @@ User Guide
 Get Started
 -----------
 
-A test plan is an iterator over a collection of test suites, which can be created out of `androidtestorchestrator.TestSuite` class
+A test plan is an iterator over a collection of test suites, which can be created out of `mobiletestorchestrator.TestSuite` class
 
 ```python
 
-from androidtestorchestrator import TestSuite
+from mobiletestorchestrator import TestSuite
 # arguments to be passed to the am instrument command, run as "am instrument -w -r [arguments] <package>/<runner> "
 test_suite = TestSuite(name='test_suite1', arguments=["--package", "com.some.test.package"])
 test_plan = iter([test_suite])
 ```
 
-An orchestrator can execute the test plan. A `androidtestorchestrator.TestListener` will report the test result as execution proceeds.
-A `androidtestorchestrator.Device` is intended to be a direct bridge to the same functionality as adb, with minimized embellishments. 
+An orchestrator can execute the test plan. A `mobiletestorchestrator.TestListener` will report the test result as execution proceeds.
+A `mobiletestorchestrator.Device` is intended to be a direct bridge to the same functionality as adb, with minimized embellishments. 
 
 ```python
-from androidtestorchestrator import AndroidTestOrchestrator, TestSuite, TestRunListener
-from androidtestorchestrator.device import Device
-from androidtestorchestrator.application import TestApplication
+from mobiletestorchestrator import AndroidTestOrchestrator, TestSuite, TestRunListener
+from mobiletestorchestrator.device import Device
+from mobiletestorchestrator.application import TestApplication
 device = Device(device_id="emulator-5554")
 test_application = TestApplication.from_apk(apk_path="/some/test.apk", device=device)  # installs the given apk
 

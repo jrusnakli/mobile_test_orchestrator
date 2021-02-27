@@ -2,6 +2,7 @@ import logging
 import os
 # TODO: CAUTION: WE CANNOT USE asyncio.subprocess as we executein in a thread other than made and on unix-like systems, there
 # is bug in Python 3.7.
+import shutil
 import subprocess
 import sys
 from contextlib import suppress
@@ -10,14 +11,14 @@ from typing import Tuple
 
 from apk_bitminer.parsing import AXMLParser
 
-from androidtestorchestrator.application import Application
+from mobiletestorchestrator.application import Application
 
 _BASE_DIR = os.path.join(os.path.dirname(__file__), "..", "..")
 _SRC_BASE_DIR = os.path.join(os.path.dirname(__file__), "..", )
 
 TEST_SUPPORT_APP_DIR = os.path.join(_BASE_DIR, "testsupportapps")
 
-RESOURCES_DIR = os.path.join(_SRC_BASE_DIR, "src", "androidtestorchestrator", "resources")
+RESOURCES_DIR = os.path.join(_SRC_BASE_DIR, "src", "mobiletestorchestrator", "resources")
 SETUP_PATH = os.path.join(_SRC_BASE_DIR, "setup.py")
 
 
@@ -130,8 +131,8 @@ def ensure_avd(android_sdk: str, avd: str):
     else:
         # latest Android SDK should use $SDK_ROOT/emulator/emulator instead of $SDK_ROOT/tools/emulator
         emulator_path = os.path.join(android_sdk, "emulator", "emulator-headless")
-    sdkmanager_path = os.path.join(android_sdk, "tools", "bin", "sdkmanager")
-    avdmanager_path = os.path.join(android_sdk, "tools", "bin", "avdmanager")
+    sdkmanager_path = shutil.which("sdkmanager") or os.path.join(android_sdk, "tools", "bin", "sdkmanager")
+    avdmanager_path = shutil.which("avdmanager") or os.path.join(android_sdk, "tools", "bin", "avdmanager")
     if sys.platform.lower() == 'win32':
         sdkmanager_path += ".bat"
         avdmanager_path += ".bat"
@@ -156,7 +157,7 @@ def ensure_avd(android_sdk: str, avd: str):
     if completed.returncode != 0:
         raise Exception("Command '%s -list-avds' failed with code %d" % (emulator_path, completed.returncode))
     if avd not in completed.stdout:
-        image = "system-images;android-28;default;x86_64"
+        image = "system-images;android-29;default;x86_64"
         download_emulator_cmd = [sdkmanager_path, image]
         p = subprocess.Popen(download_emulator_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
         print(">>>> Downloading system image to create avd...(May take some time)")

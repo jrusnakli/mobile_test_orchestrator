@@ -10,7 +10,7 @@ import logging
 
 import pytest
 
-from androidtestorchestrator.application import Application, TestApplication, ServiceApplication
+from mobiletestorchestrator.application import Application, TestApplication, ServiceApplication
 
 log = logging.getLogger(__name__)
 

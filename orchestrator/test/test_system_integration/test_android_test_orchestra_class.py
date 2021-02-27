@@ -5,12 +5,12 @@ from typing import Any, Optional
 
 import pytest
 
-from androidtestorchestrator import AndroidTestOrchestrator, TestApplication, TestSuite
-from androidtestorchestrator.application import Application
-from androidtestorchestrator.device import Device
-from androidtestorchestrator.parsing import LineParser
-from androidtestorchestrator.reporting import TestRunListener
-from androidtestorchestrator.testprep import EspressoTestPreparation, DevicePreparation
+from mobiletestorchestrator import AndroidTestOrchestrator, TestApplication, TestSuite
+from mobiletestorchestrator.application import Application
+from mobiletestorchestrator.device import Device
+from mobiletestorchestrator.parsing import LineParser
+from mobiletestorchestrator.reporting import TestRunListener
+from mobiletestorchestrator.testprep import EspressoTestPreparation, DevicePreparation
 from ..support import uninstall_apk
 import pytest_mproc
 

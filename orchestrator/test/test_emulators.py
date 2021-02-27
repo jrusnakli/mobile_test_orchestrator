@@ -10,7 +10,7 @@ import os
 import pytest
 
 from pathlib import Path
-from androidtestorchestrator.emulators import EmulatorBundleConfiguration, Emulator, EmulatorQueue
+from mobiletestorchestrator.emulators import EmulatorBundleConfiguration, Emulator, EmulatorQueue
 
 log = logging.getLogger("MTO")
 log.setLevel(logging.INFO)

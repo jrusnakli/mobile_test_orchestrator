@@ -1,10 +1,10 @@
 apk-bitminer>=1.1.0
 psutil
-pytest
+pytest==6.0.1
 pytest-html
 pytest-cov
 pytest-asyncio
 pytest_mproc>=4.0.4
 mypy==0.720
 typed-ast
-flake8
+flake8==3.8.4

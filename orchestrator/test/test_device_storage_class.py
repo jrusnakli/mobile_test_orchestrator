@@ -4,8 +4,8 @@ from contextlib import suppress
 
 import pytest
 
-from androidtestorchestrator import Device
-from androidtestorchestrator.devicestorage import DeviceStorage
+from mobiletestorchestrator import Device
+from mobiletestorchestrator.devicestorage import DeviceStorage
 
 
 # noinspection PyShadowingNames
