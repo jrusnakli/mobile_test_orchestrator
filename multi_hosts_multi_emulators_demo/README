@@ -1,0 +1,31 @@
+
+This directory contains workflow of running multi_hosts_multi_emulators_demo
+To run with agent script, instruction and steps are the same as in multi_hosts_demo other than
+run worker_multi_emulator.py instead of workerserver.py
+=================================================================================
+
+Master VM:
+run: python masterserver.py <path of args.txt>
+
+args.txt example:
+[settings]
+app_apk_path = /Users/hewei/app-debug.apk
+test_apk_path = /Users/hewei/app-debug-androidTest.apk
+
+The work_dir is "/mto_work_dir" under home_dir, agent scripts deployed to Azure vm
+creates work_dir if not exists, to run script standalone, mto_work_dir need to exists.
+
+=================================================================================
+
+Worker VMs:
+run worker_multi_emulator.py
+path of args.txt should be its corresponding path.
+
+=================================================================================
+User end:
+scp directory1/filename1 username@masterserver VM1:directory2
+(scp <path to work_file.zip> < path to new_job_flag> username@masterserver:~/mto_work_dir)
+Run: "python user.py <path to args.txt>" to connect to master server and fetch results.
+
+=================================================================================
+
