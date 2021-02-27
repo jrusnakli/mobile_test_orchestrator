@@ -18,7 +18,7 @@ User Guide
 Get Started
 -----------
 
-A test plan is an iterator over a collection of test suites, which can be created out of `androidtestorchestrator.TestSuite` class
+A test plan is an iterator over a collection of test suites, which can be created out of `mobiletestorchestrator.TestSuite` class
 
 ```python
 
@@ -28,8 +28,8 @@ test_suite = TestSuite(name='test_suite1', arguments=["--package", "com.some.tes
 test_plan = iter([test_suite])
 ```
 
-An orchestrator can execute the test plan. A `androidtestorchestrator.TestListener` will report the test result as execution proceeds.
-A `androidtestorchestrator.Device` is intended to be a direct bridge to the same functionality as adb, with minimized embellishments. 
+An orchestrator can execute the test plan. A `mobiletestorchestrator.TestListener` will report the test result as execution proceeds.
+A `mobiletestorchestrator.Device` is intended to be a direct bridge to the same functionality as adb, with minimized embellishments. 
 
 ```python
 from mobiletestorchestrator import AndroidTestOrchestrator, TestSuite, TestRunListener
