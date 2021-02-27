@@ -7,4 +7,4 @@ pytest-asyncio
 pytest_mproc>=4.0.4
 mypy==0.720
 typed-ast
-flake8
+flake8==3.8.4
