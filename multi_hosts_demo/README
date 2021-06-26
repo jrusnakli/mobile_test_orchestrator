@@ -1,0 +1,32 @@
+
+This directory contains workflow of running multi_hosts_demo with agent script
+(To run masterserver, workerserver and user scripts standalone without agent script,
+see python scrips comments in main for detailed workflow)
+=================================================================================
+
+Master VM:
+deploy agent.sh &
+agent.sh: setup env, detects test artifacts, and kicks off masterserver.py
+
+=================================================================================
+
+Worker VMs:
+deploy agent.sh &
+(change to python workerserver.py)
+agent.sh: setup env, detects test artifacts, and kicks off workerserver.py
+
+=================================================================================
+User end:
+scp directory1/filename1 username@masterserver VM1:directory2
+(scp <path to work_file.zip> < path to new_job_flag> username@masterserver:~/mto_work_dir)
+Run: "python user.py <path to args.txt>" to connect to master server and fetch results.
+
+=================================================================================
+
+work_file.zip should include test.apk, app.apk and args.txt
+args.txt example:
+[settings]
+app_apk_path = /Users/hewei/app-debug.apk
+test_apk_path = /Users/hewei/app-debug-androidTest.apk
+
+=================================================================================
