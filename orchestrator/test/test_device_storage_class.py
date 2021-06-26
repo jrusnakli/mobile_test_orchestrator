@@ -71,3 +71,13 @@ class TestDeviceStorage:
         storage.make_dir(new_remote_dir)
         completed = device.execute_remote_cmd("shell", "ls", "-d", new_remote_dir, stdout=subprocess.PIPE)
         assert new_remote_dir in completed.stdout
+
+    def test_list(self, device: Device):
+        storage = DeviceStorage(device)
+        files = storage.list("/system")
+        assert files
+
+    def test_list_empty(self, device: Device):
+        storage = DeviceStorage(device)
+        files = storage.list("/no/such/path")
+        assert not files

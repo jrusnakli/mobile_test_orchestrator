@@ -722,7 +722,7 @@ class Device:
         if os.path.exists(local_screenshot_path):
             raise FileExistsError(f"cannot overwrite screenshot path {local_screenshot_path}")
         with open(local_screenshot_path, 'w+b') as f:
-            self.execute_remote_cmd("shell", "screencap", "-p",
+            self.execute_remote_cmd("exec-out", "screencap", "-p",
                                     stdout=f.fileno(),
                                     timeout=timeout or Device.TIMEOUT_SCREEN_CAPTURE)
 
@@ -868,7 +868,7 @@ class DeviceConnectivity(RemoteDeviceBased):
         :return: 0 on success, number of failed packets otherwise
         """
         try:
-            completed = self._device.execute_remote_cmd("shell", "ping", "-c", str(count), domain,
+            completed = self._device.execute_remote_cmd("exec-out", "ping", "-c", str(count), domain,
                                                         timeout=Device.TIMEOUT_LONG_ADB_CMD,
                                                         stdout=subprocess.PIPE)
             for msg in completed.stdout.splitlines():

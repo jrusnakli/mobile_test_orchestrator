@@ -1,6 +1,7 @@
 import logging
 import os
-from typing import Optional
+import subprocess
+from typing import Optional, List
 
 from .device import (
     Device,
@@ -29,6 +30,20 @@ class DeviceStorage(RemoteDeviceBased):
         :return: location on remote device of external storage
         """
         return self.device.external_storage_location
+
+    def list(self, remote_path: str) -> List[str]:
+        """
+        list the files at the given path (which can be a filename pattern)
+
+        :param remote_path: path or pattern to match
+        :return: List of files found, empty if no files found
+        """
+        try:
+            proc = self.device.execute_remote_cmd("shell", "ls", remote_path, stdout=subprocess.PIPE,
+                                                  stderr=subprocess.PIPE)
+        except Device.CommandExecutionFailure:
+            return []
+        return proc.stdout.split()
 
     def push(self, local_path: str, remote_path: str) -> None:
         """
