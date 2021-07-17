@@ -471,9 +471,9 @@ class Device:
         else:
             await proc.wait()
         stdout, stderr = await proc.communicate()
-        if stdout == asyncio.subprocess.PIPE:
+        if isinstance(stdout, bytes):
             stdout = stdout.decode('utf-8')
-        if stderr == asyncio.subprocess.PIPE:
+        if isinstance(stderr, bytes):
             stderr = stderr.decode('utf-8')
         if fail_on_error_code(proc.returncode):
             msg = '\n'.join([stdout or "", stderr or ""])
