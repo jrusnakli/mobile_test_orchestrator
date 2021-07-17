@@ -54,7 +54,7 @@ class TestEspressoTestPreparation:
         def mock_log_error2(self, msg: str):
             assert msg.startswith("Failed to uninstall")
 
-        monkeypatch.setattr("androidtestorchestrator.application.Application.uninstall", mock_uninstall)
+        monkeypatch.setattr("mobiletestorchestrator.application.Application.uninstall", mock_uninstall)
         monkeypatch.setattr("logging.Logger.log", mock_log_error2)
         with EspressoTestPreparation(device=device,
                                      path_to_apk=support_app,
