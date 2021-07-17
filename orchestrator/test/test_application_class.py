@@ -131,6 +131,20 @@ class TestApplicationClass:
         pidoutput: str = completed.stdout
         assert not self.pidof(app), f"pidof indicated app is not stopped as expected; output of pidof is: {pidoutput}"
 
+    async def test_start_stop_async(self, install_app, support_app: str):  # noqa
+        app = install_app(Application, support_app)
+        await app.start_async(".MainActivity")
+        time.sleep(3)  # Have to give time to "come up" :-(
+        assert self.pidof(app), "No pid found for app; app not started as expected"
+        await app.stop_async(force=True)
+        if self.pidof(app):
+            time.sleep(3)  # allow slow emulators to catch up
+        completed = app.device.execute_remote_cmd("shell", "pidof", "-s", app.package_name,
+                                                  stdout=subprocess.PIPE,
+                                                  fail_on_error_code=lambda x: x < 0)
+        pidoutput: str = completed.stdout
+        assert not self.pidof(app), f"pidof indicated app is not stopped as expected; output of pidof is: {pidoutput}"
+
     def test_monkey(self, device: Device, support_app):  # noqa
         app = asyncio.get_event_loop().run_until_complete(Application.from_apk_async(support_app, device,
                                                                                      as_test_app=True))

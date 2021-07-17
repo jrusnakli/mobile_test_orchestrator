@@ -90,9 +90,9 @@ class Device:
             # async with await Process(...)
             self._proc_future = proc_future
 
-        async def __aenter__(self) -> "Device.Process":
+        async def __aenter__(self) -> "Device.AsyncProcessContext":
             self._proc = Device.Process(await self._proc_future)
-            return self._proc
+            return self
 
         async def __aexit__(self, exc_type: Optional[Type[BaseException]], exc_val: Optional[BaseException],
                             exc_tb: Optional[TracebackType]) -> None:
@@ -108,6 +108,21 @@ class Device:
                     await self._proc.stop(timeout=3, force=True)
                 except TimeoutError:
                     log.error("Failed to kill subprocess while exiting its context")
+
+        async def wait(self, timeout: Optional[float] = None):
+            """Wait until the process exit and return the process return code."""
+            return await self._proc.wait(timeout=timeout)
+
+        async def output(self,  unresponsive_timeout: Optional[float] = None) -> AsyncIterator[str]:
+            async for line in self._proc.output(unresponsive_timeout=unresponsive_timeout):
+                yield line
+
+        async def stop(self, force: bool = False, timeout: Optional[float] = None) -> None:
+            await self._proc.stop(force=force, timeout=timeout)
+
+        @property
+        def returncode(self):
+            return self._proc.returncode
 
     class Process:
         """
@@ -429,6 +444,43 @@ class Device:
             return (self._adb_path, "-s", self.device_id, *args)
         else:
             return (self._adb_path, *args)
+
+    async def execute_remote_cmd_stream(self, *args: str,
+                                        stderr: Union[None, int, IO[AnyStr]] = subprocess.PIPE,
+                                        ) -> "Device.AsyncProcessContext":
+        """
+        Execute a remote cmd on device and iterate output line by line
+        """
+        proc = asyncio.subprocess.create_subprocess_exec(*self._formulate_adb_cmd(*args),
+                                                         stdout=asyncio.subprocess.PIPE,
+                                                         stderr=stderr)
+        return self.AsyncProcessContext(proc)
+
+    async def execute_remote_cmd_async(self, *args: str,
+                                       timeout: Optional[float] = None,
+                                       stdout: Union[None, int, IO[AnyStr]] = None,
+                                       stderr: Union[None, int, IO[AnyStr]] = asyncio.subprocess.PIPE,
+                                       fail_on_error_code: Callable[[int], bool] = lambda x: x != 0
+                                       ) -> Tuple[int, str, str]:
+        """
+        Execute a remote command on device asynchronously
+        """
+        proc = await asyncio.subprocess.create_subprocess_exec(*self._formulate_adb_cmd(*args), stdout=stdout, stderr=stderr)
+        if timeout:
+            await asyncio.wait_for(proc.wait(), timeout=timeout)
+        else:
+            await proc.wait()
+        stdout, stderr = await proc.communicate()
+        if stdout == asyncio.subprocess.PIPE:
+            stdout = stdout.decode('utf-8')
+        if stderr == asyncio.subprocess.PIPE:
+            stderr = stderr.decode('utf-8')
+        if fail_on_error_code(proc.returncode):
+            msg = '\n'.join([stdout or "", stderr or ""])
+            with suppress(Exception):
+                proc.kill()
+            raise self.CommandExecutionFailure(proc.returncode, f"Failed to execute cmd: {msg or 'no message'}")
+        return proc.returncode, stdout, stderr
 
     def execute_remote_cmd(self, *args: str,
                            timeout: Optional[float] = None,

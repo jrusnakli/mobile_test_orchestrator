@@ -3,7 +3,7 @@ import setuptools
 
 setuptools.setup(
     name='mobiletestorchestrator',
-    version='2.1.0',
+    version='2.2.0',
     package_dir={'': 'src'},
     packages=setuptools.find_packages('src'),
     include_package_data=True,
