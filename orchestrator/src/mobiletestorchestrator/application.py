@@ -280,6 +280,27 @@ class Application(RemoteDeviceBased):
             options = ("-a", intent, *options)
         self.device.execute_remote_cmd("shell", "am", "start", "-n", activity, *options)
 
+    async def start_async(self, activity: str, *options: str, intent: Optional[str] = None,
+                          timeout: Optional[float] = None) -> None:
+        """
+        start an app on the device
+
+        :param activity: which Android Activity to invoke on start of app, or None for default (MainActivity)
+        :param intent: which Intent to invoke, or None for default intent
+        :param options: string list of options to pass on to the "am start" command on the remote device, or None
+        :pram timeout: timeout after this many seconds (optional)
+
+        :raises: asyncio.TimeoutError if timeout is given and execution exceeds that timeout
+        """
+        if activity.startswith("."):
+            # embellish to fully qualified name as Android expects
+            activity = f"{self.package_name}{activity}"
+        activity = f"{self.package_name}/{activity}"
+        if intent:
+            options = ("-a", intent, *options)
+        await  self.device.execute_remote_cmd_async("shell", "am", "start", "-n", activity, *options,
+                                                    timeout=timeout)
+
     def monkey(self, count: int = 1) -> None:
         """
         Run monkey against application
@@ -299,6 +320,21 @@ class Application(RemoteDeviceBased):
             if force:
                 self._device_navigation.go_home()
             self.device.execute_remote_cmd("shell", "am", basic_cmd, self.package_name)
+        except Exception as e:
+            log.error("Failed to (force) stop app %s with error: %s", self.package_name, str(e))
+
+    async def stop_async(self, force: bool = True, timeout: Optional[float] = None) -> None:
+        """
+        stop this app on the device
+
+        :param force: perform a force-stop if true (kill of app) rather than normal stop
+        """
+        try:
+            basic_cmd = "stop" if not force else "force-stop"
+            if force:
+                self._device_navigation.go_home()
+            await self.device.execute_remote_cmd_async("shell", "am", basic_cmd, self.package_name,
+                                                       timeout=timeout)
         except Exception as e:
             log.error("Failed to (force) stop app %s with error: %s", self.package_name, str(e))
 
@@ -378,6 +414,36 @@ class ServiceApplication(Application):
             self.device.execute_remote_cmd("shell", "am", "start-foreground-service", "-n", activity, *options)
         else:
             self.device.execute_remote_cmd("shell", "am", "startservice", "-n", activity, *options)
+
+    async def start_async(self, activity: str,
+                          *options: str, intent: Optional[str] = None, foreground: bool = True,
+                          timeout: Optional[float] = None) -> None:
+
+        """
+        invoke an intent associated with this service by calling start the service
+
+        :param options: string list of options to supply to "am startservice" command
+        :param activity: activity handles the intent
+        :param intent: if not None, invoke specific intent otherwise invoke default intent
+        :param foreground: whether to start in foreground or not (Android O+
+            does not allow background starts any longer)
+        :param timeout: optional timeout upon which TimeoutError is raised
+
+        :raises: asyncio.TimeoutError if timeout is specified and reached during execution
+        """
+        if activity and activity.startswith("."):
+            activity = f"{self.package_name}{activity}"
+        # embellish to fully qualified name as Android expects
+        activity = f"{self.package_name}/{activity}" if activity else f"{self.package_name}/{self.package_name}.MainActivity"
+        options = tuple(f'"{item}"' for item in options)
+        if intent:
+            options = ("-a", intent) + options
+        if foreground and self.device.api_level and self.device.api_level >= 26:
+            await self.device.execute_remote_cmd_async("shell", "am", "start-foreground-service", "-n", activity,
+                                                       *options, timeout=timeout)
+        else:
+            await self.device.execute_remote_cmd_async("shell", "am", "startservice", "-n", activity, *options,
+                                                       timeout=timeout)
 
     def broadcast(self, activity: str, *options: str, action: Optional[str]) -> None:
         """

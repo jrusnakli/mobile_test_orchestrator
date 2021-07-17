@@ -175,4 +175,16 @@ class TestAndroidDevice:
         assert "Failed to verify installation of app 'com.linkedin.fake.app'" in str(excinfo.value)
         assert (in_tmp_dir / "test_screenshots" / "install_failure-com.linkedin.fake.app.png").is_file()
 
+    async def test_execute_remote_cmd_async(self, device: Device):
+        rc, stdout, stderr = await device.execute_remote_cmd_async("shell", "echo", "'TEST",
+                                                                           stdout=asyncio.subprocess.PIPE)
+        assert rc == 0
+        assert stdout == 'TEST'
 
+    async def test_execute_streamed_cmd(self, device: Device):
+        with device.execute_remote_cmd_stream("shell", "ls", "/") as proc:
+            lines = []
+            async for line in proc.output(unresponsive_timeout=2.0):
+                lines.append(line)
+            assert len(lines) > 3
+            assert "data" in lines

@@ -71,13 +71,14 @@ def device_queue():
         queue = m.Queue(1)
         queue.put(Device(TAG_MTO_DEVICE_ID, adb_path=find_sdk()))
     else:
+        count = 1
         if IS_CIRCLECI:
             Device.TIMEOUT_ADB_CMD *= 10  # slow machine
             # ARGS.append("-no-accel")
             # on circleci, do build first to not take up too much
             # memory if emulator were started first
             count = 1
-        else:
+        elif "MTO_EMULATOR_COUNT" in os.environ:
             max_count = min(multiprocessing.cpu_count(), 6)
             count = int(os.environ.get("MTO_EMULATOR_COUNT", f"{max_count}"))
 
@@ -101,7 +102,7 @@ def device_queue():
 
 
 @pytest.fixture()
-def device(device_queue: multiprocessing.Queue):
+def device(device_queue: multiprocessing.Queue) -> Device:
     emulator = device_queue.get(timeout=10*60)
     try:
         yield emulator
