@@ -15,8 +15,8 @@ from unittest.mock import Mock, patch, PropertyMock
 import pytest
 from apk_bitminer.parsing import AXMLParser
 
-from androidtestorchestrator import Device
-from androidtestorchestrator.application import Application, TestApplication
+from mobiletestorchestrator import Device
+from mobiletestorchestrator.application import Application, TestApplication
 from .support import uninstall_apk
 
 
