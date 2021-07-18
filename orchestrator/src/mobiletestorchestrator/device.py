@@ -14,6 +14,7 @@ import time
 from abc import ABC
 
 from contextlib import suppress, asynccontextmanager
+from enum import Enum
 from types import TracebackType
 from typing import (
     Any,
@@ -27,21 +28,21 @@ from typing import (
     Optional,
     Union,
     Tuple,
-    Type,
+    Type, TypeVar,
 )
 
 log = logging.getLogger("MTO")
 log.setLevel(logging.ERROR)
 
 
-__all__ = ["Device", "DeviceBased"]
+__all__ = ["Device", "RemoteDeviceBased"]
 
 D = TypeVar('D', bound="Device")
 
 
 class DeviceLock:
 
-    _locks: Dict[str, asyncio.Semaphore] = {}
+    locks: Dict[str, asyncio.Semaphore] = {}
 
 
 @asynccontextmanager
@@ -53,10 +54,10 @@ async def _device_lock(device: "Device") -> AsyncIterator["Device"]:
     :param device: device to lock
     :return: device
     """
-    DeviceLock._locks.setdefault(device._device_id, asyncio.Semaphore())
-    await DeviceLock._locks[device._device_id].acquire()
+    DeviceLock.locks.setdefault(device._device_id, asyncio.Semaphore())
+    await DeviceLock.locks[device.device_id].acquire()
     yield device
-    DeviceLock._locks[device._device_id].release()
+    DeviceLock.locks[device.device_id].release()
 
 
 class Device:
@@ -68,6 +69,8 @@ class Device:
     :param device_id: serial id of the device as seen by host (e.g. via 'adb devices')
     :raises FileNotFoundError: if adb path is invalid
     """
+    APP_RECORD_PATTERN = re.compile(r'^\* TaskRecord\{[a-f0-9-]* #\d* [AI]=([a-zA-Z].[a-zA-Z0-9.]*)[ /].*')
+    UNKNOWN_API_LEVEL = -1
 
     class State(Enum):
         """
@@ -75,13 +78,13 @@ class Device:
         """
 
         """Device is detected but offline"""
-        OFFLINE: str = "offline"
+        OFFLINE = "offline"
         """Device is online and active"""
-        ONLINE: str = "device"
+        ONLINE = "device"
         """State of device is unknown"""
-        UNKNOWN: str = "unknown"
+        UNKNOWN = "unknown"
         """Device is not detected"""
-        NON_EXISTENT: str = "non-existent"
+        NON_EXISTENT = "non-existent"
 
     # These packages may appear as running when looking at the activities in a device's activity stack. The running
     # of these packages do not affect interaction with the app under test. With the exception of the Samsung
@@ -105,7 +108,7 @@ class Device:
 
         :param proc_future: future (coroutine) to underlying asyncio Subprocess
 
-        >>> async with ProcessContext(some_proc) as proc:
+        >>> async with Device.AsyncProcessContext(some_proc) as proc:
         ...    async for line in proc.output():
         ...        yield line
         ...        proc.wait(timeout=10)
@@ -120,10 +123,14 @@ class Device:
             self._proc = Device.Process(await self._proc_future)
             return self
 
+        @property
+        def proc(self):
+            return self._proc
+
         async def __aexit__(self, exc_type: Optional[Type[BaseException]], exc_val: Optional[BaseException],
                             exc_tb: Optional[TracebackType]) -> None:
             if self._proc.returncode and self._proc.returncode != 0 and exc_type is not None:
-                raise Device.CommandExecutionFailure(self._proc.returncode, "Remote command failed on device")
+                raise Device.CommandExecutionFailure(self.proc.returncode, "Remote command failed on device")
             if self._proc.returncode is None:
                 log.info("Terminating process %d", self._proc._proc.pid)
                 with suppress(Exception):
@@ -261,7 +268,7 @@ class Device:
 
     WRITE_EXTERNAL_STORAGE_PERMISSION = "android.permission.WRITE_EXTERNAL_STORAGE"
 
-    class CommandExecutionFailureException(Exception):
+    class CommandExecutionFailure(Exception):
 
         def __init__(self, return_code: int, msg: str):
             super().__init__(msg)
@@ -320,12 +327,12 @@ class Device:
                 return app_package
         return None  # to be explicit
 
-    def _determine_system_property(self, property: str) -> str:
+    def _determine_system_property(self, prop_name: str) -> str:
         """
-        :param property: property to fetch
+        :param prop_name: property to fetch
         :return: requested property or "UNKNOWN" if not present on device
         """
-        prop = self.get_system_property(property)
+        prop = self.get_system_property(prop_name)
         if not prop:
             log.error("Unable to get brand of device from system properties. Setting to \"UNKNOWN\".")
             prop = "UNKNOWN"
@@ -423,17 +430,6 @@ class Device:
     def is_alive(self) -> bool:
         return self.get_state() == Device.State.ONLINE
 
-    def _determine_system_property(self, property_: str) -> str:
-        """
-        :param property_: property to fetch
-        :return: requested property or "UNKNOWN" if not present on device
-        """
-        prop = self.get_system_property(property_)
-        if not prop:
-            log.error("Unable to get brand of device from system properties. Setting to \"UNKNOWN\".")
-            prop = "UNKNOWN"
-        return prop
-
     @property
     def device_name(self) -> str:
         """
@@ -509,7 +505,8 @@ class Device:
         """
         Execute a remote command on device asynchronously
         """
-        proc = await asyncio.subprocess.create_subprocess_exec(*self._formulate_adb_cmd(*args), stdout=stdout, stderr=stderr)
+        proc = await asyncio.subprocess.create_subprocess_exec(*self._formulate_adb_cmd(*args),
+                                                               stdout=stdout, stderr=stderr)
         if timeout:
             await asyncio.wait_for(proc.wait(), timeout=timeout)
         else:
@@ -676,9 +673,9 @@ class Device:
         try:
             completed = self.execute_remote_cmd("get-state", timeout=10, stdout=subprocess.PIPE)
             stdout: str = completed.stdout
-            return stdout.strip()
-        except Exception:
-            return "non-existent"
+            return Device.State(stdout.strip())
+        except ValueError:
+            return Device.State.UNKNOWN
 
     def get_version(self, package: str) -> Optional[str]:
         """
@@ -827,7 +824,6 @@ class RemoteDeviceBased(object):
 
     :param device: which device is associated with this instance
     """
-
     def __init__(self, device: Device) -> None:
         self._device = device
 
@@ -842,8 +838,6 @@ class RemoteDeviceBased(object):
 class DeviceInteraction(RemoteDeviceBased):
     """
     Provides API for equvialent of user-navigation along with related device queries
-
-    :param device: which device is associated with this instance
     """
 
     def go_home(self) -> None:
@@ -1027,6 +1021,7 @@ class DeviceConnectivity(RemoteDeviceBased):
         if wait_until_online:
             while self.get_state() != Device.State.ONLINE:
                 time.sleep(1)
+
 
 class DeviceSet:
 
