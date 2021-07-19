@@ -3,8 +3,8 @@ from typing import List
 
 import pytest
 
-from androidtestorchestrator.devicepool import AsyncDevicePool, AsyncEmulatorPool
-from androidtestorchestrator.emulators import Emulator
+from mobiletestorchestrator.devicepool import AsyncDevicePool, AsyncEmulatorPool
+from mobiletestorchestrator.emulators import Emulator
 
 
 class TestDevicePool:

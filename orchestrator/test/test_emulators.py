@@ -1,7 +1,6 @@
 import sys
 
 import getpass
-import pytest_mproc
 from queue import Empty
 
 import asyncio
@@ -10,7 +9,7 @@ import os
 import pytest
 
 from pathlib import Path
-from mobiletestorchestrator.emulators import EmulatorBundleConfiguration, Emulator, EmulatorQueue
+from mobiletestorchestrator.emulators import EmulatorBundleConfiguration, Emulator
 
 log = logging.getLogger("MTO")
 log.setLevel(logging.INFO)

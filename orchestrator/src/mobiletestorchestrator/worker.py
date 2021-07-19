@@ -6,13 +6,13 @@ from dataclasses import dataclass, field
 
 from typing import Any, AsyncIterator, List, Optional, Dict, Tuple
 
-from androidtestorchestrator import TestApplication
+from mobiletestorchestrator import TestApplication
 from .device import Device
 from .testprep import EspressoTestSetup
 from .reporting import TestExecutionListener
 from .devicestorage import DeviceStorage
 from .devicelog import DeviceLog
-from androidtestorchestrator.parsing import LogcatTagDemuxer
+from .parsing import LogcatTagDemuxer
 from .parsing import InstrumentationOutputParser, LineParser
 from .timing import Timer
 
@@ -180,7 +180,7 @@ class Worker:
         finally:
             if self._logcat_proc:
                 with suppress(Exception):
-                    self._logcat_proc.stop(force=True)
+                    await self._logcat_proc.stop(force=True)
             if logcat_task:
                 if logcat_task.exception():
                     log.error(f"Exception found in task processing logcat tags/commands: {logcat_task.exception()}")

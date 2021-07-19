@@ -4,11 +4,10 @@ import logging
 import time
 from contextlib import suppress
 
-from typing import Dict, List, Optional, Type, Tuple
+from typing import Dict, List, Optional, Type, Tuple, Union
 from types import TracebackType
-from mobiletestorchestrator import Device, DeviceStorage
+from mobiletestorchestrator import Device, DeviceSet, DeviceStorage
 from mobiletestorchestrator.application import Application, TestApplication
-from mobiletestorchestrator.device import DeviceConnectivity
 
 log = logging.getLogger()
 
@@ -27,7 +26,7 @@ class DevicePreparation:
 
     def __init__(self, devices: Union[Device, DeviceSet]):
         """
-        :param device:  device to install and run test app on
+        :param devices:  device or devices to install and run test app on
         """
         self._devices: DeviceSet = DeviceSet([devices]) if isinstance(devices, Device) else devices
         self._restoration_settings: List[Dict[Tuple[str, str], Optional[str]]] = [{} for _ in self._devices.devices]
@@ -68,13 +67,9 @@ class DevicePreparation:
             return await asyncio.wait_for(gather(), timeout=60)
 
         results = asyncio.run(timer())
-        if all([lost_packets > 0 for (_, lost_packets) in results]):
+        if all([lost_packets > acceptable_loss for (_, lost_packets) in results]):
             raise IOError(
                 f"Connection to {domain} failed")
-        for device, lost_packets in [(device, lost_packets) for device, lost_packets in results if lost_packets > 0]:
-            log.warning(f"Failed connection from device {device.device_id}, with {lost_packets} of {count}" +
-                        f" packets lost. Blacklisting device")
-            self._devices.blacklist(device)
 
     def reverse_port_forward(self, device_port: int, local_port: int) -> None:
         """

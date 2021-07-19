@@ -1,9 +1,10 @@
 import pytest
 
-from androidtestorchestrator import EspressoTestSetup, TestExecutionListener
-from androidtestorchestrator.worker import Worker, TestSuite
+from mobiletestorchestrator.reporting import EspressoTestSetup, TestExecutionListener
+from mobiletestorchestrator.worker import Worker, TestSuite
 from typing import Dict, Optional, Any
-from androidtestorchestrator.main import _async_iter_adapter
+from mobiletestorchestrator.main import _async_iter_adapter
+
 
 class TestWorker:
 

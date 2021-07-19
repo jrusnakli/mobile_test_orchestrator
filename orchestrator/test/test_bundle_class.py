@@ -2,7 +2,7 @@ import os
 import zipfile
 from pathlib import Path
 
-from androidtestorchestrator.tooling.bundle import Bundle
+from mobiletestorchestrator.tooling.bundle import Bundle
 
 
 class TestBundle:
@@ -14,5 +14,5 @@ class TestBundle:
         assert os.path.isfile(str(mp_tmp_dir.joinpath("test.pyz")))
         with zipfile.ZipFile(shiv_path) as zfile:
             filelist = [item.filename for item in zfile.filelist]
-            assert "site-packages/androidtestorchestrator/resources/apks/app-debug.apk" in filelist
-            assert "site-packages/androidtestorchestrator/resources/apks/app-debug-androidTest.apk" in filelist
+            assert "site-packages/mobiletestorchestrator/resources/apks/app-debug.apk" in filelist
+            assert "site-packages/mobiletestorchestrator/resources/apks/app-debug-androidTest.apk" in filelist

@@ -1,12 +1,7 @@
-from typing import Mapping, Any
+from typing import Any, Optional
 
-import os
-
-from mobiletestorchestrator.device import Device
-from mobiletestorchestrator.devicelog import DeviceLog
 from mobiletestorchestrator.parsing import InstrumentationOutputParser
-from mobiletestorchestrator.reporting import TestRunListener
-from mobiletestorchestrator.timing import StopWatch
+from mobiletestorchestrator.reporting import TestExecutionListener
 
 
 class TestInstrumentationOutputParser(object):

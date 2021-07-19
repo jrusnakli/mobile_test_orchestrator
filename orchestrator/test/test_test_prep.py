@@ -1,7 +1,7 @@
 import os
 import pytest
 
-from mobiletestorchestrator import DeviceStorage
+from mobiletestorchestrator.device_storage import DeviceStorage
 from mobiletestorchestrator.testprep import EspressoTestPreparation
 
 

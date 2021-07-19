@@ -66,7 +66,7 @@ class Emulator(Device):
         self._config = config
 
     def is_alive(self) -> bool:
-        return self.get_state() == 'device'
+        return self.get_state(False) == Device.State.ONLINE
 
     async def restart(self) -> None:
         """
@@ -78,7 +78,7 @@ class Emulator(Device):
                              stdout=subprocess.PIPE,
                              env=self._env)
             booted = False
-            while self.get_state().strip() != 'device':
+            while await self.get_state(False) != 'device':
                 await asyncio.sleep(1)
 
             while not booted:
@@ -131,7 +131,7 @@ class Emulator(Device):
                 nonlocal proc
                 nonlocal device_id
 
-                while device.get_state().strip() != 'device':
+                while await device.get_state_async(False) != Device.State.ONLINE:
                     await asyncio.sleep(1)
                 if proc.poll() is not None:
                     stdout, _ = proc.communicate()

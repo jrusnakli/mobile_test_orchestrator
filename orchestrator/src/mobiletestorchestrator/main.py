@@ -6,10 +6,10 @@ import os
 from types import TracebackType
 from typing import AsyncIterator, Dict, Iterator, List, Optional, Tuple, Type, Union, Any
 
-from androidtestorchestrator.worker import TestSuite
+from .worker import TestSuite
 from .testprep import EspressoTestSetup
 from .device import Device
-from androidtestorchestrator.devicepool import AsyncDevicePool
+from .devicepool import AsyncDevicePool
 from .parsing import LineParser
 from .reporting import TestExecutionListener
 from .worker import Worker

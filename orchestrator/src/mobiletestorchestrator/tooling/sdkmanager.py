@@ -11,8 +11,12 @@ import zipfile
 from pathlib import Path
 from typing import Optional
 
-import androidtestorchestrator
-from importlib_resources import files  # type: ignore
+import mobiletestorchestrator
+
+try:
+    from importlib.resources import files
+except:
+    from importlib_resources import files  # type: ignore
 import pytest_mproc
 
 
@@ -40,7 +44,7 @@ class SdkManager:
         else:
             self._shell = False
         if bootstrap is True and not self._sdk_manager_path.exists():
-            bootstrap_zip = files(androidtestorchestrator).joinpath(os.path.join("resources", "sdkmanager",
+            bootstrap_zip = files(mobiletestorchestrator).joinpath(os.path.join("resources", "sdkmanager",
                                                                                  "bootstrap.zip"))
             with zipfile.ZipFile(bootstrap_zip) as zfile:
                 zfile.extractall(path=self._sdk_dir)
@@ -82,14 +86,12 @@ class SdkManager:
     def bootstrap_platform_tools(self) -> None:
         """
         download/update platform tools within the sdk
-        :param version: version to update to or None for latest
         """
         self.bootstrap("platform-tools")
 
     def bootstrap_emulator(self) -> None:
         """
         download/update emulator within the sdk
-        :param version: version to update to or None for latest
         """
         self.bootstrap("emulator")
 

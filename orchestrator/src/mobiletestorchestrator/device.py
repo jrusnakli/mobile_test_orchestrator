@@ -11,7 +11,6 @@ import os
 import re
 import subprocess
 import time
-from abc import ABC
 
 from contextlib import suppress, asynccontextmanager
 from enum import Enum
@@ -28,7 +27,7 @@ from typing import (
     Optional,
     Union,
     Tuple,
-    Type, TypeVar,
+    Type, TypeVar, Iterable,
 )
 
 log = logging.getLogger("MTO")
@@ -37,6 +36,7 @@ log.setLevel(logging.ERROR)
 
 __all__ = ["Device", "RemoteDeviceBased"]
 
+# noinspection PyTypeChecker
 D = TypeVar('D', bound="Device")
 
 
@@ -54,7 +54,8 @@ async def _device_lock(device: "Device") -> AsyncIterator["Device"]:
     :param device: device to lock
     :return: device
     """
-    DeviceLock.locks.setdefault(device._device_id, asyncio.Semaphore())
+    # noinspection PyAsyncCall
+    DeviceLock.locks.setdefault(device.device_id, asyncio.Semaphore())
     await DeviceLock.locks[device.device_id].acquire()
     yield device
     DeviceLock.locks[device.device_id].release()
@@ -69,7 +70,7 @@ class Device:
     :param device_id: serial id of the device as seen by host (e.g. via 'adb devices')
     :raises FileNotFoundError: if adb path is invalid
     """
-    APP_RECORD_PATTERN = re.compile(r'^\* TaskRecord\{[a-f0-9-]* #\d* [AI]=([a-zA-Z].[a-zA-Z0-9.]*)[ /].*')
+    APP_RECORD_PATTERN = re.compile(r'^\* TaskRecord{[a-f0-9-]* #\d* [AI]=([a-zA-Z].[a-zA-Z0-9.]*)[ /].*')
     UNKNOWN_API_LEVEL = -1
 
     class State(Enum):
@@ -108,10 +109,10 @@ class Device:
 
         :param proc_future: future (coroutine) to underlying asyncio Subprocess
 
-        >>> async with Device.AsyncProcessContext(some_proc) as proc:
-        ...    async for line in proc.output():
+        >>> some_proc = asyncio.subprocess.create_subprocess_exec("cmd")
+        ... async with Device.AsyncProcessContext(some_proc) as process:
+        ...    async for line in process.output():
         ...        yield line
-        ...        proc.wait(timeout=10)
         """
 
         def __init__(self, proc_future: Awaitable[asyncio.subprocess.Process]):
@@ -129,16 +130,16 @@ class Device:
 
         async def __aexit__(self, exc_type: Optional[Type[BaseException]], exc_val: Optional[BaseException],
                             exc_tb: Optional[TracebackType]) -> None:
-            if self._proc.returncode and self._proc.returncode != 0 and exc_type is not None:
+            if self.proc.returncode and self.proc.returncode != 0 and exc_type is not None:
                 raise Device.CommandExecutionFailure(self.proc.returncode, "Remote command failed on device")
-            if self._proc.returncode is None:
-                log.info("Terminating process %d", self._proc._proc.pid)
+            if self.proc.returncode is None:
+                log.info("Terminating process %d", self.proc.pid)
                 with suppress(Exception):
-                    await self._proc.stop(timeout=3)
+                    await self.proc.stop(timeout=3)
             if self._proc.returncode is None:
                 # Second try, force-stop
                 try:
-                    await self._proc.stop(timeout=3, force=True)
+                    await self.proc.stop(timeout=3, force=True)
                 except TimeoutError:
                     log.error("Failed to kill subprocess while exiting its context")
 
@@ -169,6 +170,10 @@ class Device:
         @property
         def returncode(self) -> Optional[int]:
             return self._proc.returncode
+
+        @property
+        def pid(self):
+            return self._proc.pid
 
         async def communicate(self):
             stdout, _ = await self._proc.communicate()
@@ -485,17 +490,6 @@ class Device:
         else:
             return (self._adb_path, *args)
 
-    async def execute_remote_cmd_stream(self, *args: str,
-                                        stderr: Union[None, int, IO[AnyStr]] = subprocess.PIPE,
-                                        ) -> "Device.AsyncProcessContext":
-        """
-        Execute a remote cmd on device and iterate output line by line
-        """
-        proc = asyncio.subprocess.create_subprocess_exec(*self._formulate_adb_cmd(*args),
-                                                         stdout=asyncio.subprocess.PIPE,
-                                                         stderr=stderr)
-        return self.AsyncProcessContext(proc)
-
     async def execute_remote_cmd_async(self, *args: str,
                                        timeout: Optional[float] = None,
                                        stdout: Union[None, int, IO[AnyStr]] = None,
@@ -578,7 +572,7 @@ class Device:
                                 stderr=subprocess.PIPE,
                                 **kwargs)
 
-    def monitor_remote_cmd(self, *args: str) -> "Device.AsyncProcessContext":
+    def monitor_remote_cmd(self, *args: str, include_stderr: bool = True) -> "Device.AsyncProcessContext":
         """
         Coroutine for executing a command on this remote device asynchronously, allowing the client to iterate over
         lines of output.
@@ -586,9 +580,11 @@ class Device:
         :param args: command to execute
         :return: AsyncGenerator iterating over lines of output from command
 
-        >>> async with await device.execute_remote_cmd_async("some_cmd", "with", "args", unresponsive_timeout=10) as stdout:
+        >>> device = Device("device1", "adb/path")
+        ... async with await device.execute_remote_cmd_async("cmd", "with", "args", unresponsive_timeout=10) as stdout:
         ...     async for line in stdout:
-        ...         process(line)
+        ...         # process(line)
+        ...         pass
 
         """
         cmd = self._formulate_adb_cmd(*args)
@@ -596,7 +592,7 @@ class Device:
         proc_future = asyncio.subprocess.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
+            stderr=asyncio.subprocess.STDOUT if include_stderr else None,
             bufsize=0
         )
         return self.AsyncProcessContext(proc_future)
@@ -666,8 +662,10 @@ class Device:
             device_locale = device_locale.replace('-', '_').strip() if device_locale else None
         return device_locale
 
-    def get_state(self) -> "Device.State":
+    def get_state(self, fail_if_not_present: bool=True) -> "Device.State":
         """
+        :param fail_if_not_present: raise CommandExecutionFailure if device is not present and this is True,
+           otherwise return Device.State.NON_EXISTENT
         :return: current state of emulaor ("device", "offline", "non-existent", ...)
         """
         try:
@@ -676,6 +674,27 @@ class Device:
             return Device.State(stdout.strip())
         except ValueError:
             return Device.State.UNKNOWN
+        except self.CommandExecutionFailure:
+            if fail_if_not_present:
+                raise
+            return Device.State.NON_EXISTENT
+
+    async def get_state_async(self, fail_if_not_present: bool = True) -> "Device.State":
+        """
+        get statie of device emulator
+
+        :param fail_if_not_present: if True, will raise CommendExecutionFailure if device is not , otherwise
+           return Device.State.NON_EXISTENT
+        """
+        try:
+            _, stdout, _ = await self.execute_remote_cmd_async("get-state", timeout=10, stdout=subprocess.PIPE)
+            return Device.State(stdout.strip())
+        except ValueError:
+            return Device.State.UNKNOWN
+        except self.CommandExecutionFailure:
+            if fail_if_not_present:
+                raise
+            return Device.State.NON_EXISTENT
 
     def get_version(self, package: str) -> Optional[str]:
         """
@@ -772,6 +791,14 @@ class Device:
                 activity_list.append(app_package)
         return activity_list
 
+    async def iterate_activity_stack(self) -> AsyncIterator[str]:
+        async with self.monitor_remote_cmd("shell", "dumpsys", "activity", "activities") as proc:
+            async for item in proc.output(timeout=Device.TIMEOUT_ADB_CMD):
+                matches = self.APP_RECORD_PATTERN.match(line.strip())
+                if matches:
+                    app_package = matches.group(1)
+                    yield app_package
+
     def list(self, kind: str) -> List[str]:
         """
         List available items of a given kind on the device
@@ -783,6 +810,15 @@ class Device:
         stdout: str = completed.stdout
         return stdout.splitlines()
 
+    def list_async(self, kind: str) -> Device.AsyncProcessContext[str]:
+        """
+        List available items of a given kind on the device
+        :param kind: instrumentation or package
+
+        :return: list of available items of given kind on the device
+        """
+        return self.monitor_remote_cmd("shell", "pm", "list", kind)
+
     def list_installed_packages(self) -> List[str]:
         """
         :return: list of all packages installed on device
@@ -793,11 +829,29 @@ class Device:
                 items.append(item.replace("package:", '').strip())
         return items
 
+    async def iterate_installed_packages(self, timeout=2.0) -> AsyncIterator[str]:
+        """
+        :return: list of all packages installed on device
+        """
+        async with self.list_async("package") as proc:
+            async for item in proc.output(unresponsive_timeout=timeout):
+                if item.startswith('package:'):
+                    item = item[8:]
+                    yield item.strip()
+
     def list_instrumentation(self) -> List[str]:
         """
         :return: list of instrumentations for a (test) app
         """
         return self.list("instrumentation")
+
+    async def iterate_instrumentation(self, timeout: Optional[float] = 2.0) -> AsyncIterator[str]:
+        """
+        iterator over list of instrumantations for a (test) app
+        """
+        async with self.list_async("instrumentation") as proc:
+            async for line in proc.output(unresponsive_timeout=timeout):
+                yield line
 
     #################
     # Screenshot
@@ -817,6 +871,27 @@ class Device:
                                     stdout=f.fileno(),
                                     timeout=timeout or Device.TIMEOUT_SCREEN_CAPTURE)
 
+    async def reboot(self, wait_until_online: bool = True, timeout: Optional[float] = 5.0) \
+            -> AsyncIterator[Device.State]:
+        """
+        reboot device
+
+        :param wait_until_online: if True, will yield device state every second until ONLINE state is reached
+        :param timeout: timeout for the actual reboot command being issued (NOT time it takes device to reboot)
+
+        :raises asyncio.TimeoutExpired: if the command to the device takes to long to initiate the reboot
+        """
+        if wait_until_online:
+            await self.execute_remote_cmd_async("reboot", timeout=timeout)
+            state = await self.get_state_async()
+            while state != Device.State.ONLINE:
+                yield state
+                state = await self.get_state_async()
+                await asyncio.sleep(1)
+            yield state
+        else:
+            await self.execute_remote_cmd_async("reboot", timeout=timeout)
+
 
 class RemoteDeviceBased(object):
     """
@@ -833,194 +908,6 @@ class RemoteDeviceBased(object):
         :return: the device associated with this instance
         """
         return self._device
-
-
-class DeviceInteraction(RemoteDeviceBased):
-    """
-    Provides API for equvialent of user-navigation along with related device queries
-    """
-
-    def go_home(self) -> None:
-        """
-        Equivalent to hitting home button to go to home screen
-        """
-        self.input("KEYCODE_HOME")
-
-    def home_screen_active(self) -> bool:
-        """
-        :return: True if the home screen is currently in the foreground. Note that system pop-ups will result in this
-        function returning False.
-        :raises Exception: if unable to make determination
-        """
-        found_potential_stack_match = False
-        completed = self._device.execute_remote_cmd("shell", "dumpsys", "activity", "activities",
-                                                    timeout=Device.TIMEOUT_ADB_CMD, stdout=subprocess.PIPE)
-        # Find lines that look like this:
-        #   Stack #0:
-        # or
-        #   Stack #0: type=home mode=fullscreen
-        app_stack_pattern = re.compile(r'^Stack #(\d*):')
-        stdout_lines = completed.stdout.splitlines()
-        for line in stdout_lines:
-            matches = app_stack_pattern.match(line.strip())
-            if matches:
-                if matches.group(1) == "0":
-                    return True
-                else:
-                    found_potential_stack_match = True
-                    break
-
-        # Went through entire activities stack, but no line matched expected format for displaying activity
-        if not found_potential_stack_match:
-            raise Exception(
-                f"Could not determine if home screen is in foreground because no lines matched expected "
-                f"format of \"dumpsys activity activities\" pattern. Please check that the format did not change:\n"
-                f"{stdout_lines}")
-
-        # Format of activities was fine, but detected home screen was not in foreground. But it is possible this is a
-        # Samsung device with silent packages in foreground. Need to check if that's the case, and app after them
-        # is the launcher/home screen.
-        foreground_activity = self._device.foreground_activity(ignore_silent_apps=True)
-        return bool(foreground_activity and foreground_activity.lower() == "com.sec.android.app.launcher")
-
-    def input(self, subject: str, source: Optional[str] = None) -> None:
-        """
-        Send event subject through given source
-
-        :param subject: event to send
-        :param source: source of event, or None to default to "keyevent"
-        """
-        self._device.execute_remote_cmd("shell", "input", source or "keyevent", subject, timeout=Device.TIMEOUT_ADB_CMD)
-
-    def is_screen_on(self) -> bool:
-        """
-        :return: whether device's screen is on
-        """
-        completed = self._device.execute_remote_cmd("shell", "dumpsys", "activity", "activities",
-                                                    stdout=subprocess.PIPE,
-                                                    timeout=Device.TIMEOUT_ADB_CMD)
-        lines = completed.stdout.splitlines()
-        for msg in lines:
-            if 'mInteractive=false' in msg or 'mScreenOn=false' in msg or 'isSleeping=true' in msg:
-                return False
-        return True
-
-    def return_home(self, keycode_back_limit: int = 10) -> None:
-        """
-        Return to home screen as though the user did so via one or many taps on the back button.
-        In this scenario, subsequent launches of the app will need to recreate the app view, but may
-        be able to take advantage of some saved state, and is considered a warm app launch.
-
-        NOTE: This function assumes the app is currently in the foreground. If not, it may still return to the home
-        screen, but the process of closing activities on the back stack will not occur.
-
-        :param keycode_back_limit: The maximum number of times to press the back button to attempt to get back to
-           the home screen
-        """
-        back_button_attempt = 0
-
-        while back_button_attempt <= keycode_back_limit:
-            back_button_attempt += 1
-            self.input("KEYCODE_BACK")
-            if self.home_screen_active:
-                return
-            # Sleep for a second to allow for complete activity destruction.
-            # TODO: ouch!! almost a 10 second overhead if we reach limit
-            time.sleep(1)
-
-        foreground_activity = self._device.foreground_activity(ignore_silent_apps=True)
-
-        raise Exception(f"Max number of back button presses ({keycode_back_limit}) to get to Home screen has "
-                        f"been reached. Found foreground activity {foreground_activity}. App closure failed.")
-
-    def toggle_screen_on(self) -> None:
-        """
-        Toggle device's screen on/off
-        """
-        self._device.execute_remote_cmd("shell", "input", "keyevent", "KEYCODE_POWER", timeout=10)
-
-
-class DeviceConnectivity(RemoteDeviceBased):
-    """
-    API for network communications configuration/queries, including host-to-device communications
-
-    :param device: which device
-    """
-
-    def check_network_connection(self, domain: str, count: int = 3) -> int:
-        """
-        Check network connection to domain
-
-        :param domain: domain to ping
-        :param count: how many times to ping domain
-        :return: 0 on success, number of failed packets otherwise
-        """
-        try:
-            completed = self._device.execute_remote_cmd("exec-out", "ping", "-c", str(count), domain,
-                                                        timeout=Device.TIMEOUT_LONG_ADB_CMD,
-                                                        stdout=subprocess.PIPE)
-            for msg in completed.stdout.splitlines():
-                if "64 bytes" in str(msg):
-                    count -= 1
-                if count <= 0:
-                    break
-            if count > 0:
-                log.error("Output from ping was: \n%s", completed.stdout)
-            return count
-        except subprocess.TimeoutExpired:
-            log.error("ping is hanging and not yielding any results. Returning error code.")
-            return -1
-        except Device.CommandExecutionFailure:
-            return -1
-
-    def port_forward(self, local_port: int, device_port: int) -> None:
-        """
-        forward traffic from local port to remote device port
-
-        :param local_port: port to forward from
-        :param device_port: port to forward to
-        """
-        self._device.execute_remote_cmd("forward", f"tcp:{device_port}", f"tcp:{local_port}")
-
-    def remove_port_forward(self, port: Optional[int] = None) -> None:
-        """
-        Remove reverse port forwarding
-
-        :param port: port to remove or None to remove all reverse forwarded ports
-        """
-        if port is not None:
-            self._device.execute_remote_cmd("forward", "--remove", f"tcp:{port}")
-        else:
-            self._device.execute_remote_cmd("forward", "--remove-all")
-
-    def remove_reverse_port_forward(self, port: Optional[int] = None) -> None:
-        """
-        Remove reverse port forwarding
-
-        :param port: port to remove or None to remove all reverse forwarded ports
-        """
-        if port is not None:
-            self._device.execute_remote_cmd("reverse", "--remove", f"tcp:{port}")
-        else:
-            self.execute_remote_cmd("forward", "--remove-all")
-
-    def get_state(self) -> "Device.State":
-        """
-        :return: current state of emulaor ("device", "offline", "non-existent", ...)
-        """
-        try:
-            state = self.execute_remote_cmd("get-state", capture_stdout=True, timeout=10).strip()
-            mapping = {"device": Device.State.ONLINE,
-                       "offline": Device.State.OFFLINE}
-            return mapping.get(state, Device.State.UNKNOWN)
-        except Exception:
-            return Device.State.NON_EXISTENT
-
-    def reboot(self, wait_until_online: bool = True) -> None:
-        self.execute_remote_cmd("reboot")
-        if wait_until_online:
-            while self.get_state() != Device.State.ONLINE:
-                time.sleep(1)
 
 
 class DeviceSet:
@@ -1086,6 +973,7 @@ class DeviceSet:
         def device(self) -> "Device":
             return self._device
 
+    # noinspection PyPep8Naming,PyTypeChecker
     @classmethod
     def _Leased(cls: Type[D]) -> D:
         """
@@ -1094,7 +982,7 @@ class DeviceSet:
 
         :return: subclass of this class that can be set to expire after a prescribed amount of time
         """
-        class LeasedDevice(cls):  # type: ignore
+        class LeasedDevice(cls):
 
             def __init__(self, *args: Any, **kargs: Any):
                 # must come first to avoid issues with __getattribute__ override
@@ -1137,92 +1025,7 @@ class DeviceSet:
                     # always allow this one to go through (one is a property reflecting the other)
                     return object.__getattribute__(self, item)
                 if object.__getattribute__(self, "_timed_out"):
-                    raise Device.LeaseExpired(self)
+                    raise DeviceSet.LeaseExpired(self)
                 return object.__getattribute__(self, item)
 
-        return LeasedDevice  # type: ignore
-
-
-class RemoteDeviceBased(object):
-    """
-    Classes that are based on the context of a remote device
-    """
-
-    def __init__(self, device: Device) -> None:
-        """
-        :param device: which device is associated with this instance
-        """
-        self._device = device
-
-    @property
-    def device(self) -> Device:
-        """
-        :return: the device associated with this instance
-        """
-        return self._device
-
-
-class BaseDeviceQueue(ABC):
-
-    def __init__(self, queue: Queue):
-        """
-        :param queue: queue to server Device's from.
-        """
-        self._q = queue
-
-    def empty(self) -> bool:
-        return self._q.empty()
-
-    @staticmethod
-    def _list_devices(filt: Callable[[str], bool]):
-        cmd = [Device.adb_path(), "devices"]
-        completed = subprocess.run(" ".join(cmd), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, shell=True)
-        device_ids = []
-        for line in completed.stdout.splitlines():
-            line = line.decode('utf-8').strip()
-            if line.strip().endswith("device"):
-                device_id = line.split()[0]
-                if filt(device_id):
-                    device_ids.append(device_id)
-        return device_ids
-
-    @classmethod
-    async def discover(cls, filt: Callable[[str], bool] = lambda x: True) -> "BaseDeviceQueue":
-        """
-        Discover all online devices and create a DeviceQueue with them
-
-        :param filt: only include devices filtered by device id through this given filter, if provided
-
-        :return: Created DeviceQueue instance containing all online devices
-        """
-        queue = Queue(20)
-        device_ids = cls._list_devices(filt)
-        if not device_ids:
-            raise Exception("No device were discovered based on any filter critera. " +
-                            f"output of 'adb devices' was: {completed.stdout}")
-        for device_id in device_ids:
-            await queue.put(Device(device_id))
-        return cls(queue)
-
-
-class AsyncDeviceQueue(BaseDeviceQueue):
-
-    def __init__(self, queue: Queue):
-        """
-        :param queue: queue to server Device's from.
-        """
-        super().__init__(queue)
-
-    @asynccontextmanager
-    async def reserve(self) -> AsyncGenerator[Device, None]:
-        """
-        :return: a reserved Device
-        """
-        emulator = await self._q.get()
-        try:
-            yield emulator
-        finally:
-            await self._q.put(emulator)
-
-    def empty(self):
-        return self._q.empty()
+        return LeasedDevice

@@ -2,7 +2,7 @@ import getpass
 import os
 from pathlib import Path
 
-from androidtestorchestrator.tooling.sdkmanager import SdkManager
+from mobiletestorchestrator.tooling.sdkmanager import SdkManager
 import pytest
 
 IS_CIRCLECI = getpass.getuser() == 'circleci' or "CIRCLECI" in os.environ
@@ -15,7 +15,7 @@ class TestSdkManager:
         def mock_bootstrap(self, target: str, *args: str):
             assert target == "platform-tools"
 
-        monkeypatch.setattr("androidtestorchestrator.tooling.sdkmanager.SdkManager.bootstrap", mock_bootstrap)
+        monkeypatch.setattr("mobiletestorchestrator.tooling.sdkmanager.SdkManager.bootstrap", mock_bootstrap)
         os.makedirs(mp_tmp_dir.joinpath("tools").joinpath("bin"), exist_ok=True)
         with open(mp_tmp_dir.joinpath("tools").joinpath("bin").joinpath("sdkmanager"), 'w') as f:
             pass

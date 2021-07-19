@@ -2,6 +2,7 @@
 The *devielog* package provides the API for streaming, capturing and manipulating the device log
 """
 import os
+import subprocess
 from asyncio import AbstractEventLoop
 
 import logging
@@ -99,13 +100,27 @@ class DeviceLog(RemoteDeviceBased):
         """
         self.device.execute_remote_cmd("logcat", "-b", buffer, "-c")
 
+    async def clear_async(self, buffer: str = "all", timeout: Optional[float] = None) -> None:
+        """
+        clear device log on the device and start fresh
+
+        NOTE: Android has intermittent failures not clearing the main log. In particaular, this
+        operation seems somehsat asynchronous and can interfere or be interered with if other
+        logcat call are made in a short time window around this call.
+
+        :param buffer: type of buffer to clear
+        :param timeout: optional timeout
+
+        :raises: asyncio.TimeoutError if timeout is specified and reached before command completes
+        """
+        await self.device.execute_remote_cmd_async("logcat", "-b", buffer, "-c", timeout=timeout)
+
     def logcat(self, *options: str) -> Device.AsyncProcessContext:
         """
         async generator to continually output lines from logcat until client
         exits processing (exist async iterator), at which point process is killed
 
         :param options: list of string options to provide to logcat command
-        :param loop: specific asyncio loop to use or None for default
         :return: AsyncGenerator to iterate over lines of logcat
         :raises: asyncio.TimeoutError if timeout is not None and timeout is reached
         """
@@ -116,14 +131,6 @@ class DeviceLog(RemoteDeviceBased):
         :param output_path: path to capture log output to
 
         :return: context manager for capturing output to specified file
-
-        >>> device = Device("some_serial_id", "/path/to/adb")
-        ... log = DeviceLog(device)
-        ... with log.capture_to_file("./log.txt") as log_capture:
-        ...     log_capture.mark_start("some_task")
-        ...     # do_something()
-        ...     log_capture.mark_end("some_task")
-        ... # file closed, logcat process terminated
         """
         return self.LogCapture(self.device, output_path=output_path)
 

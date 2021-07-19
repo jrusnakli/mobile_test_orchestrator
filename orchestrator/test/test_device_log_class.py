@@ -6,7 +6,7 @@ import pytest
 
 from mobiletestorchestrator.application import ServiceApplication
 from mobiletestorchestrator.device import Device
-from mobiletestorchestrator.devicelog import DeviceLog
+from mobiletestorchestrator.device_log import DeviceLog
 
 
 class TestDeviceLog:
@@ -19,8 +19,6 @@ class TestDeviceLog:
         log.set_logcat_buffer_size(DeviceLog.DEFAULT_LOGCAT_BUFFER_SIZE)
         assert log.logcat_buffer_size.upper() in ['5', '5MB']
 
-    @pytest.mark.asyncio
-    async def test_logcat_and_clear(self, device: Device, android_service_app: ServiceApplication):
     @pytest.mark.asyncio
     @pytest.mark.localonly
     async def test_logcat_and_clear(self, device: Device, android_service_app: ServiceApplication):
@@ -83,7 +81,7 @@ class TestDeviceLog:
             assert "old_line" not in line
             assert "new_line" in line
 
-     def test_invalid_output_path(self, fake_sdk, mp_tmp_dir):
+    def test_invalid_output_path(self, fake_sdk, mp_tmp_dir):
         device = Device("fakeid", os.path.join(fake_sdk, "platform-tools", "adb"))
         tmpfile = os.path.join(str(mp_tmp_dir), "somefile")
         with open(tmpfile, 'w'):
@@ -91,7 +89,3 @@ class TestDeviceLog:
         with pytest.raises(Exception) as exc_info:
             DeviceLog.LogCapture(device, tmpfile)
         assert "Path %s already exists; will not overwrite" % tmpfile in str(exc_info.value)
-
-        with pytest.raises(Exception):
-            logcap = DeviceLog.LogCapture(device, os.path.join(mp_tmp_dir, "newfile"))
-            logcap.mark_end("proc_not_started_so_throw_exception")

@@ -11,10 +11,12 @@ from pathlib import Path
 import pytest
 
 from mobiletestorchestrator.application import Application, TestApplication
-from mobiletestorchestrator.device import Device, DeviceInteraction
+from mobiletestorchestrator.device import Device
+from mobiletestorchestrator.device_interactions import DeviceInteraction
 from mobiletestorchestrator.devicestorage import DeviceStorage
 from . import support
 from .conftest import TAG_MTO_DEVICE_ID
+from .support import uninstall_apk
 
 RESOURCE_DIR = os.path.join(os.path.dirname(__file__), "resources")
 
@@ -73,14 +75,14 @@ class TestAndroidDevice:
                 assert device.get_device_setting("invalid", "nosuchkey") is ''
             else:
                 assert device.get_device_setting("invalid", "nosuchkey") is None
-        except:
+        except Exception:
             assert device.get_device_setting("invalid", "nosuchkey") is None
 
     @pytest.mark.asyncio
     async def test_set_invalid_system_property(self, device: Device):
         try:
             api_is_old =int(device.get_system_property("ro.build.version.sdk")) < 26
-        except:
+        except Exception:
             api_is_old = False
         if api_is_old:
             device.set_system_property("nosuchkey", "value")
@@ -171,16 +173,6 @@ class TestAndroidDevice:
         app.clear_data()
         app.stop()
 
-    def test_invalid_cmd_execution(self, device: Device):
-        async def execute():
-            async with device.monitor_remote_cmd("some", "bad", "command") as proc:
-            async with await device.monitor_remote_cmd("some", "bad", "command") as proc:
-                async for _ in proc.output(unresponsive_timeout=10):
-                    pass
-            assert proc.returncode is not None
-            assert proc.returncode != 0
-        asyncio.get_event_loop().run_until_complete(execute())
-
     @pytest.mark.asyncio
     async def test_get_locale(self, device: Device):
         locale = device.get_locale()
@@ -196,7 +188,7 @@ class TestAndroidDevice:
     @pytest.mark.asyncio
     async def test_foreground_and_activity_detection(self, install_app, device: Device, support_app: str):
         app = install_app(Application, support_app)
-        nav = DeviceNavigation(device)
+        nav = DeviceInteraction(device)
         device_nav = DeviceInteraction(device)
         # By default, emulators should always start into the home screen
         assert nav.home_screen_active()
@@ -207,8 +199,6 @@ class TestAndroidDevice:
         assert not device_nav.home_screen_active()
         assert device.foreground_activity() == app.package_name
 
-    @pytest.mark.asyncio
-    async def test_raise_on_invalid_adb_path(self):
     def test_verify_install_on_non_installed_app(self, device: Device, in_tmp_dir: Path):
         with pytest.raises(expected_exception=Exception) as excinfo:
             device._verify_install("fake/app/path", "com.linkedin.fake.app", "test_screenshots")
@@ -222,23 +212,19 @@ class TestAndroidDevice:
         assert stdout == 'TEST'
 
     async def test_execute_streamed_cmd(self, device: Device):
-        with device.execute_remote_cmd_stream("shell", "ls", "/") as proc:
+        async with device.monitor_remote_cmd("shell", "ls", "/") as proc:
             lines = []
             async for line in proc.output(unresponsive_timeout=2.0):
                 lines.append(line)
             assert len(lines) > 3
             assert "data" in lines
 
-    def test_raise_on_invalid_adb_path(self):
-        with pytest.raises(FileNotFoundError):
-            Device("some_serial_id", "/no/such/path")
-
     @pytest.mark.asyncio
     async def test_none_return_on_no_device_datetime(self, device: Device, monkeypatch):
         def mock_execute_cmd(*args, **kargs):
             return ""
 
-        monkeypatch.setattr("androidtestorchestrator.device.Device.execute_remote_cmd", mock_execute_cmd)
+        monkeypatch.setattr("mobiletestorchestrator.device.Device.execute_remote_cmd", mock_execute_cmd)
         device._device_server_datetime_offset = None
         assert device.device_server_datetime_offset.total_seconds() == 0
 
@@ -248,64 +234,4 @@ class TestAndroidDevice:
             async with device.monitor_remote_cmd("install", support_app) as proc:
                 async for _ in proc.output(unresponsive_timeout=0.01):
                     pass
-        asyncio.get_event_loop().run_until_complete(execute())
 
-
-class TestDeviceNetwork:
-
-    @pytest.mark.asyncio
-    async def test_check_network_connect(self, device: Device):
-        device_network = DeviceNetwork(device)
-        assert await device_network.check_network_connection("localhost", count=3) == 0
-
-    @pytest.mark.asyncio
-    async def test_port_forward(self, device: Device):
-        device_network = DeviceNetwork(device)
-        device_network.port_forward(32451, 29323)
-        completed = device.execute_remote_cmd("forward", "--list", stdout=subprocess.PIPE)
-        output: str = completed.stdout
-        assert "32451" in output
-        device_network.remove_port_forward(29323)
-        completed = device.execute_remote_cmd("forward", "--list", stdout=subprocess.PIPE)
-        output: str = completed.stdout
-        assert "32451" not in output
-
-    @pytest.mark.asyncio
-    async def test_reverse_port_forward(self, device: Device):
-        device_network = DeviceNetwork(device)
-        device_network.reverse_port_forward(32451, 29323)
-        completed = device.execute_remote_cmd("reverse", "--list", stdout=subprocess.PIPE)
-        output: str = completed.stdout
-        assert "29323" in output
-        device_network.remove_reverse_port_forward(32451)
-        completed = device.execute_remote_cmd("reverse", "--list", stdout=subprocess.PIPE)
-        output: str = completed.stdout
-        assert "32451" not in output
-
-
-class TestDeviceNavigation:
-
-    @pytest.mark.asyncio
-    async def test_is_screen_on(self, device: Device):
-        navigator = DeviceNavigation(device)
-        is_screen_on = navigator.is_screen_on()
-        navigator.toggle_screen_on()
-        retries = 3
-        new_is_screen_on = is_screen_on
-        while retries > 0 and new_is_screen_on == is_screen_on:
-            time.sleep(3)
-            new_is_screen_on = navigator.is_screen_on()
-            retries -= 1
-        assert is_screen_on != new_is_screen_on
-
-    @pytest.mark.asyncio
-    async def test_go_home(self, device: Device, android_app: Application):
-        navigator = DeviceNavigation(device)
-        await android_app.launch("MainActivity")
-        if navigator.home_screen_active():
-           time.sleep(2)
-        assert not navigator.home_screen_active()
-        navigator.go_home()
-        if not navigator.home_screen_active():
-            time.sleep(2)
-        assert navigator.home_screen_active()
