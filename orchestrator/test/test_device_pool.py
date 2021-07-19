@@ -3,7 +3,7 @@ from typing import List
 
 import pytest
 
-from mobiletestorchestrator.devicepool import AsyncDevicePool, AsyncEmulatorPool
+from mobiletestorchestrator.device_pool import AsyncDevicePool, AsyncEmulatorPool
 from mobiletestorchestrator.emulators import Emulator
 
 

@@ -14,7 +14,7 @@ class TestTimer(object):
             timer.mark_end("task")
 
         try:
-            with pytest.raises(asyncio.futures.TimeoutError):
+            with pytest.raises(asyncio.TimeoutError):
                 timer = Timer(duration=1)
                 await run()
         except asyncio.CancelledError:

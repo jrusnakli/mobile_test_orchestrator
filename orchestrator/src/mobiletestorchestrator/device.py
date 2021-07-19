@@ -794,7 +794,7 @@ class Device:
     async def iterate_activity_stack(self) -> AsyncIterator[str]:
         async with self.monitor_remote_cmd("shell", "dumpsys", "activity", "activities") as proc:
             async for item in proc.output(timeout=Device.TIMEOUT_ADB_CMD):
-                matches = self.APP_RECORD_PATTERN.match(line.strip())
+                matches = self.APP_RECORD_PATTERN.match(item.strip())
                 if matches:
                     app_package = matches.group(1)
                     yield app_package
@@ -893,72 +893,6 @@ class Device:
             await self.execute_remote_cmd_async("reboot", timeout=timeout)
 
 
-class RemoteDeviceBased(object):
-    """
-    Classes that are based on the context of a remote device
-
-    :param device: which device is associated with this instance
-    """
-    def __init__(self, device: Device) -> None:
-        self._device = device
-
-    @property
-    def device(self) -> Device:
-        """
-        :return: the device associated with this instance
-        """
-        return self._device
-
-
-class DeviceSet:
-
-    class DeviceError(Exception):
-
-        def __init__(self, device: Device, root: Exception):
-            self._root_exception = root
-            self._device = device
-
-    def __init__(self, devices: Iterable[Device]):
-        self._devices = list(devices)
-        self._blacklisted: List[Device] = []
-
-    @property
-    def devices(self) -> List[Device]:
-        return self._devices
-
-    def blacklist(self, device: Device) -> None:
-        if device in self._devices:
-            self._devices.remove(device)
-            self._blacklisted.append(device)
-
-    def apply(self, method: Callable[..., Any], *args: Any, **kwargs: Any) -> List[Any]:
-        results = []
-        for device in self._devices:
-            try:
-                results.append(method(device, *args, **kwargs))
-            except Exception as e:
-                results.append(DeviceSet.DeviceError(device, e))
-        return results
-
-    async def apply_concurrent(self,
-                               async_method: Callable[..., Awaitable[Any]],
-                               *args: Any,
-                               max_concurrent: Optional[int] = None,
-                               **kargs: Any
-                               ) -> List[Any]:
-        semaphore = asyncio.Semaphore(value=max_concurrent or len(self._devices))
-
-        async def limited_async_method(device: Device) -> Any:
-            await semaphore.acquire()
-            try:
-                return await async_method(device, *args, **kargs)
-            finally:
-                semaphore.release()
-
-        result: List[Any] = await asyncio.gather(*[limited_async_method(device) for device in self._devices],
-                                                 return_exceptions=True)
-        return result
-
     ################
     # Leased devices
     ################
@@ -1029,3 +963,69 @@ class DeviceSet:
                 return object.__getattribute__(self, item)
 
         return LeasedDevice
+
+class RemoteDeviceBased(object):
+    """
+    Classes that are based on the context of a remote device
+
+    :param device: which device is associated with this instance
+    """
+    def __init__(self, device: Device) -> None:
+        self._device = device
+
+    @property
+    def device(self) -> Device:
+        """
+        :return: the device associated with this instance
+        """
+        return self._device
+
+
+class DeviceSet:
+
+    class DeviceError(Exception):
+
+        def __init__(self, device: Device, root: Exception):
+            self._root_exception = root
+            self._device = device
+
+    def __init__(self, devices: Iterable[Device]):
+        self._devices = list(devices)
+        self._blacklisted: List[Device] = []
+
+    @property
+    def devices(self) -> List[Device]:
+        return self._devices
+
+    def blacklist(self, device: Device) -> None:
+        if device in self._devices:
+            self._devices.remove(device)
+            self._blacklisted.append(device)
+
+    def apply(self, method: Callable[..., Any], *args: Any, **kwargs: Any) -> List[Any]:
+        results = []
+        for device in self._devices:
+            try:
+                results.append(method(device, *args, **kwargs))
+            except Exception as e:
+                results.append(DeviceSet.DeviceError(device, e))
+        return results
+
+    async def apply_concurrent(self,
+                               async_method: Callable[..., Awaitable[Any]],
+                               *args: Any,
+                               max_concurrent: Optional[int] = None,
+                               **kargs: Any
+                               ) -> List[Any]:
+        semaphore = asyncio.Semaphore(value=max_concurrent or len(self._devices))
+
+        async def limited_async_method(device: Device) -> Any:
+            await semaphore.acquire()
+            try:
+                return await async_method(device, *args, **kargs)
+            finally:
+                semaphore.release()
+
+        result: List[Any] = await asyncio.gather(*[limited_async_method(device) for device in self._devices],
+                                                 return_exceptions=True)
+        return result
