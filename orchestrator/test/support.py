@@ -109,9 +109,10 @@ def compile_all() -> Tuple[str, str]:
     support_test_app_q = Queue()
     gradle_build(("assemble", None),
                  ("assembleAndroidTest", support_test_app_q),
-                 ("assembleDebug", support_app_q)
+                 ("assembleDebug", support_app_q),
+                 ("assembleDebug", support_service_q)
                  )
-    return support_app_q, support_test_app_q
+    return support_app_q, support_test_app_q, support_service_q
 
 
 def uninstall_apk(apk, device):

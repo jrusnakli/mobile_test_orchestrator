@@ -153,6 +153,8 @@ def support_app():
         raise Exception("Failed to build support app")
     return support_app
 
+@pytest.fixture(scope='session')
+    return TestAppManager.service_app()
 
 @pytest.fixture
 def fake_sdk(mp_tmp_dir_factory: TmpDirFactory):

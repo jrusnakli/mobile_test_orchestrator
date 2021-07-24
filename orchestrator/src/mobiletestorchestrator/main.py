@@ -6,6 +6,7 @@ import os
 from types import TracebackType
 from typing import AsyncIterator, Dict, Iterator, List, Optional, Tuple, Type, Union, Any
 
+from . import _async_iter_adapter
 from .worker import TestSuite
 from .testprep import EspressoTestSetup
 from .device import Device
@@ -20,12 +21,6 @@ log = logging.getLogger(__name__)
 if sys.platform == 'win32':
     loop = asyncio.ProactorEventLoop()
     asyncio.set_event_loop(loop)
-
-
-async def _async_iter_adapter(iter: Iterator[TestSuite]) -> AsyncIterator[TestSuite]:
-    for item in iter:
-        yield item
-        await asyncio.sleep(0)
 
 
 class AndroidTestOrchestrator:

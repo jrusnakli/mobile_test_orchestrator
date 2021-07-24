@@ -6,12 +6,12 @@ from dataclasses import dataclass, field
 
 from typing import Any, AsyncIterator, List, Optional, Dict, Tuple
 
-from mobiletestorchestrator import TestApplication
+from mobiletestorchestrator.application import TestApplicationAsync
 from .device import Device
 from .testprep import EspressoTestSetup
 from .reporting import TestExecutionListener
-from .devicestorage import DeviceStorage
-from .devicelog import DeviceLog
+from .device_storage import DeviceStorageAsync
+from .device_log import DeviceLog
 from .parsing import LogcatTagDemuxer
 from .parsing import InstrumentationOutputParser, LineParser
 from .timing import Timer
@@ -84,10 +84,10 @@ class Worker:
         except Exception as e:
             log.error("Exception on logcat processing, aborting: \n%s" % str(e))
 
-    async def _loop_over_tests(self, test_app: TestApplication, under_orchestration: bool, test_timeout: Optional[float])\
+    async def _loop_over_tests(self, test_app: TestApplicationAsync, under_orchestration: bool, test_timeout: Optional[float])\
             -> None:
         log.info("Running tests...")
-        device_storage = DeviceStorage(self._device)
+        device_storage = DeviceStorageAsync(self._device)
         async for test_run in self._tests:
             self._signal_listeners("test_suite_started", test_run.name)
             # chain the listeners to the parser of the "adb instrument" command,
@@ -101,13 +101,13 @@ class Worker:
                 try:
                     # push test vectors, if any, to device
                     for local_path, remote_path in test_run.uploadables:
-                        device_storage.push(local_path=local_path, remote_path=remote_path)
+                        await device_storage.push(local_path=local_path, remote_path=remote_path)
                     # run tests on the device, and parse output
                     test_args: List[str] = []
                     for key, value in test_run.test_parameters.items():
                         test_args += ["-e", key, value]
                     run_future = test_app.run_orchestrated(*test_args) if under_orchestration else \
-                        test_app.run(*test_args)
+                        await test_app.run(*test_args)
                     async with run_future as proc:
                         async for line in proc.output(unresponsive_timeout=test_timeout):
                             instrumentation_parser.parse_line(line)
@@ -119,8 +119,8 @@ class Worker:
                     # cleanup
                     for _, remote_path in test_run.uploadables:
                         try:
-                            device_storage.remove(remote_path, recursive=True)
-                        except Exception:
+                            await device_storage.remove(remote_path, recursive=True)
+                        except Device.CommandExecutionFailure:
                             log.error("Failed to remove temporary test vector %s from device %s", remote_path,
                                       self._device.device_id)
                     failure_msg = instrumentation_parser.failure_message()

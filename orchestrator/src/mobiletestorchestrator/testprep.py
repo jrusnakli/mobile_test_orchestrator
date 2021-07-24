@@ -1,134 +1,169 @@
-import asyncio
 import os
 import logging
-import time
-from contextlib import suppress
+from contextlib import suppress, asynccontextmanager
+from dataclasses import dataclass, field
 
-from typing import Dict, List, Optional, Type, Tuple, Union
-from types import TracebackType
-from mobiletestorchestrator import Device, DeviceSet, DeviceStorage
-from mobiletestorchestrator.application import Application, TestApplication
+from typing import Dict, List, Optional, Tuple, FrozenSet, AsyncIterator, Any
+from mobiletestorchestrator.device import Device
+from mobiletestorchestrator.device_networking import DeviceConnectivityAsync
+from mobiletestorchestrator.device_storage import DeviceStorageAsync
+from mobiletestorchestrator.application import TestApplication, ApplicationAsync, TestApplicationAsync
 
-log = logging.getLogger()
+log = logging.getLogger(__name__)
 
 
-class DevicePreparation:
+@dataclass(frozen=True)
+class DeviceSetup:
     """
-     Class used to prepare a device for test execution, including installing app, configuring settings/properties, etc.
+    Class used to prepare a device for test execution, including installing app, configuring settings/properties, etc.
+    The API provides a way to setup the configuration that will later be applied by the client across one or many
+    devices.  The client calls 'apply' as a context manager to apply the configuration to a fiven device, ensuring
+    restoration of original settings and properties upon exit
 
-     Typically used as a context manager that will then automatically call cleanup() at exit.  The class provides
-     a list of features to setup and configure a device before test execution and teardown afterwards.
-     This includes:
-     * Ability to configure settings and system properties of the device (restored to original values on exit)
-     * Ability to upload test vectors to external storage
-     * Ability to verify network connection to a resource
-     """
+    Preferably, use the Builder inner class to construct this
+    """
 
-    def __init__(self, devices: Union[Device, DeviceSet]):
+    """local/remote ports to be configured for reverse-forwarding"""
+    reverse_forwarded_ports: FrozenSet[Tuple[int, int]]
+    """local/remote ports to be configured for fowrarding"""
+    forwarded_ports: FrozenSet[Tuple[int, int]]
+    """requested Android settings to be changed on device for duration of testing"""
+    requested_settings: FrozenSet[Tuple[str, str]]
+    """requested Android properties to be changed on device for duration of testing"""
+    requested_properties: FrozenSet[Tuple[str, str]]
+    """Any domains to verify network connection to (NOTE: uses ping from the device)"""
+    verify_network_domains: FrozenSet[Tuple[str, int, int]]
+
+    class Builder:
         """
-        :param devices:  device or devices to install and run test app on
+        Convenience class used to build a DevicePreparation instance
         """
-        self._devices: DeviceSet = DeviceSet([devices]) if isinstance(devices, Device) else devices
-        self._restoration_settings: List[Dict[Tuple[str, str], Optional[str]]] = [{} for _ in self._devices.devices]
-        self._restoration_properties: List[Dict[str, Optional[str]]] = [{} for _ in self._devices.devices]
-        self._reverse_forwarded_ports: List[int] = []
-        self._forwarded_ports: List[int] = []
+        def __init__(self):
+            self._reverse_forwarded_ports: Dict[int, int] = {}
+            self._forwarded_ports: Dict[int, int] = {}
+            self._requested_settings: Dict[str, str] = {}
+            self._requested_properties: Dict[str, str] = {}
+            self._verify_network_domains: List[Tuple[str, int, int]] = []
 
-    def configure_devices(self, settings: Optional[Dict[str, str]] = None,
-                          properties: Optional[Dict[str, str]] = None) -> None:
-        if settings:
-            for setting, value in settings.items():
+        def configure_settings(self,
+                               settings: Optional[Dict[str, str]] = None,
+                               properties: Optional[Dict[str, str]] = None) -> "DeviceSetup.Builder":
+            """
+            Configure settings and properties of the device
+
+            :param settings: Android device setting key/value
+            :param properties: Android property setting of key (in form of namespace:key) and value pairs
+            :return: this instance
+            """
+            self._requested_settings = settings or {}
+            self._requested_properties = properties or {}
+            return self
+
+        def verify_network_connection(self, domain: str, count: int = 10,
+                                      acceptable_loss: int = 3) -> "DeviceSetup.Builder":
+            """
+            Verify connection to given domain is active.
+
+            :param domain: address to test connection to
+            :param count: number of packets to test
+            :param acceptable_loss: allowed number of packets to be dropped
+
+            :raises: IOError on failure to successfully ping given number of packets
+            """
+            self._verify_network_domains.append((domain, count, acceptable_loss))
+            return self
+
+        def reverse_port_forward(self, device_port: int, local_port: int) -> "DeviceSetup.Builder":
+            """
+            reverse forward traffic on remote port to local port
+
+            :param device_port: remote device port to forward
+            :param local_port: port to forward to
+            """
+            if device_port in self._reverse_forwarded_ports:
+                raise Exception("Attempt to reverse-forward and already reverse-forwarded port")
+            self._reverse_forwarded_ports[device_port] = local_port
+            return self
+
+        def port_forward(self, local_port: int, device_port: int) -> "DeviceSetup.Builder":
+            """
+            forward traffic from local port to remote device port
+
+            :param local_port: port to forward from
+            :param device_port: port to forward to
+            """
+            if device_port in self._forwarded_ports:
+                raise Exception("Attempt to forward to same local port")
+            self._forwarded_ports[device_port] = local_port
+            return self
+
+        def resolve(self) -> "DeviceSetup":
+            """
+            resolve this Builder into a (frozen) DevicePreparation instance
+            :return: (frozen) DevicePreparation instance
+            """
+            # type checking gets type of items() wrong (as int instead of Tuple[int, int])
+            # noinspection PyTypeChecker
+            return DeviceSetup(reverse_forwarded_ports=frozenset(self._reverse_forwarded_ports.items()),
+                               forwarded_ports=frozenset(self._forwarded_ports.items()),
+                               requested_settings=frozenset(self._requested_settings.items()),
+                               requested_properties=frozenset(self._requested_properties.items()),
+                               verify_network_domains=frozenset(self._verify_network_domains))
+
+    @asynccontextmanager
+    async def apply(self, device: Device) -> Any:
+        """
+        Apply requested settings/configuration to the given device
+        :param device: device to apply chnages to
+        """
+        restoration_settings: Dict[Tuple[str, str], Optional[str]] = {}
+        restoration_properties: Dict[str, Optional[str]] = {}
+        dev_connectivity = DeviceConnectivityAsync(device)
+        for domain, count, acceptable_loss in self.verify_network_domains:
+            lost_packets = await dev_connectivity.check_network_connection(domain, count)
+            if lost_packets > acceptable_loss:
+                raise IOError(f"Connection to {domain} for device {device.device_id} failed")
+        if self.requested_settings:
+            for setting, value in self.requested_settings:
                 ns, key = setting.split(':')
-                results = self._devices.apply(Device.set_device_setting, ns, key, value)
-                for index, result in enumerate(results):
-                    self._restoration_settings[index][(ns, key)] = result
-        if properties:
-            for property, value in properties.items():
-                results = self._devices.apply(Device.set_system_property, property, value)
-                for index, result in enumerate(results):
-                    self._restoration_properties[index][property] = result
+                result = device.set_device_setting(ns, key, value)
+                restoration_settings[(ns, key)] = result
+        if self.requested_properties:
+            for property_, value in self.requested_properties:
+                result = device.set_system_property(property_, value)
+                restoration_properties[property_] = result
+        for device_port, local_port in self.reverse_forwarded_ports:
+            await dev_connectivity.reverse_port_forward(device_port=device_port, local_port=local_port)
+        for device_port, local_port in self.forwarded_ports:
+            await dev_connectivity.port_forward(local_port=local_port, device_port=device_port)
 
-    def verify_network_connection(self, domain: str, count: int = 10, acceptable_loss: int = 3) -> None:
-        """
-        Verify connection to given domain is active.
+        yield self
 
-        :param domain: address to test connection to
-        :param count: number of packets to test
-        :raises: IOError on failure to successfully ping given number of packets
-        """
-        async def run(device: Device) -> Tuple[Device, int]:
-            lost_packet_count = device.check_network_connection(domain, count)
-            return device, lost_packet_count
-
-        async def gather() -> List[Tuple[Device, int]]:
-            return await self._devices.apply_concurrent(run)
-
-        async def timer() -> List[Tuple[Device, int]]:
-            return await asyncio.wait_for(gather(), timeout=60)
-
-        results = asyncio.run(timer())
-        if all([lost_packets > acceptable_loss for (_, lost_packets) in results]):
-            raise IOError(
-                f"Connection to {domain} failed")
-
-    def reverse_port_forward(self, device_port: int, local_port: int) -> None:
-        """
-        reverse forward traffic on remote port to local port
-
-        :param device_port: remote device port to forward
-        :param local_port: port to forward to
-        """
-        for device in self._devices.devices:
-            device.reverse_port_forward(device_port=device_port, local_port=local_port)
-        self._reverse_forwarded_ports.append(device_port)
-
-    def port_forward(self, local_port: int, device_port: int) -> None:
-        """
-        forward traffic from local port to remote device port
-
-        :param local_port: port to forward from
-        :param device_port: port to forward to
-        """
-        for device in self._devices.devices:
-            device.port_forward(local_port=local_port, device_port=device_port)
-        self._forwarded_ports.append(device_port)
-
-    def cleanup(self) -> None:
-        """
-        Remove all pushed files and uninstall all apps installed by this test prep
-        """
-        for index, restoration_settings in enumerate(self._restoration_settings):
-            for ns, key in restoration_settings:
-                with suppress(Exception):
-                    self._devices.devices[index].set_device_setting(ns, key, restoration_settings[(ns, key)] or '\"\"')
-        for index, restoration_properties in enumerate(self._restoration_properties):
-            for prop in restoration_properties:
-                with suppress(Exception):
-                    self._devices.devices[index].set_system_property(prop, restoration_properties[prop] or '\"\"')
-        for port in self._forwarded_ports:
-            for device in self._devices.devices:
-                try:
-                    device.remove_port_forward(port)
-                except Exception as e:
-                    log.error(f"Failed to remove port forwarding for device {device.device_id} on port {port}: {str(e)}")
-        for port in self._reverse_forwarded_ports:
-            for device in self._devices.devices:
-                try:
-                    device.remove_reverse_port_forward(port)
-                except Exception as e:
-                    log.error(f"Failed to remove reverse port forwarding for device {device.device_id}:"
-                              + f"on port {port}: {str(e)}")
-
-    def __enter__(self) -> "DevicePreparation":
-        return self
-
-    def __exit__(self, exc_type: Optional[Type[BaseException]],
-                 exc_value: Optional[BaseException],
-                 traceback: Optional[TracebackType]) -> None:
-        self.cleanup()
+        #####
+        # cleanup/restoration:
+        #####
+        for (ns, key), setting in restoration_settings.items():  # type: ignore
+            with suppress(Exception):
+                device.set_device_setting(ns, key, setting or '\"\"')
+        for prop in restoration_properties:
+            with suppress(Exception):
+                device.set_system_property(prop, restoration_properties[prop] or '\"\"')
+        for device_port, _ in self.reverse_forwarded_ports:
+            try:
+                await dev_connectivity.remove_reverse_port_forward(device_port)
+            except Exception as e:
+                log.error(f"Failed to remove reverse port forwarding for device {device.device_id}" +
+                          f"on port {device_port}: {str(e)}")
+        for device_port, _ in self.forwarded_ports:
+            try:
+                await dev_connectivity.remove_port_forward(device_port)
+            except Exception as e:
+                log.error(f"Failed to remove port forwarding for device {device.device_id}:"
+                          + f"on port {device_port}: {str(e)}")
 
 
-class EspressoTestPreparation:
+@dataclass(frozen=True)
+class EspressoTestSetup(DeviceSetup):
     """
     Class used to prepare a device for test execution, including installing app, configuring settings/properties, etc.
 
@@ -139,151 +174,135 @@ class EspressoTestPreparation:
     * Ability to grant all user permissions (to prevent unwanted pop-ups) upon install
     * Ability to configure settings and system properties of the device (restored to original values on exit)
     * Ability to upload test vectors to external storage
-    * Ability to verify network connection to a resource
     """
 
-    def __init__(self, devices: Union[Device, DeviceSet], path_to_apk: str, path_to_test_apk: str,
-                 grant_all_user_permissions: bool = True):
+    """path to target application's apk bundle"""
+    path_to_apk: str
+    """path to test application's apk bundle"""
+    path_to_test_apk: str
+    """paths to foreign apk bundles to install in additions to requiest app/test app bundles"""
+    paths_to_foreign_apks: FrozenSet[str] = field(default_factory=frozenset)
+    """Paths to files to upload, or directories whose contents will be mimicked in upload to external storage"""
+    uploadables: FrozenSet[str] = field(default_factory=frozenset)
+    """Whether to grant all user permissions on start of tests"""
+    grant_all_user_permissions: bool = True
+
+    class Builder(DeviceSetup.Builder):
         """
-
-        :param devices:  single Device or DeviceSet to install and run test app on
-        :param path_to_apk: Path to apk bundle for target app
-        :param path_to_test_apk: Path to apk bundle for test app
-        :param grant_all_user_permissions: If True, grant all user permissions defined in the manifest of the app and
-          test app (prevents pop-ups from occurring on first request for a user permission that can interfere
-          with tests)
+        Convenience class for building a (frozen) EspressoSetup instance
         """
-        self._devices = DeviceSet([devices]) if isinstance(devices, Device) else devices
-        self._data_files_paths: List[str] = []
+        def __init__(self, path_to_apk: str, path_to_test_apk: str, grant_all_user_permissions: bool = True):
+            """
 
-        async def install_apk(device: Device) -> Optional[Application]:
-            try:
-                return await Application.from_apk_async(path_to_apk, device=device)
-            except Exception:
-                self._devices.blacklist(device)
-                return None
+            :param path_to_apk: Path to apk bundle for target app
+            :param path_to_test_apk: Path to apk bundle for test app
+            :param grant_all_user_permissions: If True, grant all user permissions defined in the manifest of the app &
+              test app (prevents pop-ups from occurring on first request for a user permission that can interfere
+              with tests)
+            """
+            super().__init__()
+            self._path_to_apk = path_to_apk
+            self._path_to_test_apk = path_to_test_apk
+            self._grant_all_user_permissions = grant_all_user_permissions
 
-        async def gather_apk() -> List[Application]:
-            return await self._devices.apply_concurrent(install_apk, max_concurrent=3)
+            self._paths_to_foreign_apks: List[str] = []
+            self._uploadables: List[str] = []
 
-        async def timer_apk() -> List[Application]:
-            return await asyncio.wait_for(gather_apk(), timeout=5*60)
+        def upload_test_vectors(self, root_path: str) -> "EspressoTestSetup.Builder":
+            """
+            Upload test vectors to external storage on device for use by tests
 
-        self._installed = [app for app in asyncio.run(timer_apk()) if app is not None]
-        if not self._installed:
-            raise Exception("Failed to install app on all devices.  Giving up")
+            :param root_path: local path that is the root where data files reside;  directory structure will be \
+                mimicked below this level
+            """
+            if not os.path.isdir(root_path):
+                raise IOError(f"Given path {root_path} to upload to device does exist or is not a directory")
+            self._uploadables.append(root_path)
+            return self
 
-        async def install_test_apk(device: Device) -> Optional[TestApplication]:
-            try:
-                return await TestApplication.from_apk_async(path_to_test_apk, device=device)
-            except Exception:
-                self._devices.blacklist(device)
-                return None
+        def add_foreign_apks(self, paths_to_apks: List[str]) -> "EspressoTestSetup.Builder":
+            """
+            :param paths_to_apks:  List of paths to other apks to install
+            """
+            self._paths_to_foreign_apks = paths_to_apks
+            return self
 
-        async def gather_test_apk() -> List[TestApplication]:
-            return await self._devices.apply_concurrent(install_test_apk, max_concurrent=3)
+        def resolve(self) -> "EspressoTestSetup":
+            # noinspection PyTypeChecker
+            return EspressoTestSetup(
+                reverse_forwarded_ports=frozenset(self._reverse_forwarded_ports.items()),
+                forwarded_ports=frozenset(self._forwarded_ports.items()),
+                requested_settings=frozenset(self._requested_settings.items()),
+                requested_properties=frozenset(self._requested_properties.items()),
+                verify_network_domains=frozenset(self._verify_network_domains),
+                path_to_apk=self._path_to_apk,
+                path_to_test_apk=self._path_to_test_apk,
+                paths_to_foreign_apks=frozenset(self._paths_to_foreign_apks),
+                uploadables=frozenset(self._uploadables),
+                grant_all_user_permissions=self._grant_all_user_permissions
+            )
 
-        async def timer_test_apk() -> List[TestApplication]:
-            return await asyncio.wait_for(gather_test_apk(), timeout=5*60)
+    @asynccontextmanager
+    async def apply(self, device: Device) -> AsyncIterator[TestApplication]:
+        installed: List[ApplicationAsync] = []
+        data_files_paths: Dict[Device, List[str]] = {}
+        try:
+            for path in self.uploadables:
+                data_files_paths[device] = await self._upload(device, path)
 
-        self._test_apps = [test_app for test_app in asyncio.run(timer_test_apk()) if test_app is not None]
-        if not self._test_apps:
-            raise Exception("Failed to install test app on all devices.  Giving up")
+            async with super().apply(device):
+                installed = await self._install_all(device)
+                yield installed[0]  # type: ignore
+        except Exception as e:
+            log.exception(e)
+            raise
+        finally:
+            # cleanup:
+            if data_files_paths:
+                for device in data_files_paths:
+                    storage = DeviceStorageAsync(device)
+                    with suppress(Exception):
+                        for remote_location in data_files_paths[device]:
+                            await storage.remove(remote_location)
+            for app in installed:
+                try:
+                    await app.uninstall()
+                except Device.CommandExecutionFailure:
+                    log.error("Failed to uninstall app %s", app.package_name)
 
-        self._installed += self._test_apps
-        self._storage = [DeviceStorage(device) for device in self._devices.devices]
-        if grant_all_user_permissions:
-            for test_app in self._test_apps:
+    @staticmethod
+    async def _upload(dev: Device, root_path: str) -> List[str]:
+        data_files_paths: List[str] = []
+        storage = DeviceStorageAsync(dev)
+        ext_storage = dev.external_storage_location
+        for root, _, files in os.walk(root_path, topdown=True):
+            if not files:
+                continue
+            basedir = os.path.relpath(root, root_path) + "/"
+            with suppress(Exception):
+                await storage.make_dir("/".join([ext_storage, basedir]))
+            for filename in files:
+                remote_location = "/".join([ext_storage, basedir, filename])
+                await storage.push(os.path.join(root, filename), remote_location, timeout=5*60)
+                data_files_paths.append(remote_location)
+        return data_files_paths
+
+    async def _install_all(self, dev: Device) -> List[ApplicationAsync]:
+        installed: List[ApplicationAsync] = []
+        foreign_apps: List[ApplicationAsync] = []
+        try:
+            test_app = await TestApplicationAsync.from_apk(self.path_to_test_apk, dev)
+            installed.append(test_app)
+            target_app = await ApplicationAsync.from_apk(self.path_to_apk, dev)
+            installed.append(target_app)
+            if self.grant_all_user_permissions:
+                target_app.grant_permissions()
                 test_app.grant_permissions()
-
-    @property
-    def test_apps(self) -> List[TestApplication]:
-        return self._test_apps
-
-    def __enter__(self) -> "EspressoTestPreparation":
-        return self
-
-    def __exit__(self, exc_type: Optional[Type[BaseException]],
-                 exc_value: Optional[BaseException],
-                 traceback: Optional[TracebackType]) -> None:
-        self.cleanup()
-
-    def upload_test_vectors(self, root_path: str) -> float:
-        """
-        Upload test vectors to external storage on device for use by tests
-
-        :param root_path: local path that is the root where data files reside;  directory structure will be mimiced below
-            this level
-
-        :return: time in milliseconds it took to complete
-        """
-        start = time.time()
-
-        async def upload(device: Device) -> None:
-            storage = DeviceStorage(device)
-            basedir = os.path.basename(os.path.abspath(root_path))
-            ext_storage = device.external_storage_location
-            basedir = '/'.join([ext_storage, basedir])
-            storage.make_dir(basedir)
-            for root, dir_, files in os.walk(root_path, topdown=True):
-                if not os.path.isdir(root_path):
-                    raise IOError(f"Given path {root_path} to upload to device does exist or is not a directory")
-                for filename in files:
-                    remote_location = "/".join([basedir, filename])
-                    await storage.push_async(os.path.join(root, filename), remote_location, timeout=5*60)
-                    self._data_files_paths.append(remote_location)
-
-        async def gather() -> None:
-            await self._devices.apply_concurrent(upload)
-
-        asyncio.run(gather())
-        milliseconds = (time.time() - start) * 1000
-        return milliseconds
-
-    def setup_foreign_apps(self, paths_to_foreign_apks: List[str]) -> List[Application]:
-        """
-        Install other apps (outside of test app and app under test) in support of testing.
-        A device will be blacklisted and unused in this set of devices if is fails to install
-
-        :param paths_to_foreign_apks: string list of paths to the apks to be installed
-
-        :raises Exception: if any apk fails to install across all devices
-        """
-        async def install(device: Device, path_to_apk: str) -> Optional[Application]:
-            try:
-                return await Application.from_apk_async(path_to_apk, device=device)
-            except Exception:
-                self._devices.blacklist(device)
-                return None
-
-        async def gather() -> List[Application]:
-            installed: List[Application] = []
-            for path in paths_to_foreign_apks:
-                apps = await self._devices.apply_concurrent(install, path)
-                if not apps:
-                    raise Exception("Failed to install foreign apk on any device.  Giving up")
-                installed += [app for app in apps if app is not None]
-                self._installed += [app for app in apps if app is not None]
-            return installed
-
-        async def timer() -> List[Application]:
-            return await asyncio.wait_for(gather(), timeout=5*60*len(paths_to_foreign_apks))
-
-        return asyncio.run(timer())
-
-    def cleanup(self) -> None:
-        """
-        Remove all pushed files and uninstall all apps installed by this test prep
-        """
-        if self._data_files_paths:
-            for device in self._devices.devices:
-                storage = DeviceStorage(device)
+            for foreign_app_location in self.paths_to_foreign_apks:
+                foreign_apps.append(await ApplicationAsync.from_apk(foreign_app_location, dev))
+            return installed + foreign_apps
+        except Exception:
+            for app in installed + foreign_apps:
                 with suppress(Exception):
-                    for remote_location in self._data_files_paths:
-                        storage.remove(remote_location)
-
-        for app in self._installed:
-            try:
-                app.uninstall()
-            except Exception:
-                log.error("Failed to uninstall app %s", app.package_name)
+                    await app.uninstall()
+            raise

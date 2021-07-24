@@ -11,7 +11,7 @@ from .device import (
     RemoteDeviceBased,
 )
 
-__all__ = ["DeviceStorage"]
+__all__ = ["DeviceStorage", "DeviceStorageAsync"]
 
 
 log = logging.getLogger(__name__)
@@ -154,7 +154,8 @@ class DeviceStorageAsync(RemoteDeviceBased):
             async for line in proc.output(unresponsive_timeout=timeout):
                 yield line
 
-    async def push(self, local_path: str, remote_path: str) -> None:
+    async def push(self, local_path: str, remote_path: str,
+                   timeout: Optional[float]=Device.TIMEOUT_LONG_ADB_CMD) -> None:
         """
         Push a local file to the given location on the remote device.
         NOTE: pushing to an app's data directory is not possible and leads to
@@ -162,15 +163,17 @@ class DeviceStorageAsync(RemoteDeviceBased):
 
         :param local_path: path to local host file
         :param remote_path: path to place file on the remote device
+        :param timeout: raise timeout error if too long to eecute
+
         :raises FileNotFoundError: if provide local path does not exist and is a file
-        :raises Exception: if command to push file failed
         :raises `Device.CommandExecutionFailure`: if command to push file failed
+        :raises asynciot.TimeoutError: if timeout specified and command execution exceeds the timeout
         """
         # NOTE: pushing to an app's data directory is not possible and leads to
         # a permission-denied response even when using "run-as"
         if not os.path.isfile(local_path):
             raise FileNotFoundError("No such file found: %s" % local_path)
-        await self.device.execute_remote_cmd_async('push', local_path, remote_path)
+        await self.device.execute_remote_cmd_async('push', local_path, remote_path, timeout=timeout)
 
     async def pull(self, remote_path: str, local_path: str, run_as: Optional[str] = None) -> None:
         """

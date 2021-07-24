@@ -22,7 +22,8 @@ _TApp = TypeVar('_TApp', bound='Application')
 # noinspection PyTypeChecker
 _TTestApp = TypeVar('_TTestApp', bound='TestApplication')
 
-__all__ = ["Application", "TestApplication", "ServiceApplication"]
+__all__ = ["Application", "TestApplication", "ServiceApplication",
+           "ApplicationAsync", "TestApplicationAsync", "ServiceApplicationAsync"]
 
 
 class ApplicationBase(RemoteDeviceBased):
@@ -733,6 +734,37 @@ class TestApplication(Application):
         return self.device.monitor_remote_cmd("shell", "am", "instrument", "-w", *options, "-r",
                                               "/".join([self._package_name, self._runner]))
 
+    def run_orchestrated(self, *options: str) -> Device.AsyncProcessContext:
+        """
+        Run an instrumentation test package via Google's test orchestrator that
+
+        :param options: arguments to pass to instrument command
+        :returns: coroutine wrapping an asyncio context manager for iterating over lines
+        :raises: Device.CommandExecutionFailureException with non-zero return code information on non-zero exit status
+        :raises: Exception if supporting apks for orchestrated runs are not installed
+
+        >>> app = TestApplication.from_apk("some.apk", device)
+        ...     async with app.run_orchestrated() as proc:
+        ...         async  for line in proc.output():
+        ...             print(line)
+
+        """
+        packages = self.device.list_installed_packages()
+        if not {'android.support.test.services', 'android.support.test.orchestrator'} < set(packages):
+            raise Exception("Must install both test-services-<version>.apk and orchestrator-<version>.apk to run "
+                            + "under Google's Android Test Orchestrator")
+        if self._target_application.package_name not in self.device.list_installed_packages():
+            raise Exception("App under test, as designated by this test app's manifest, is not installed!")
+        options_text = " ".join(['"%s"' % arg if not arg.startswith('"') and not arg.startswith("-") else arg
+                                 for arg in options])
+        target_instrmentation = '/'.join([self._package_name, self._runner])
+        return self.device.monitor_remote_cmd(
+            "shell",
+            "CLASSPATH=$(pm path android.support.test.services) "
+            + "app_process / android.support.test.services.shellexecutor.ShellMain am instrument "
+            + f"-r -w -e -v -targetInstrumentation {target_instrmentation} {options_text} "
+            + "android.support.test.orchestrator/android.support.test.orchestrator.AndroidTestOrchestrator")
+
     @classmethod
     def from_apk(cls: Type[_TTestApp], apk_path: str, device: Device, as_upgrade: bool = False,
                  as_test_app: bool = False,
@@ -826,6 +858,37 @@ class TestApplicationAsync(ApplicationAsync):
         options = tuple('"%s"' % arg if not arg.startswith('"') else arg for arg in options)
         return self.device.monitor_remote_cmd("shell", "am", "instrument", "-w", *options, "-r",
                                               "/".join([self._package_name, self._runner]))
+
+    def run_orchestrated(self, *options: str) -> Device.AsyncProcessContext:
+        """
+        Run an instrumentation test package via Google's test orchestrator that
+
+        :param options: arguments to pass to instrument command
+        :returns: coroutine wrapping an asyncio context manager for iterating over lines
+        :raises: Device.CommandExecutionFailureException with non-zero return code information on non-zero exit status
+        :raises: Exception if supporting apks for orchestrated runs are not installed
+
+        >>> app = TestApplicationAsync.from_apk("some.apk", device)
+        ...     async with app.run_orchestrated() as proc:
+        ...         async  for line in proc.output():
+        ...             print(line)
+
+        """
+        packages = self.device.list_installed_packages()
+        if not {'android.support.test.services', 'android.support.test.orchestrator'} < set(packages):
+            raise Exception("Must install both test-services-<version>.apk and orchestrator-<version>.apk to run "
+                            + "under Google's Android Test Orchestrator")
+        if self._target_application.package_name not in self.device.list_installed_packages():
+            raise Exception("App under test, as designated by this test app's manifest, is not installed!")
+        options_text = " ".join(['"%s"' % arg if not arg.startswith('"') and not arg.startswith("-") else arg
+                                 for arg in options])
+        target_instrmentation = '/'.join([self._package_name, self._runner])
+        return self.device.monitor_remote_cmd(
+            "shell",
+            "CLASSPATH=$(pm path android.support.test.services) "
+            + "app_process / android.support.test.services.shellexecutor.ShellMain am instrument "
+            + f"-r -w -e -v -targetInstrumentation {target_instrmentation} {options_text} "
+            + "android.support.test.orchestrator/android.support.test.orchestrator.AndroidTestOrchestrator")
 
     # noinspection PyMethodOverriding
     @classmethod
