@@ -1,4 +1,4 @@
-version: 2
+version: 2.1
 jobs:
   build:
     machine:
@@ -46,18 +46,6 @@ jobs:
       - run:
           name: Running tests
           command: |
-            /opt/android/sdk/tools/bin/sdkmanager "system-images;android-28;default;x86_64"
-            echo no | /opt/android/sdk/tools/bin/avdmanager create avd -n "MTO_emulator" -k "system-images;android-28;default;x86_64" -d "pixel_xl" --force --abi x86_64
-            mkdir -p ~/.android/avd/MTO_emulator.avd/snapshots/default_boot
-            touch ~/.android/avd/MTO_emulator.avd/snapshots/default_boot/ram.img
-            find ~/.android/avd
-            chmod gou+rwx ~/.android/avd/MTO_emulator.avd/snapshots
-            chmod gou+rwx ~/.android/avd/MTO_emulator.avd/snapshots/default_boot
-            chmod gou+rw ~/.android/avd/MTO_emulator.avd/snapshots/default_boot/ram.img
-            ls -ld ~/.android/avd/MTO_emulator.avd/snapshots
-            ls -ld ~/.android/avd/MTO_emulator.avd/snapshots/default_boot
-            ls -ld ~/.android/avd/MTO_emulator.avd/snapshots/default_boot/ram.img
-            echo no | /opt/android/sdk/tools/bin/avdmanager create avd -n "MTO_emulator2" -k "system-images;android-28;default;x86_64" -d "pixel_xl" --force --abi x86_64
             . venv/bin/activate
             cd orchestrator/test
             mkdir -p test-reports/tmp
