@@ -9,7 +9,7 @@ from mobiletestorchestrator.device import Device, RemoteDeviceBased
 
 class DeviceInteraction(RemoteDeviceBased):
     """
-    Provides API for equvialent of user-navigation along with related device queries
+    Provides API for equivalent of user-navigation along with related device queries
     """
 
     def go_home(self) -> None:
@@ -18,6 +18,7 @@ class DeviceInteraction(RemoteDeviceBased):
         """
         self.input("KEYCODE_HOME")
 
+    # noinspection SpellCheckingInspection
     def home_screen_active(self) -> bool:
         """
         :return: True if the home screen is currently in the foreground. Note that system pop-ups will result in this
@@ -56,12 +57,14 @@ class DeviceInteraction(RemoteDeviceBased):
         return bool(foreground_activity and foreground_activity.lower() == "com.sec.android.app.launcher")
 
     def input(self, subject: str, source: Optional[str] = None) -> None:
+        # noinspection SpellCheckingInspection
         """
-        Send event subject through given source
+                Send event subject through given source
 
-        :param subject: event to send
-        :param source: source of event, or None to default to "keyevent"
-        """
+                :param subject: event to send
+                :param source: source of event, or None to default to "keyevent"
+                """
+        # noinspection SpellCheckingInspection
         self.device.execute_remote_cmd("shell", "input", source or "keyevent", subject, timeout=Device.TIMEOUT_ADB_CMD)
 
     def is_screen_on(self) -> bool:
@@ -109,12 +112,13 @@ class DeviceInteraction(RemoteDeviceBased):
         """
         Toggle device's screen on/off
         """
+        # noinspection SpellCheckingInspection
         self._device.execute_remote_cmd("shell", "input", "keyevent", "KEYCODE_POWER", timeout=10)
 
 
-class DeviceInteractionAsync(RemoteDeviceBased):
+class AsyncDeviceInteraction(RemoteDeviceBased):
     """
-    Provides API for equvialent of user-navigation along with related device queries
+    Provides API for equivalent of user-navigation along with related device queries
     """
 
     async def go_home(self) -> None:
@@ -132,6 +136,7 @@ class DeviceInteractionAsync(RemoteDeviceBased):
         found_potential_stack_match = False
         stdout_lines = []
         async with self.device.monitor_remote_cmd("shell", "dumpsys", "activity", "activities") as proc:
+            # noinspection SpellCheckingInspection
             async for line in proc.output(unresponsive_timeout=self.device.TIMEOUT_ADB_CMD):
                 stdout_lines.append(line)
                 # Find lines that look like this:
@@ -161,12 +166,14 @@ class DeviceInteractionAsync(RemoteDeviceBased):
         return bool(foreground_activity and foreground_activity.lower() == "com.sec.android.app.launcher")
 
     async def input(self, subject: str, source: Optional[str] = None) -> None:
+        # noinspection SpellCheckingInspection
         """
         Send event subject through given source
 
         :param subject: event to send
         :param source: source of event, or None to default to "keyevent"
         """
+        # noinspection SpellCheckingInspection
         await self.device.execute_remote_cmd_async(
             "shell", "input", source or "keyevent", subject, timeout=Device.TIMEOUT_ADB_CMD)
 
@@ -212,4 +219,5 @@ class DeviceInteractionAsync(RemoteDeviceBased):
         """
         Toggle device's screen on/off
         """
+        # noinspection SpellCheckingInspection
         await self.device.execute_remote_cmd_async("shell", "input", "keyevent", "KEYCODE_POWER", timeout=10)

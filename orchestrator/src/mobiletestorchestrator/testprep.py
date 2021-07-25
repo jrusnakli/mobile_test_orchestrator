@@ -5,9 +5,9 @@ from dataclasses import dataclass, field
 
 from typing import Dict, List, Optional, Tuple, FrozenSet, AsyncIterator, Any
 from mobiletestorchestrator.device import Device
-from mobiletestorchestrator.device_networking import DeviceConnectivityAsync
-from mobiletestorchestrator.device_storage import DeviceStorageAsync
-from mobiletestorchestrator.application import TestApplication, ApplicationAsync, TestApplicationAsync
+from mobiletestorchestrator.device_networking import AsyncDeviceConnectivity
+from mobiletestorchestrator.device_storage import AsyncDeviceStorage
+from mobiletestorchestrator.application import TestApplication, AsyncApplication, AsyncTestApplication
 
 log = logging.getLogger(__name__)
 
@@ -118,7 +118,7 @@ class DeviceSetup:
         """
         restoration_settings: Dict[Tuple[str, str], Optional[str]] = {}
         restoration_properties: Dict[str, Optional[str]] = {}
-        dev_connectivity = DeviceConnectivityAsync(device)
+        dev_connectivity = AsyncDeviceConnectivity(device)
         for domain, count, acceptable_loss in self.verify_network_domains:
             lost_packets = await dev_connectivity.check_network_connection(domain, count)
             if lost_packets > acceptable_loss:
@@ -244,7 +244,7 @@ class EspressoTestSetup(DeviceSetup):
 
     @asynccontextmanager
     async def apply(self, device: Device) -> AsyncIterator[TestApplication]:
-        installed: List[ApplicationAsync] = []
+        installed: List[AsyncApplication] = []
         data_files_paths: Dict[Device, List[str]] = {}
         try:
             for path in self.uploadables:
@@ -260,7 +260,7 @@ class EspressoTestSetup(DeviceSetup):
             # cleanup:
             if data_files_paths:
                 for device in data_files_paths:
-                    storage = DeviceStorageAsync(device)
+                    storage = AsyncDeviceStorage(device)
                     with suppress(Exception):
                         for remote_location in data_files_paths[device]:
                             await storage.remove(remote_location)
@@ -273,7 +273,7 @@ class EspressoTestSetup(DeviceSetup):
     @staticmethod
     async def _upload(dev: Device, root_path: str) -> List[str]:
         data_files_paths: List[str] = []
-        storage = DeviceStorageAsync(dev)
+        storage = AsyncDeviceStorage(dev)
         ext_storage = dev.external_storage_location
         for root, _, files in os.walk(root_path, topdown=True):
             if not files:
@@ -287,19 +287,19 @@ class EspressoTestSetup(DeviceSetup):
                 data_files_paths.append(remote_location)
         return data_files_paths
 
-    async def _install_all(self, dev: Device) -> List[ApplicationAsync]:
-        installed: List[ApplicationAsync] = []
-        foreign_apps: List[ApplicationAsync] = []
+    async def _install_all(self, dev: Device) -> List[AsyncApplication]:
+        installed: List[AsyncApplication] = []
+        foreign_apps: List[AsyncApplication] = []
         try:
-            test_app = await TestApplicationAsync.from_apk(self.path_to_test_apk, dev)
+            test_app = await AsyncTestApplication.from_apk(self.path_to_test_apk, dev)
             installed.append(test_app)
-            target_app = await ApplicationAsync.from_apk(self.path_to_apk, dev)
+            target_app = await AsyncApplication.from_apk(self.path_to_apk, dev)
             installed.append(target_app)
             if self.grant_all_user_permissions:
                 target_app.grant_permissions()
                 test_app.grant_permissions()
             for foreign_app_location in self.paths_to_foreign_apks:
-                foreign_apps.append(await ApplicationAsync.from_apk(foreign_app_location, dev))
+                foreign_apps.append(await AsyncApplication.from_apk(foreign_app_location, dev))
             return installed + foreign_apps
         except Exception:
             for app in installed + foreign_apps:

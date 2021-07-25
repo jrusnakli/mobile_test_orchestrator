@@ -2,6 +2,7 @@
 This package contains the elements used to bootstrap the Android SDK's components
 """
 import glob
+import logging
 import os
 import shutil
 import stat
@@ -16,8 +17,12 @@ import mobiletestorchestrator
 try:
     from importlib.resources import files
 except:
+    # noinspection PyUnresolvedReferences
     from importlib_resources import files  # type: ignore
-import pytest_mproc
+
+
+log = logging.getLogger(str(Path(__file__).stem))
+log.setLevel(logging.ERROR)
 
 
 class SdkManager:
@@ -25,7 +30,7 @@ class SdkManager:
     SDK Manager interface for installing components of the Android SDK
 
     :param sdk_dir: Path to where the sdk either exists or is to be bootstrapped (if starting fresh)
-    :param boostrap: If True, bootstrap the sdk manager and avd manager from internal resources
+    :param bootstrap: If True, bootstrap the sdk manager and avd manager from internal resources
     """
 
     PROTOCOL_PREFIX = "sdkmanager"
@@ -44,7 +49,7 @@ class SdkManager:
             self._shell = False
         if bootstrap is True and not self._sdk_manager_path.exists():
             bootstrap_zip = files(mobiletestorchestrator).joinpath(os.path.join("resources", "sdkmanager",
-                                                                                 "bootstrap.zip"))
+                                                                                "bootstrap.zip"))
             with zipfile.ZipFile(bootstrap_zip) as zfile:
                 zfile.extractall(path=self._sdk_dir)
                 if self._sdk_dir.joinpath("android_sdk_bootstrap").exists():
@@ -70,7 +75,7 @@ class SdkManager:
         application = f"{application};{version}" if version else f"{application}"
         if not os.path.exists(self._sdk_manager_path):
             raise SystemError("Failed to properly install sdk manager for bootstrapping")
-        print(f"Downloading to {self._sdk_dir}\n  {self._sdk_manager_path} {application}")
+        log.debug(f"Downloading to {self._sdk_dir}\n  {self._sdk_manager_path} {application}")
         completed = subprocess.Popen([self._sdk_manager_path, application], stdout=subprocess.DEVNULL, bufsize=0,
                                      stderr=subprocess.PIPE, stdin=subprocess.PIPE,
                                      shell=self._shell)
@@ -111,7 +116,7 @@ class SdkManager:
         :param device_type: device type (as per 'avd_manager list')
         :param args: additional args to pass on create
         """
-        print(f">>>> Downloading system image ...{image}")
+        log.debug(f">>>> Downloading system image ...{image}")
         self.download_system_img(image)
         create_avd_cmd = [str(self._avd_manager_path), "create", "avd", "-n", avd_name, "-k", f"system-images;{image}",
                           "-d", device_type]

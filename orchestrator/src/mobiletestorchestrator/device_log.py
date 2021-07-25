@@ -1,9 +1,8 @@
 """
-The *devielog* package provides the API for streaming, capturing and manipulating the device log
+The *device_log* package provides the API for streaming, capturing and manipulating the device log
 """
 import os
 import subprocess
-from asyncio import AbstractEventLoop
 
 import logging
 from subprocess import Popen
@@ -16,7 +15,6 @@ from .parsing import LineParser
 from .device import Device, RemoteDeviceBased
 
 log = logging.getLogger(__file__)
-log.setLevel(logging.WARNING)
 
 __all__ = ["DeviceLog"]
 
@@ -94,8 +92,8 @@ class DeviceLog(RemoteDeviceBased):
         """
         clear device log on the device and start fresh
 
-        NOTE: Android has intermittent failures not clearing the main log. In particaular, this
-        operation seems somehsat asynchronous and can interfere or be interered with if other
+        NOTE: Android has intermittent failures not clearing the main log. In particular, this
+        operation seems somewhat asynchronous and can interfere or be interfered with if other
         logcat call are made in a short time window around this call.
         """
         self.device.execute_remote_cmd("logcat", "-b", buffer, "-c")
@@ -104,8 +102,8 @@ class DeviceLog(RemoteDeviceBased):
         """
         clear device log on the device and start fresh
 
-        NOTE: Android has intermittent failures not clearing the main log. In particaular, this
-        operation seems somehsat asynchronous and can interfere or be interered with if other
+        NOTE: Android has intermittent failures not clearing the main log. In particular, this
+        operation seems somewhat asynchronous and can interfere or be interfered with if other
         logcat call are made in a short time window around this call.
 
         :param buffer: type of buffer to clear
@@ -135,6 +133,7 @@ class DeviceLog(RemoteDeviceBased):
         return self.LogCapture(self.device, output_path=output_path)
 
 
+# noinspection SpellCheckingInspection
 class LogcatTagDemuxer(LineParser):
     """
     Concrete LineParser that processes lines of output from logcat filtered on a set of tags and demuxes those lines

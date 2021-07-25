@@ -15,7 +15,7 @@ import pytest
 from apk_bitminer.parsing import AXMLParser
 
 from mobiletestorchestrator.device import Device
-from mobiletestorchestrator.application import Application, TestApplication, ApplicationAsync, TestApplicationAsync
+from mobiletestorchestrator.application import Application, TestApplication, AsyncApplication, AsyncTestApplication
 from .support import uninstall_apk
 
 
@@ -118,11 +118,12 @@ class TestApplicationClass:
         app.stop(force=True)
         assert not app.in_foreground()
 
+    @pytest.mark.asyncio
     async def test_grant_permissions(self, device: Device, install_app, support_test_app):
         test_app = install_app(TestApplication, support_test_app)
         assert test_app.package_name.endswith(".test")
         permission = "android.permission.WRITE_EXTERNAL_STORAGE"
-        await test_app.grant_permissions([permission])
+        test_app.grant_permissions([permission])
         await device.execute_remote_cmd_async("shell", "dumpsys", "package", test_app.package_name,
                                               timeout=10, stdout=subprocess.PIPE)
         completed = device.execute_remote_cmd("shell", "dumpsys", "package", test_app.package_name,
@@ -184,20 +185,6 @@ class TestApplicationClass:
             assert mock_logger.error.called
 
     @pytest.mark.asyncio
-    def test_clean_kill_error_when_home_screen_not_active(self, install_app, device: Device, support_app: str):
-        app = install_app(Application, support_app)
-        with patch('mobiletestorchestrator.device_interactions.DeviceInteraction.home_screen_active',
-                   new_callable=Mock) as mock_home_screen_active:
-            # Force home_screen_active to be false to indicate clean_kill failed
-            mock_home_screen_active.return_value = False
-            app.start(".MainActivity")
-            time.sleep(3)   # Give app time to come up
-            assert device.foreground_activity() == app.package_name
-            with pytest.raises(Exception) as exc_info:
-                app.clean_kill()
-            assert "Failed to background current foreground app" in str(exc_info.value)
-
-    @pytest.mark.asyncio
     def test_clean_kill_error_when_pid_still_existing(self, install_app, device: Device, support_app: str):
         app = install_app(Application, support_app)
         with patch('mobiletestorchestrator.device_interactions.DeviceInteraction.home_screen_active', new_callable=Mock) as mock_home_screen_active:
@@ -221,7 +208,7 @@ class TestApplicationAsyncClass:
     @pytest.mark.asyncio
     async def test_install_uninstall(self, device: Device, support_app: str):
         uninstall_apk(support_app, device)
-        app = await ApplicationAsync.from_apk(support_app, device)
+        app = await AsyncApplication.from_apk(support_app, device)
         try:
             assert app.package_name == "com.linkedin.mtotestapp"
             _, output, _ = await device.execute_remote_cmd_async("shell", "dumpsys", "package", app.package_name,
@@ -234,9 +221,9 @@ class TestApplicationAsyncClass:
             assert app.package_name not in device.list_installed_packages()
 
     @pytest.mark.asyncio
-    async def test_grant_permissions(self, device: Device, install_app, support_test_app):
+    async def test_grant_permissions(self, device: Device, install_app_async, support_test_app):
         uninstall_apk(support_test_app, device)
-        test_app = await ApplicationAsync.from_apk(support_test_app, device)
+        test_app = await AsyncApplication.from_apk(support_test_app, device)
         assert test_app.package_name.endswith(".test")
         permission = "android.permission.WRITE_EXTERNAL_STORAGE"
         await test_app.grant_permissions([permission])
@@ -258,7 +245,7 @@ class TestApplicationAsyncClass:
     @pytest.mark.asyncio
     async def test_start_stop(self, device: Device, support_app: str):  # noqa
         uninstall_apk(support_app, device)
-        app = await ApplicationAsync.from_apk(support_app, device)
+        app = await AsyncApplication.from_apk(support_app, device)
         await app.start(".MainActivity")
         time.sleep(3)  # Have to give time to "come up" :-(
         assert TestApplicationAsyncClass.pidof(app), "No pid found for app; app not started as expected"
@@ -273,7 +260,7 @@ class TestApplicationAsyncClass:
     @pytest.mark.asyncio
     async def test_monkey(self, device: Device, support_app):  # noqa
         uninstall_apk(support_app, device)
-        app = await ApplicationAsync.from_apk(support_app, device)
+        app = await AsyncApplication.from_apk(support_app, device)
         await app.monkey()
         time.sleep(3)
         assert TestApplicationAsyncClass.pidof(app), "Failed to start app"
@@ -283,7 +270,7 @@ class TestApplicationAsyncClass:
     @pytest.mark.asyncio
     async def test_clear_data(self, device: Device, support_test_app: str):  # noqa
         uninstall_apk(support_test_app, device)
-        app = await TestApplicationAsync.from_apk(support_test_app, device)
+        app = await AsyncTestApplication.from_apk(support_test_app, device)
         await app.grant_permissions()
         assert app.granted_permissions == set(app.permissions)
         await app.clear_data()
@@ -294,20 +281,21 @@ class TestApplicationAsyncClass:
     @pytest.mark.asyncio
     async def test_version_invalid_package(self, device: Device):
         with pytest.raises(Exception):
-            await ApplicationAsync.from_apk("no.such.package", device)
+            await AsyncApplication.from_apk("no.such.package", device)
 
     @pytest.mark.asyncio
     async def test_app_uninstall_logs_error(self, device: Device):
         with patch("mobiletestorchestrator.application.log") as mock_logger:
-            app = ApplicationAsync(manifest={'package_name': "com.android.providers.calendar",
+            app = AsyncApplication(manifest={'package_name': "com.android.providers.calendar",
                                              'permissions': ["android.permission.WRITE_EXTERNAL_STORAGE"]}, device=device)
             await app.uninstall()
             assert mock_logger.error.called
 
     @pytest.mark.asyncio
+    @pytest.mark.skip(reason="Android dosn't have a reliable meachanims for clean-killing an app")
     async def test_clean_kill_error_when_home_screen_not_active(self, device: Device, support_app: str):
         uninstall_apk(support_app, device)
-        app = await ApplicationAsync.from_apk(support_app, device)
+        app = await AsyncApplication.from_apk(support_app, device)
         with patch('mobiletestorchestrator.device_interactions.DeviceInteraction.home_screen_active',
                    new_callable=Mock) as mock_home_screen_active:
             # Force home_screen_active to be false to indicate clean_kill failed
@@ -317,21 +305,5 @@ class TestApplicationAsyncClass:
             assert device.foreground_activity() == app.package_name
             with pytest.raises(Exception) as exc_info:
                 await app.clean_kill()
+            time.sleep(2)  # Give app time to come up
             assert "Failed to background current foreground app" in str(exc_info.value)
-
-    @pytest.mark.asyncio
-    async def test_clean_kill_error_when_pid_still_existing(self, device: Device, support_app: str):
-        uninstall_apk(support_app, device)
-        app = await ApplicationAsync.from_apk(support_app, device)
-        with patch('mobiletestorchestrator.device_interactions.DeviceInteraction.home_screen_active', new_callable=Mock) as mock_home_screen_active:
-            with patch('mobiletestorchestrator.application.ApplicationAsync.pid', new_callable=PropertyMock) as mock_pid:
-                # Force home_screen_active to be True to indicate clean_kill made it to the home screen
-                mock_home_screen_active.return_value = True
-                # Force pid to return a fake process id to indicate clean_kill failed
-                mock_pid.return_value = 1234
-                await app.start(".MainActivity")
-                time.sleep(3)  # Give app time to come up
-                assert device.foreground_activity() == app.package_name
-                with pytest.raises(Exception) as exc_info:
-                    await app.clean_kill()
-                assert "Detected app process is still running" in str(exc_info.value)

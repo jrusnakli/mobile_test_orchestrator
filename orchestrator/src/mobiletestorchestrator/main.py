@@ -10,7 +10,7 @@ from . import _async_iter_adapter
 from .worker import TestSuite
 from .testprep import EspressoTestSetup
 from .device import Device
-from .devicepool import AsyncDevicePool
+from .device_pool import AsyncDevicePool
 from .parsing import LineParser
 from .reporting import TestExecutionListener
 from .worker import Worker
@@ -41,8 +41,12 @@ class AndroidTestOrchestrator:
     :raises FileNotFoundError: if any of artifact_dir does not exist
     :raises FileNotFoundError: if adb_path is None and no adb executable can be found in PATH or under ANDROID_HOME
 
-    >>> device = Device("device_serial_id")
+    >>> from mobiletestorchestrator.application import TestApplication
+    ... from mobiletestorchestrator.emulators import EmulatorBundleConfiguration
+    ... from mobiletestorchestrator.device_pool import AsyncEmulatorPool
+    ... device = Device("device_serial_id")
     ... test_application = TestApplication.from_apk("/some/test.apk", device)
+    ... count = 4
     ...
     ... class Listener(TestExecutionListener):
     ...     def test_ended(self, test_run_name: str, class_name: str, test_name: str, **kwargs) -> None:
@@ -73,13 +77,13 @@ class AndroidTestOrchestrator:
     ... async def launch_emulators_and_run():
     ...    setup = EspressoTestSetup(path_to_apk="/a/path/to/an/apk/file",
     ...                              path_to_test_apk="/path/to/corresponding/test/apk")
-    ...    emulator_config = EmulatorBundleConfig(...)
+    ...    emulator_config = EmulatorBundleConfiguration(...)
     ...    emulator_q = AsyncEmulatorPool.create(count, emulator_config)
     ...    #
     ...    # call other methods on setup to prepare device for testing as needed...
     ...    #
-    ...    async with AndroidTestOrchestrator(,
-    ...          artifact_dir=os.get_cwd(),
+    ...    async with AndroidTestOrchestrator(
+    ...          artifact_dir=os.getcwd(),
     ...          max_device_count = 4,
     ...          max_test_time = 5*60,  # five minutes
     ...          max_test_suite_time = 1*60*60,  # one hour
@@ -134,7 +138,7 @@ class AndroidTestOrchestrator:
         :param max_device_count: max number of devices to utilize, or None for unbounded
         :param max_test_time: maximum allowed time for a single test to execute before timing out (or None)
         :param max_test_suite_time: maximum allowed time for a suite to execute; or None
-        :param run_under_orchestration: whether to run under Android Test Orchestrator or regular instument command
+        :param run_under_orchestration: whether to run under Android Test Orchestrator or regular instrument command
 
         :raises ValueError: if max_test_suite_time is smaller than max_test_time
         :raises FileExistsError: if artifact_dir point to a file and not a directory
@@ -201,7 +205,8 @@ class AndroidTestOrchestrator:
                   test_setup: EspressoTestSetup,
                   test_plan: Union[Iterator[TestSuite], AsyncIterator[TestSuite]]) -> None:
         """
-        Run a collection test suites against a single device, pulling each test suite from an externally supplied iterator
+        Run a collection test suites against a single device, pulling each test suite from an externally supplied
+        iterator
 
         :param test_setup: information to prepare device for test execution
         :param device: device to run against
@@ -242,7 +247,7 @@ class AndroidTestOrchestrator:
         and starting a worker thread to process tests in the test plan
 
         :param devices: pool of devices to draw from
-        :param test_plan: test stuite iterator to execute from
+        :param test_plan: test suite iterator to execute from
         :param test_setup: definition of test setup (aka which apks to install, files to push, etc)
         :param start_gate: mechanism to synchronize coordinator with device reservation (prevent spinning of wheels)
         """
@@ -270,7 +275,7 @@ class AndroidTestOrchestrator:
                                 devices: AsyncDevicePool,
                                 test_plan: Union[Iterator[TestSuite], AsyncIterator[TestSuite]]) -> None:
         """
-        Execute the given test plan, distributing test exeuction across the given test application instances
+        Execute the given test plan, distributing test execution across the given test application instances
 
         :param test_setup: used to set up the test apk, target apk and such
         :param devices: queue to reserve devices to run on
@@ -312,3 +317,26 @@ class AndroidTestOrchestrator:
         await self.execute_test_plan(test_setup,
                                      devices,
                                      test_plan=iter([test_suite]))
+
+    async def execute_test_plan_sole_device(self,
+                                            test_setup: EspressoTestSetup,
+                                            device: Device,
+                                            test_plan: Union[Iterator[TestSuite], AsyncIterator[TestSuite]]) -> None:
+        """
+        execute test plan against a single device
+        """
+        queue = asyncio.Queue(1)
+        await queue.put(device)
+        with AsyncDevicePool(queue) as pool:
+            await self.execute_test_plan(test_setup=test_setup, test_plan=test_plan, devices=pool)
+
+    async def execute_single_test_suite_sole_device(self,
+                                                    test_setup: EspressoTestSetup,
+                                                    device: Device,
+                                                    test_suite: TestSuite) -> None:
+        """
+        Execute test suite against a single device
+        """
+        await self.execute_test_plan_sole_device(test_setup=test_setup,
+                                                 test_plan=iter([test_suite]),
+                                                 device=device)

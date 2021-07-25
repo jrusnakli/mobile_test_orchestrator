@@ -9,9 +9,9 @@ import logging
 
 import pytest
 
-from mobiletestorchestrator.application import Application, TestApplication, TestApplicationAsync, ApplicationAsync
+from mobiletestorchestrator.application import Application, TestApplication, AsyncTestApplication, AsyncApplication
 from mobiletestorchestrator.device import Device
-from support import uninstall_apk
+from .support import uninstall_apk
 
 log = logging.getLogger(__name__)
 
@@ -51,8 +51,8 @@ class TestTestApplicationAsync:
     async def test_run(self, device: Device, support_app: str, support_test_app: str):
         uninstall_apk(support_app, device)
         uninstall_apk(support_test_app, device)
-        app = await ApplicationAsync.from_apk(support_app, device)
-        test_app = await TestApplicationAsync.from_apk(support_test_app, device)
+        app = await AsyncApplication.from_apk(support_app, device)
+        test_app = await AsyncTestApplication.from_apk(support_test_app, device)
 
         # More robust testing of this is done in test of AndroidTestOrchestrator
         async with await test_app.run("-e", "class", "com.linkedin.mtotestapp.InstrumentedTestAllSuccess#useAppContext") \
@@ -65,7 +65,7 @@ class TestTestApplicationAsync:
     @pytest.mark.asyncio
     async def test_list_runners(self, device: Device, support_test_app):
         uninstall_apk(support_test_app, device)
-        test_app = await TestApplicationAsync.from_apk(support_test_app, device)
+        test_app = await AsyncTestApplication.from_apk(support_test_app, device)
         async for runner in test_app.iterate_runners():
             if "Runner" in runner:
                 await test_app.uninstall()
@@ -76,5 +76,5 @@ class TestTestApplicationAsync:
     @pytest.mark.asyncio
     async def test_invalid_apk_has_no_test_app(self, support_app, device):
         with pytest.raises(Exception) as exc_info:
-            await TestApplicationAsync.from_apk(support_app, device)
+            await AsyncTestApplication.from_apk(support_app, device)
         assert "Test application's manifest does not specify proper instrumentation element" in str(exc_info.value)

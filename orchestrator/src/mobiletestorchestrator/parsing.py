@@ -16,7 +16,6 @@ from .reporting import TestExecutionListener
 from .timing import StopWatch
 
 log = logging.getLogger(__name__)
-log.setLevel(logging.INFO)
 
 
 class LineParser(ABC):

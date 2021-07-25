@@ -12,7 +12,7 @@ import pytest
 
 from typing import Optional
 
-from mobiletestorchestrator.application import Application, TestApplication, ServiceApplication
+from mobiletestorchestrator.application import Application, TestApplication, ServiceApplication, AsyncApplication
 from mobiletestorchestrator.device import Device
 from mobiletestorchestrator.device_pool import AsyncQueueAdapter, AsyncEmulatorPool
 from mobiletestorchestrator.emulators import EmulatorBundleConfiguration, Emulator
@@ -72,7 +72,7 @@ class DeviceManager:
             Device.TIMEOUT_ADB_CMD *= 10  # slow machine
             count = 1
         else:
-            count = 1  # min(multiprocessing.cpu_count(), int(os.environ.get("MTO_MAX_EMULATORS", "4")))
+            count = 2  # min(multiprocessing.cpu_count(), int(os.environ.get("MTO_MAX_EMULATORS", "4")))
         return count
 
 
@@ -335,3 +335,19 @@ def install_app(device: Device):
 
     for app in apps:
         app.uninstall()
+
+
+@pytest.fixture()
+async def install_app_async(device: Device):
+    apps = []
+
+    async def do_install(app_cls: AsyncApplication, package_name: str):
+        uninstall_apk(package_name, device)
+        app = await app_cls.from_apk(package_name, device)
+        apps.append(app)
+        return app
+
+    yield do_install
+
+    for app in apps:
+        await app.uninstall()

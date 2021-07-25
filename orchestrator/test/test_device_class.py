@@ -13,7 +13,7 @@ import pytest
 from mobiletestorchestrator.application import Application, TestApplication
 from mobiletestorchestrator.device import Device
 from mobiletestorchestrator.device_interactions import DeviceInteraction
-from mobiletestorchestrator.devicestorage import DeviceStorage
+from mobiletestorchestrator.device_storage import DeviceStorage
 from . import support
 from .conftest import TAG_MTO_DEVICE_ID
 from .support import uninstall_apk
@@ -33,7 +33,7 @@ else:
     # a true test flow, but this is only run under specific user-based conditions
     android_sdk = support.find_sdk()
     adb_path = os.path.join(android_sdk, "platform-tools", support.add_ext("adb"))
-    device = Device(os.environ[TAG_MTO_DEVICE_ID], adb_path=adb_path)
+    device = Device(os.environ[TAG_MTO_DEVICE_ID])
     expected_device_info = {
         "model": device.get_system_property("ro.product.model"),
         "manufacturer": device.get_system_property("ro.product.manufacturer"),
@@ -205,19 +205,21 @@ class TestAndroidDevice:
         assert "Failed to verify installation of app 'com.linkedin.fake.app'" in str(excinfo.value)
         assert (in_tmp_dir / "test_screenshots" / "install_failure-com.linkedin.fake.app.png").is_file()
 
+    @pytest.mark.asyncio
     async def test_execute_remote_cmd_async(self, device: Device):
-        rc, stdout, stderr = await device.execute_remote_cmd_async("shell", "echo", "'TEST",
-                                                                           stdout=asyncio.subprocess.PIPE)
+        rc, stdout, stderr = await device.execute_remote_cmd_async("shell", "echo", "'TEST'",
+                                                                   stdout=asyncio.subprocess.PIPE)
         assert rc == 0
-        assert stdout == 'TEST'
+        assert stdout.strip() == 'TEST'
 
+    @pytest.mark.asyncio
     async def test_execute_streamed_cmd(self, device: Device):
-        async with device.monitor_remote_cmd("shell", "ls", "/") as proc:
+        async with device.monitor_remote_cmd("shell", "ls", "-d", "/*", include_stderr=True) as proc:
             lines = []
             async for line in proc.output(unresponsive_timeout=2.0):
-                lines.append(line)
+                lines.append(line.strip())
             assert len(lines) > 3
-            assert "data" in lines
+            assert "/bin" in lines
 
     @pytest.mark.asyncio
     async def test_none_return_on_no_device_datetime(self, device: Device, monkeypatch):

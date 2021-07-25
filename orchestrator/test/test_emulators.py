@@ -9,6 +9,9 @@ import os
 import pytest
 
 from pathlib import Path
+
+from mobiletestorchestrator.device import Device
+from mobiletestorchestrator.device_pool import AsyncEmulatorPool
 from mobiletestorchestrator.emulators import EmulatorBundleConfiguration, Emulator
 
 log = logging.getLogger("MTO")
@@ -53,8 +56,8 @@ class TestEmulator:
         "-partition-size", "1024"
     ]
 
-    @pytest.mark.skipif(getpass.getuser() == 'circleci' or True,
-                        reason="Unable to run multiple emulators in circleci without upgrading machine")
+    @pytest.mark.skipif(True,
+                        reason="Must be run standalone as it can conflict with session level emultor fixtures")
     @pytest.mark.asyncio
     async def test_launch(self, emulator_config):
         emulator = await Emulator.launch(5584, emulator_config.AVD, emulator_config.EMULATOR_CONFIG,
@@ -101,7 +104,7 @@ class TestLeasedEmulator:
     @pytest.mark.asyncio
     async def test_lease(self, device: Emulator):
         default_config = EmulatorBundleConfiguration(sdk=Path(find_sdk()))
-        leased_emulator = AsyncEmulatorPool.LeasedEmulator(device.port, config=default_config)
+        leased_emulator = AsyncEmulatorPool.LeasedEmulator(device.device_id)
         await leased_emulator.set_timer(expiry=1)
         await asyncio.sleep(3)
         with pytest.raises(Device.LeaseExpired):

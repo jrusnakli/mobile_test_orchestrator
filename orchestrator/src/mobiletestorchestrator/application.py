@@ -11,7 +11,7 @@ from contextlib import suppress
 from typing import List, TypeVar, Type, Optional, Dict, Union, Set, Iterable, Callable, AsyncIterator
 
 from .device import Device, RemoteDeviceBased, _device_lock
-from .device_interactions import DeviceInteraction, DeviceInteractionAsync
+from .device_interactions import DeviceInteraction, AsyncDeviceInteraction
 
 log = logging.getLogger(__name__)
 
@@ -23,11 +23,12 @@ _TApp = TypeVar('_TApp', bound='Application')
 _TTestApp = TypeVar('_TTestApp', bound='TestApplication')
 
 __all__ = ["Application", "TestApplication", "ServiceApplication",
-           "ApplicationAsync", "TestApplicationAsync", "ServiceApplicationAsync"]
+           "AsyncApplication", "AsyncTestApplication", "AsyncServiceApplication"]
 
 
 class ApplicationBase(RemoteDeviceBased):
 
+    # noinspection SpellCheckingInspection
     SILENT_RUNNING_PACKAGES = ["com.samsung.android.mtpapplication", "com.wssyncmldm", "com.bitbar.testdroid.monitor"]
     SLEEP_GRANT_PERMISSION = 4
 
@@ -70,6 +71,7 @@ class ApplicationBase(RemoteDeviceBased):
         """
         :return: pid of app if running (either in foreground or background) or None if not running
         """
+        # noinspection SpellCheckingInspection
         completed = self.device.execute_remote_cmd("shell", "pidof", "-s", self.package_name, stdout=subprocess.PIPE,
                                                    fail_on_error_code=lambda x: False)
         if completed.returncode != 0:
@@ -99,9 +101,9 @@ class Application(ApplicationBase):
        optionally contain "permissions" as a key (otherwise assumed to be empty)
     :param device: which device app resides on
 
-    >>> device = Device("some_serial_id", "/path/to/adb")
+    >>> device = Device("some_serial_id")
     ... async def install_my_app():
-    ...     app = await ApplicationAsync.from_apk("some.apk", device)
+    ...     app = await AsyncApplication.from_apk("some.apk", device)
     ...     app.grant_permissions(["android.permission.WRITE_EXTERNAL_STORAGE"])
     """
 
@@ -137,7 +139,8 @@ class Application(ApplicationBase):
         return cls(device, parser)
 
     @classmethod
-    def _install(cls, device: Device, apk_path: str, *args: str, timeout: Optional[int] = Device.TIMEOUT_LONG_ADB_CMD) -> None:
+    def _install(cls, device: Device, apk_path: str, *args: str,
+                 timeout: Optional[int] = Device.TIMEOUT_LONG_ADB_CMD) -> None:
         """
         install the given bundle, blocking until complete
 
@@ -148,7 +151,7 @@ class Application(ApplicationBase):
         :raises; TimeoutError if install takes more than timeout parameter
         """
         cmd = ["install"] + list(args) + [apk_path]
-        device.execute_remote_cmd(*cmd, timeout=timeout)
+        device.execute_remote_cmd(*cmd, timeout=timeout, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
 
     def uninstall(self) -> None:
         """
@@ -191,6 +194,7 @@ class Application(ApplicationBase):
             self._granted_permissions.add(p)
         return self._granted_permissions
 
+    # noinspection SpellCheckingInspection
     def regrant_permissions(self) -> Set[str]:
         """
         Regrant permissions (e.g. if an app's data was cleared) that were previously granted
@@ -239,7 +243,7 @@ class Application(ApplicationBase):
 
     def clean_kill(self) -> None:
         """
-        Running this command to close the app is equivalent to the app being backgrounded, and then having the system
+        Running this command to close the app is equivalent to the app being background-ed, and then having the system
         kill the app to clear up resources for other apps. It is also equivalent to closing the app from the "Recent
         Apps" menu.
 
@@ -254,12 +258,14 @@ class Application(ApplicationBase):
             tries -= 1
             time.sleep(0.5)
         self.device.execute_remote_cmd("shell", "am", "kill", self.package_name)
+        time.sleep(2)
         if self.pid is not None:
             if not self._device_navigation.home_screen_active():
                 raise Exception("Failed to background current foreground app. Cannot complete app closure.")
             else:
                 raise Exception("Detected app process is still running. App closure failed.")
 
+    # noinspection SpellCheckingInspection
     def clear_data(self, regrant_permissions: bool = True) -> None:
         """
         clears app data for given package
@@ -285,7 +291,7 @@ class Application(ApplicationBase):
         return foreground_activity.lower() == self.package_name.lower()
 
 
-class ApplicationAsync(ApplicationBase):
+class AsyncApplication(ApplicationBase):
     """
     Defines an application installed on a remotely USB-connected device. Provides an interface for stopping,
     starting an application, and such.
@@ -299,7 +305,7 @@ class ApplicationAsync(ApplicationBase):
        optionally contain "permissions" as a key (otherwise assumed to be empty)
     :param device: which device app resides on
 
-    >>> device = Device("some_serial_id", "/path/to/adb")
+    >>> device = Device("some_serial_id")
     ... async def install_my_app():
     ...     app = Application.from_apk("some.apk", device)
     ...     app.grant_permissions(["android.permission.WRITE_EXTERNAL_STORAGE"])
@@ -307,10 +313,11 @@ class ApplicationAsync(ApplicationBase):
 
     def __init__(self, device: Device, manifest: Union[AXMLParser, Dict[str, str]]):
         super().__init__(device, manifest)
-        self._device_navigation = DeviceInteractionAsync(device)
+        self._device_navigation = AsyncDeviceInteraction(device)
 
     @classmethod
-    async def _install(cls, device: Device, apk_path: str, *args: str, timeout: Optional[int] = Device.TIMEOUT_LONG_ADB_CMD) -> None:
+    async def _install(cls, device: Device, apk_path: str, *args: str,
+                       timeout: Optional[int] = Device.TIMEOUT_LONG_ADB_CMD) -> None:
         """
         install the given bundle, blocking until complete
 
@@ -324,7 +331,10 @@ class ApplicationAsync(ApplicationBase):
         await device.execute_remote_cmd_async(*cmd, timeout=timeout)
 
     @classmethod
-    async def from_apk(cls: Type[_TApp], apk_path: str, device: Device, as_upgrade: bool = False,
+    async def from_apk(cls: Type[_TApp],
+                       apk_path: str,
+                       device: Device,
+                       as_upgrade: bool = False,
                        as_test_app: bool = False,
                        timeout: Optional[int] = Device.TIMEOUT_LONG_ADB_CMD,
                        callback: Optional[Callable[[Device.Process], None]] = None) -> _TApp:
@@ -337,7 +347,7 @@ class ApplicationAsync(ApplicationBase):
         :param apk_path: path to apk
         :param device: device to install on
         :param as_upgrade: whether to install as upgrade or not
-        :paran as_test_app: if app is compiled as test app or not
+        :param as_test_app: if app is compiled as test app or not
         :param timeout: raises TimeoutError if specified and install takes too long
         :param callback: if not None, callback to be made on successful push and at start of install; the
            `Device.Process` that is installing from device storage is passed as the only parameter to the callback
@@ -346,7 +356,7 @@ class ApplicationAsync(ApplicationBase):
         :raises: TimeoutError if install takes more than timeout parameter
 
         >>> async def install():
-        ...     async with ApplicationAsync.from_apk("/some/local/path/to/apk", device) as stdout:
+        ...     async with AsyncApplication.from_apk("/some/local/path/to/apk", device) as stdout:
         ...         async for line in stdout:
         ...            if "some trigger message" in line:
         ...               print(line)
@@ -411,10 +421,10 @@ class ApplicationAsync(ApplicationBase):
         with suppress(Exception):
             await self.stop()
         try:
-            returncode, output, stderr = await self.device.execute_remote_cmd_async("uninstall", self.package_name,
-                                                                                    stderr=asyncio.subprocess.PIPE)
-            if returncode != 0:
-                log.error("Failed to uninstall app %s [%d]\n %s", self.package_name, returncode,
+            return_code, output, stderr = await self.device.execute_remote_cmd_async("uninstall", self.package_name,
+                                                                                     stderr=asyncio.subprocess.PIPE)
+            if return_code != 0:
+                log.error("Failed to uninstall app %s [%d]\n %s", self.package_name, return_code,
                           stderr)
         except subprocess.TimeoutExpired:
             log.warning("adb command froze on uninstall.  Ignoring issue as device specific")
@@ -447,6 +457,7 @@ class ApplicationAsync(ApplicationBase):
             self._granted_permissions.add(p)
         return self._granted_permissions
 
+    # noinspection SpellCheckingInspection
     async def regrant_permissions(self) -> Set[str]:
         """
         Regrant permissions (e.g. if an app's data was cleared) that were previously granted
@@ -456,7 +467,7 @@ class ApplicationAsync(ApplicationBase):
         return await self.grant_permissions(self._granted_permissions)
 
     async def start(self, activity: str, *options: str, intent: Optional[str] = None,
-                          timeout: Optional[float] = None) -> None:
+                    timeout: Optional[float] = None) -> None:
         """
         start an app on the device
 
@@ -476,7 +487,7 @@ class ApplicationAsync(ApplicationBase):
         await self.device.execute_remote_cmd_async("shell", "am", "start", "-n", activity, *options,
                                                    timeout=timeout)
 
-    async  def monkey(self, count: int = 1) -> None:
+    async def monkey(self, count: int = 1) -> None:
         """
         Run monkey against application
         More to read about adb monkey at https://developer.android.com/studio/test/monkey#command-options-reference
@@ -489,6 +500,8 @@ class ApplicationAsync(ApplicationBase):
         stop this app on the device
 
         :param force: perform a force-stop if true (kill of app) rather than normal stop
+        :param timeout: optional timeout
+        :raises asyncio.TimeoutError: if timeout is specified and command execution is taking too long
         """
         try:
             basic_cmd = "stop" if not force else "force-stop"
@@ -499,7 +512,7 @@ class ApplicationAsync(ApplicationBase):
 
     async def clean_kill(self) -> None:
         """
-        Running this command to close the app is equivalent to the app being backgrounded, and then having the system
+        Running this command to close the app is equivalent to the app being background-ed, and then having the system
         kill the app to clear up resources for other apps. It is also equivalent to closing the app from the "Recent
         Apps" menu.
 
@@ -520,6 +533,7 @@ class ApplicationAsync(ApplicationBase):
             else:
                 raise Exception("Detected app process is still running. App closure failed.")
 
+    # noinspection SpellCheckingInspection
     async def clear_data(self, regrant_permissions: bool = True) -> None:
         """
         clears app data for given package
@@ -550,15 +564,16 @@ class ServiceApplication(Application):
     def start(self, activity: str,
               *options: str, intent: Optional[str] = None, foreground: bool = True) -> None:
 
+        # noinspection SpellCheckingInspection
         """
-        invoke an intent associated with this service by calling start the service
+                invoke an intent associated with this service by calling start the service
 
-        :param options: string list of options to supply to "am startservice" command
-        :param activity: activity handles the intent
-        :param intent: if not None, invoke specific intent otherwise invoke default intent
-        :param foreground: whether to start in foreground or not (Android O+
-            does not allow background starts any longer)
-        """
+                :param options: string list of options to supply to "am startservice" command
+                :param activity: activity handles the intent
+                :param intent: if not None, invoke specific intent otherwise invoke default intent
+                :param foreground: whether to start in foreground or not (Android O+
+                    does not allow background starts any longer)
+                """
         if activity and activity.startswith("."):
             activity = f"{self.package_name}{activity}"
         # embellish to fully qualified name as Android expects
@@ -570,6 +585,7 @@ class ServiceApplication(Application):
         if foreground and self.device.api_level and self.device.api_level >= 26:
             self.device.execute_remote_cmd("shell", "am", "start-foreground-service", "-n", activity, *options)
         else:
+            # noinspection SpellCheckingInspection
             self.device.execute_remote_cmd("shell", "am", "startservice", "-n", activity, *options)
 
     def broadcast(self, activity: str, *options: str, action: Optional[str]) -> None:
@@ -591,7 +607,7 @@ class ServiceApplication(Application):
                                        timeout=Device.TIMEOUT_LONG_ADB_CMD)
 
 
-class ServiceApplicationAsync(ApplicationAsync):
+class AsyncServiceApplication(AsyncApplication):
     """
     Class representing an Android application that is specifically a service
     """
@@ -600,18 +616,19 @@ class ServiceApplicationAsync(ApplicationAsync):
                     *options: str, intent: Optional[str] = None, foreground: bool = True,
                     timeout: Optional[float] = None) -> None:
 
+        # noinspection SpellCheckingInspection
         """
-        invoke an intent associated with this service by calling start the service
+                invoke an intent associated with this service by calling start the service
 
-        :param options: string list of options to supply to "am startservice" command
-        :param activity: activity handles the intent
-        :param intent: if not None, invoke specific intent otherwise invoke default intent
-        :param foreground: whether to start in foreground or not (Android O+
-            does not allow background starts any longer)
-        :param timeout: optional timeout upon which TimeoutError is raised
+                :param options: string list of options to supply to "am startservice" command
+                :param activity: activity handles the intent
+                :param intent: if not None, invoke specific intent otherwise invoke default intent
+                :param foreground: whether to start in foreground or not (Android O+
+                    does not allow background starts any longer)
+                :param timeout: optional timeout upon which TimeoutError is raised
 
-        :raises: asyncio.TimeoutError if timeout is specified and reached during execution
-        """
+                :raises: asyncio.TimeoutError if timeout is specified and reached during execution
+                """
         if activity and activity.startswith("."):
             activity = f"{self.package_name}{activity}"
         # embellish to fully qualified name as Android expects
@@ -624,6 +641,7 @@ class ServiceApplicationAsync(ApplicationAsync):
             await self.device.execute_remote_cmd_async("shell", "am", "start-foreground-service", "-n", activity,
                                                        *options, timeout=timeout)
         else:
+            # noinspection SpellCheckingInspection
             await self.device.execute_remote_cmd_async("shell", "am", "startservice", "-n", activity, *options,
                                                        timeout=timeout)
 
@@ -637,7 +655,7 @@ class ServiceApplicationAsync(ApplicationAsync):
         :param action: if not None, invoke specific action
         :param timeout: command will timeout after this many seconds
 
-        :rasises asyncio.TimeoutError if command xecution time exceeds timeout
+        :raises asyncio.TimeoutError if command execution time exceeds timeout
         """
         if not activity:
             raise Exception("Must provide an activity for ServiceApplication")
@@ -663,7 +681,7 @@ class TestApplication(Application):
         :param device: which device app resides on
         :param manifest: manifest describing the apk package to be installed
 
-        >>> device = Device("some_serial_id", "/path/to/adb")
+        >>> device = Device("some_serial_id")
         >>> test_app = TestApplication.from_apk("some.apk", device)
         >>> test_app.run()
         """
@@ -743,7 +761,8 @@ class TestApplication(Application):
         :raises: Device.CommandExecutionFailureException with non-zero return code information on non-zero exit status
         :raises: Exception if supporting apks for orchestrated runs are not installed
 
-        >>> app = TestApplication.from_apk("some.apk", device)
+        >>> device = Device("some_id")
+        ... app = TestApplication.from_apk("some.apk", device)
         ...     async with app.run_orchestrated() as proc:
         ...         async  for line in proc.output():
         ...             print(line)
@@ -757,12 +776,13 @@ class TestApplication(Application):
             raise Exception("App under test, as designated by this test app's manifest, is not installed!")
         options_text = " ".join(['"%s"' % arg if not arg.startswith('"') and not arg.startswith("-") else arg
                                  for arg in options])
-        target_instrmentation = '/'.join([self._package_name, self._runner])
+        target_instrumentation = '/'.join([self._package_name, self._runner])
+        # noinspection SpellCheckingInspection
         return self.device.monitor_remote_cmd(
             "shell",
             "CLASSPATH=$(pm path android.support.test.services) "
             + "app_process / android.support.test.services.shellexecutor.ShellMain am instrument "
-            + f"-r -w -e -v -targetInstrumentation {target_instrmentation} {options_text} "
+            + f"-r -w -e -v -targetInstrumentation {target_instrumentation} {options_text} "
             + "android.support.test.orchestrator/android.support.test.orchestrator.AndroidTestOrchestrator")
 
     @classmethod
@@ -779,7 +799,7 @@ class TestApplication(Application):
         return cls(device, parser)
 
 
-class TestApplicationAsync(ApplicationAsync):
+class AsyncTestApplication(AsyncApplication):
     """
     Class representing an Android test application installed on a remote device
     """
@@ -792,7 +812,7 @@ class TestApplicationAsync(ApplicationAsync):
         :param device: which device app resides on
         :param manifest: manifest describing the apk package to be installed
 
-        >>> device = Device("some_serial_id", "/path/to/adb")
+        >>> device = Device("some_serial_id")
         >>> test_app = TestApplication.from_apk("some.apk", device)
         >>> test_app.run()
         """
@@ -868,7 +888,8 @@ class TestApplicationAsync(ApplicationAsync):
         :raises: Device.CommandExecutionFailureException with non-zero return code information on non-zero exit status
         :raises: Exception if supporting apks for orchestrated runs are not installed
 
-        >>> app = TestApplicationAsync.from_apk("some.apk", device)
+        >>> device = Device("Some_id")
+        ... app = AsyncTestApplication.from_apk("some.apk", device)
         ...     async with app.run_orchestrated() as proc:
         ...         async  for line in proc.output():
         ...             print(line)
@@ -882,12 +903,13 @@ class TestApplicationAsync(ApplicationAsync):
             raise Exception("App under test, as designated by this test app's manifest, is not installed!")
         options_text = " ".join(['"%s"' % arg if not arg.startswith('"') and not arg.startswith("-") else arg
                                  for arg in options])
-        target_instrmentation = '/'.join([self._package_name, self._runner])
+        target_instrumentation = '/'.join([self._package_name, self._runner])
+        # noinspection SpellCheckingInspection
         return self.device.monitor_remote_cmd(
             "shell",
             "CLASSPATH=$(pm path android.support.test.services) "
             + "app_process / android.support.test.services.shellexecutor.ShellMain am instrument "
-            + f"-r -w -e -v -targetInstrumentation {target_instrmentation} {options_text} "
+            + f"-r -w -e -v -targetInstrumentation {target_instrumentation} {options_text} "
             + "android.support.test.orchestrator/android.support.test.orchestrator.AndroidTestOrchestrator")
 
     # noinspection PyMethodOverriding

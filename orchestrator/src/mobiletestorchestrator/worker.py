@@ -6,11 +6,11 @@ from dataclasses import dataclass, field
 
 from typing import Any, AsyncIterator, List, Optional, Dict, Tuple
 
-from mobiletestorchestrator.application import TestApplicationAsync
+from mobiletestorchestrator.application import AsyncTestApplication
 from .device import Device
 from .testprep import EspressoTestSetup
 from .reporting import TestExecutionListener
-from .device_storage import DeviceStorageAsync
+from .device_storage import AsyncDeviceStorage
 from .device_log import DeviceLog
 from .parsing import LogcatTagDemuxer
 from .parsing import InstrumentationOutputParser, LineParser
@@ -18,7 +18,6 @@ from .timing import Timer
 
 
 log = logging.getLogger(__name__)
-log.setLevel(logging.INFO)
 
 
 @dataclass(frozen=True)
@@ -84,10 +83,10 @@ class Worker:
         except Exception as e:
             log.error("Exception on logcat processing, aborting: \n%s" % str(e))
 
-    async def _loop_over_tests(self, test_app: TestApplicationAsync, under_orchestration: bool, test_timeout: Optional[float])\
+    async def _loop_over_tests(self, test_app: AsyncTestApplication, under_orchestration: bool, test_timeout: Optional[float])\
             -> None:
         log.info("Running tests...")
-        device_storage = DeviceStorageAsync(self._device)
+        device_storage = AsyncDeviceStorage(self._device)
         async for test_run in self._tests:
             self._signal_listeners("test_suite_started", test_run.name)
             # chain the listeners to the parser of the "adb instrument" command,

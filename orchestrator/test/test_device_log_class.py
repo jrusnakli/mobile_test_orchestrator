@@ -4,6 +4,7 @@ import time
 
 import pytest
 
+import mobiletestorchestrator
 from mobiletestorchestrator.application import ServiceApplication
 from mobiletestorchestrator.device import Device
 from mobiletestorchestrator.device_log import DeviceLog
@@ -20,7 +21,6 @@ class TestDeviceLog:
         assert log.logcat_buffer_size.upper() in ['5', '5MB']
 
     @pytest.mark.asyncio
-    @pytest.mark.localonly
     async def test_logcat_and_clear(self, device: Device, android_service_app: ServiceApplication):
         output = []
         # call here waits for emulator startup, allowing other fixtures to complete in parallel
@@ -82,10 +82,15 @@ class TestDeviceLog:
             assert "new_line" in line
 
     def test_invalid_output_path(self, fake_sdk, mp_tmp_dir):
-        device = Device("fakeid", os.path.join(fake_sdk, "platform-tools", "adb"))
-        tmpfile = os.path.join(str(mp_tmp_dir), "somefile")
-        with open(tmpfile, 'w'):
-            pass
-        with pytest.raises(Exception) as exc_info:
-            DeviceLog.LogCapture(device, tmpfile)
-        assert "Path %s already exists; will not overwrite" % tmpfile in str(exc_info.value)
+        orig_adb_path = mobiletestorchestrator.ADB_PATH
+        try:
+            mobiletestorchestrator.ADB_PATH = os.path.join(fake_sdk, "platform-tools", "adb")
+            device = Device("fakeid")
+            tmpfile = os.path.join(str(mp_tmp_dir), "somefile")
+            with open(tmpfile, 'w'):
+                pass
+            with pytest.raises(Exception) as exc_info:
+                DeviceLog.LogCapture(device, tmpfile)
+            assert "Path %s already exists; will not overwrite" % tmpfile in str(exc_info.value)
+        finally:
+            mobiletestorchestrator.ADB_PATH = orig_adb_path

@@ -84,7 +84,7 @@ class DeviceConnectivity(RemoteDeviceBased):
                 time.sleep(1)
 
 
-class DeviceConnectivityAsync(RemoteDeviceBased):
+class AsyncDeviceConnectivity(RemoteDeviceBased):
     """
     API for network communications configuration/queries, including host-to-device communications
     """

@@ -6,6 +6,7 @@ from __future__ import annotations  # to correct mypy stubs vs run-time discrepa
 import asyncio
 import logging
 import multiprocessing
+import os
 import queue
 import subprocess
 from abc import ABC, abstractmethod
@@ -13,13 +14,14 @@ from asyncio import Queue
 from contextlib import asynccontextmanager, suppress
 from typing import Any, AsyncGenerator, Callable, Generic, List, Optional, TypeVar, Type, Union
 
+from mobiletestorchestrator import ADB_PATH
 from mobiletestorchestrator.device import Device
 from mobiletestorchestrator.emulators import Emulator, EmulatorBundleConfiguration
 
 It = TypeVar('It')
 
-log = logging.getLogger("MTO")
-log.setLevel(logging.ERROR)
+log = logging.getLogger(__name__)
+
 
 class AbstractAsyncQueue(ABC, Generic[It]):
 
@@ -43,7 +45,7 @@ class AsyncQueueAdapter(AbstractAsyncQueue[It]):
     """
     Adapt a non-async queue to be asynchronous (via polling)
 
-    :param queue: underlying non-async queue to draw from/push to
+    :param q: underlying non-async queue to draw from/push to
     :param polling_interval" time interval to asyncio.sleep in between get_nowait calls to underlying non-async queue
     """
 
@@ -82,9 +84,9 @@ class BaseDevicePool(ABC):
         """
         self._q = queue
 
-    @staticmethod
-    def _list_devices(filt: Callable[[str], bool]) -> List[str]:
-        cmd = [Device.adb_path(), "devices"]
+    @classmethod
+    def _list_devices(cls, filt: Callable[[str], bool]) -> List[str]:
+        cmd = [str(ADB_PATH), "devices"]
         completed = subprocess.run(" ".join(cmd), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, shell=True)
         device_ids = []
         for line in completed.stdout.decode('utf-8').splitlines():
@@ -272,8 +274,7 @@ class AsyncEmulatorPool(AsyncDevicePool):
                 if leased_emulator:
                     emulators.append(leased_emulator)
             except Exception:
-                print(f"!!!!!!!!! Failure in booting emulator on port {port}")
-                log.exception(f"Failure in booting emulator on port {port}")
+                log.exception(f"Failed to boot emulator on port {port}")
                 error_count += 1
                 if error_count == count:
                     # if all emulators failed to boot, signal queue is empty to any clients waiting on queue
@@ -281,7 +282,7 @@ class AsyncEmulatorPool(AsyncDevicePool):
                 else:
                     raise
             if leased_emulator:
-                print(f">>>>> Putting {leased_emulator.device_id} in the queue...")
+                log.debug(f">>>>> Putting {leased_emulator.device_id} in the queue...")
             await queue.put(leased_emulator)  # type: ignore
 
         futures = [asyncio.create_task(launch_one(index, avd, config, *args)) for index in range(count)]
@@ -323,7 +324,7 @@ class AsyncEmulatorPool(AsyncDevicePool):
         default_config = EmulatorBundleConfiguration()  # Use default environ values
         for emulator_id in emulator_ids:
             port = int(emulator_id.strip().rsplit('-', maxsplit=1)[-1])
-            em = Emulator(port, config=default_config)
+            em = Emulator(emulator_id)
             if max_lease_time is not None:
                 leased_emulator: Emulator = AsyncEmulatorPool.LeasedEmulator(em)  # type: ignore
                 leased_emulator.set_timer(expiry=max_lease_time)  # type: ignore

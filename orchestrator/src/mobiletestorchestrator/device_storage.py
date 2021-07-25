@@ -11,7 +11,7 @@ from .device import (
     RemoteDeviceBased,
 )
 
-__all__ = ["DeviceStorage", "DeviceStorageAsync"]
+__all__ = ["DeviceStorage", "AsyncDeviceStorage"]
 
 
 log = logging.getLogger(__name__)
@@ -122,7 +122,7 @@ class DeviceStorage(RemoteDeviceBased):
         self.device.execute_remote_cmd(*cmd, timeout=Device.TIMEOUT_LONG_ADB_CMD)
 
 
-class DeviceStorageAsync(RemoteDeviceBased):
+class AsyncDeviceStorage(RemoteDeviceBased):
     """
     Class providing API to push, install and remove files and apps to a remote device
 
@@ -133,7 +133,7 @@ class DeviceStorageAsync(RemoteDeviceBased):
     ERROR_MSG_INSUFFICIENT_STORAGE = "INSTALL_FAILED_INSUFFICIENT_STORAGE"
 
     def __init__(self, device: Device):
-        super(DeviceStorageAsync, self).__init__(device)
+        super(AsyncDeviceStorage, self).__init__(device)
         self._ext_storage = None
 
     @property

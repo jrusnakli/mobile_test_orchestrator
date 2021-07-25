@@ -4,7 +4,7 @@ import subprocess
 import pytest
 
 from mobiletestorchestrator.device import Device
-from mobiletestorchestrator.device_networking import DeviceConnectivity, DeviceConnectivityAsync
+from mobiletestorchestrator.device_networking import DeviceConnectivity, AsyncDeviceConnectivity
 
 
 class TestDeviceConnectivity:
@@ -36,10 +36,10 @@ class TestDeviceConnectivity:
 class TestDeviceConnectivityAsync:
 
     async def test_check_network_connect(self, device: Device):
-        assert await DeviceConnectivityAsync(device).check_network_connection("localhost", count=3) == 0
+        assert await AsyncDeviceConnectivity(device).check_network_connection("localhost", count=3) == 0
 
     async def test_port_forward(self, device: Device):
-        device_network = DeviceConnectivityAsync(device)
+        device_network = AsyncDeviceConnectivity(device)
         await device_network.port_forward(32451, 29323)
         _, output, _ = await device.execute_remote_cmd_async("forward", "--list", stdout=subprocess.PIPE)
         assert "32451" in output
@@ -49,7 +49,7 @@ class TestDeviceConnectivityAsync:
         assert "29323" not in output
 
     async def test_reverse_port_forward(self, device: Device):
-        device_network = DeviceConnectivityAsync(device)
+        device_network = AsyncDeviceConnectivity(device)
         await device_network.reverse_port_forward(32451, 29323)
         _, output, _ = await device.execute_remote_cmd_async("reverse", "--list", stdout=subprocess.PIPE)
         assert "29323" in output
@@ -60,12 +60,12 @@ class TestDeviceConnectivityAsync:
 
     @pytest.mark.asyncio
     async def test_check_network_connect(self, device: Device):
-        device_network = DeviceConnectivityAsync(device)
+        device_network = AsyncDeviceConnectivity(device)
         assert await device_network.check_network_connection("localhost", count=3) == 0
 
     @pytest.mark.asyncio
     async def test_port_forward(self, device: Device):
-        device_network = DeviceConnectivityAsync(device)
+        device_network = AsyncDeviceConnectivity(device)
         await device_network.port_forward(32451, 29323)
         _, output, _ = await device.execute_remote_cmd_async("forward", "--list", stdout=asyncio.subprocess.PIPE)
         assert "32451" in output
@@ -75,7 +75,7 @@ class TestDeviceConnectivityAsync:
 
     @pytest.mark.asyncio
     async def test_reverse_port_forward(self, device: Device):
-        device_network = DeviceConnectivityAsync(device)
+        device_network = AsyncDeviceConnectivity(device)
         await device_network.reverse_port_forward(32451, 29323)
         _, output, _ = await device.execute_remote_cmd_async("reverse", "--list", stdout=asyncio.subprocess.PIPE)
         assert "29323" in output

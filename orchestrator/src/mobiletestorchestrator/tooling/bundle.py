@@ -77,9 +77,9 @@ class Bundle:
                addl_resources: Optional[List[Tuple[Union[str, Path], Union[str, Path]]]] = None) -> None:
         with Bundle(shiv_path) as bundle:
             my_path = Path(_root).parent.parent
-            for file in my_path.glob('./androidtestorchestrator/**/*.py'):
+            for file in my_path.glob('./mobiletestorchestrator/**/*.py'):
                 bundle.add_file(file, file.relative_to(my_path))
-            for file in my_path.glob('./androidtestorchestrator/resources/**/*.zip'):
+            for file in my_path.glob('./mobiletestorchestrator/resources/**/*.zip'):
                 bundle.add_file(file, file.relative_to(my_path))
             for path, relpath in addl_resources or []:
                 bundle.add_file(path, relpath)
@@ -87,6 +87,6 @@ class Bundle:
                 app_apk = Path(app_apk)
             if isinstance(test_apk, str):
                 test_apk = Path(test_apk)
-            bundle.add_file(app_apk, f"./androidtestorchestrator/resources/apks/{app_apk.name}")
-            bundle.add_file(test_apk, f"./androidtestorchestrator/resources/apks/{test_apk.name}")
-            pip.install(["--target", bundle._site_pkgs.name, "apk_bitminer>=1.1.0", "importlib_resources", "pathlib"])
+            bundle.add_file(app_apk, f"./mobiletestorchestrator/resources/apks/{app_apk.name}")
+            bundle.add_file(test_apk, f"./mobiletestorchestrator/resources/apks/{test_apk.name}")
+            pip.install(["--target", bundle._site_pkgs.name, "apk-bitminer>=1.1.0", "importlib_resources", "pathlib"])

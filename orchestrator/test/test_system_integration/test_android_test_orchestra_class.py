@@ -1,19 +1,15 @@
 import logging
 import os
-import subprocess
-from contextlib import suppress
 from typing import Any, Optional
 
 import pytest
 
-from mobiletestorchestrator import AndroidTestOrchestrator, TestApplication, TestSuite
-from mobiletestorchestrator.application import Application
+from mobiletestorchestrator.device_pool import AsyncDevicePool
+from mobiletestorchestrator.main import AndroidTestOrchestrator, TestSuite
 from mobiletestorchestrator.device import Device
 from mobiletestorchestrator.parsing import LineParser
-from mobiletestorchestrator.reporting import TestRunListener
-from mobiletestorchestrator.testprep import EspressoTestPreparation, DevicePreparation
-from ..support import uninstall_apk
-import pytest_mproc
+from mobiletestorchestrator.reporting import TestExecutionListener
+from mobiletestorchestrator.testprep import EspressoTestSetup
 
 
 log = logging.getLogger(__name__)
@@ -81,7 +77,6 @@ class TestAndroidTestOrchestrator(object):
             async with AndroidTestOrchestrator(artifact_dir=__file__):
                 pass
 
-    @pytest_mproc.group("device_q")
     @pytest.mark.asyncio
     async def test_execute_test_suite(self,
                                       device_pool: AsyncDevicePool,
@@ -149,7 +144,6 @@ class TestAndroidTestOrchestrator(object):
         assert listener.test_count == 4
         assert set(listener.expected_test_class.keys()) == set(listener.test_suites)
 
-    @pytest_mproc.group("device_q")
     @pytest.mark.asyncio
     async def test_execute_test_suite_orchestrated(self, device_pool: AsyncDevicePool, support_app: str,
                                                    support_test_app: str, tmpdir):

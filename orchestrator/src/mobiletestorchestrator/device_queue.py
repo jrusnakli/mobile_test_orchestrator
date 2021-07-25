@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from asyncio.queues import Queue
 from typing import Callable, AsyncGenerator
 
+from mobiletestorchestrator import ADB_PATH
 from mobiletestorchestrator.device import Device
 
 
@@ -19,31 +20,31 @@ class BaseDeviceQueue(ABC):
         return self._q.empty()
 
     @staticmethod
-    def _list_devices(filt: Callable[[str], bool]):
-        cmd = [Device.adb_path(), "devices"]
+    def _list_devices(pkg_filter: Callable[[str], bool]):
+        cmd = [str(ADB_PATH), "devices"]
         completed = subprocess.run(" ".join(cmd), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, shell=True)
         device_ids = []
         for line in completed.stdout.splitlines():
             line = line.decode('utf-8').strip()
             if line.strip().endswith("device"):
                 device_id = line.split()[0]
-                if filt(device_id):
+                if pkg_filter(device_id):
                     device_ids.append(device_id)
         return device_ids
 
     @classmethod
-    async def discover(cls, filt: Callable[[str], bool] = lambda x: True) -> "BaseDeviceQueue":
+    async def discover(cls, pkg_filter: Callable[[str], bool] = lambda x: True) -> "BaseDeviceQueue":
         """
         Discover all online devices and create a DeviceQueue with them
 
-        :param filt: only include devices filtered by device id through this given filter, if provided
+        :param pkg_filter: only include devices filtered by device id through this given filter, if provided
 
         :return: Created DeviceQueue instance containing all online devices
         """
         queue = Queue(20)
-        device_ids = cls._list_devices(filt)
+        device_ids = cls._list_devices(pkg_filter)
         if not device_ids:
-            raise Exception("No device were discovered based on any filter critera. ")
+            raise Exception("No device were discovered based on any filter criteria. ")
         for device_id in device_ids:
             await queue.put(Device(device_id))
         return cls(queue)

@@ -5,7 +5,7 @@ from contextlib import suppress
 import pytest
 
 from mobiletestorchestrator.device import Device
-from mobiletestorchestrator.device_storage import DeviceStorage, DeviceStorageAsync
+from mobiletestorchestrator.device_storage import DeviceStorage, AsyncDeviceStorage
 
 
 # noinspection PyShadowingNames
@@ -89,7 +89,7 @@ class TestDeviceStorageAsync:
 
     @pytest.mark.asyncio
     async def test_push_remove(self, device: Device):
-        storage = DeviceStorageAsync(device)
+        storage = AsyncDeviceStorage(device)
         remote_location = "/".join([storage.external_storage_location, "some_file"])
 
         with suppress(Exception):
@@ -110,7 +110,7 @@ class TestDeviceStorageAsync:
 
     @pytest.mark.asyncio
     async def test_pull_invalid_remote_path(self, device: Device, mp_tmp_dir):
-        storage = DeviceStorageAsync(device)
+        storage = AsyncDeviceStorage(device)
         local = os.path.join(str(mp_tmp_dir), "nosuchfile")
         with pytest.raises(Exception):
             await storage.pull(remote_path="/no/such/file", local_path=local)
@@ -118,7 +118,7 @@ class TestDeviceStorageAsync:
 
     @pytest.mark.asyncio
     async def test_pull(self, device: Device, mp_tmp_dir):
-        storage = DeviceStorageAsync(device)
+        storage = AsyncDeviceStorage(device)
         local_path = os.path.join(mp_tmp_dir, "somefile")
         remote_path = "/".join([storage.external_storage_location, "touchedfile"])
         device.execute_remote_cmd("shell", "touch", remote_path)
@@ -127,7 +127,7 @@ class TestDeviceStorageAsync:
 
     @pytest.mark.asyncio
     async def test_make_dir(self, device: Device):
-        storage = DeviceStorageAsync(device)
+        storage = AsyncDeviceStorage(device)
         new_remote_dir = "/".join([storage.external_storage_location, "a", "b", "c", "d"])
         # assure dir does not already exist:
         with suppress(Exception):
@@ -148,7 +148,7 @@ class TestDeviceStorageAsync:
 
     @pytest.mark.asyncio
     async def test_list(self, device: Device):
-        storage = DeviceStorageAsync(device)
+        storage = AsyncDeviceStorage(device)
         files = []
         async for item in storage.list("/system"):
             files.append(item)
@@ -156,6 +156,6 @@ class TestDeviceStorageAsync:
 
     @pytest.mark.asyncio
     async def test_list_empty(self, device: Device):
-        storage = DeviceStorageAsync(device)
+        storage = AsyncDeviceStorage(device)
         async for name in storage.list("/no/such/path"):
             assert False, f"should not expect a return from list but found {name}"

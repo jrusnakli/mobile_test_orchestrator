@@ -4,8 +4,8 @@ import time
 import pytest
 
 from mobiletestorchestrator.device import Device
-from mobiletestorchestrator.application import Application
-from mobiletestorchestrator.device_interactions import DeviceInteraction, DeviceInteractionAsync
+from mobiletestorchestrator.application import Application, AsyncApplication
+from mobiletestorchestrator.device_interactions import DeviceInteraction, AsyncDeviceInteraction
 
 
 class TestDeviceInteraction:
@@ -45,7 +45,7 @@ class TestDeviceInteractionAsync:
 
     @pytest.mark.asyncio
     async def test_is_screen_on(self, device: Device):
-        navigator = DeviceInteractionAsync(device)
+        navigator = AsyncDeviceInteraction(device)
         is_screen_on = navigator.is_screen_on()
         await navigator.toggle_screen_on()
         retries = 3
@@ -57,10 +57,10 @@ class TestDeviceInteractionAsync:
         assert is_screen_on != new_is_screen_on
 
     @pytest.mark.asyncio
-    async def test_go_home(self, device: Device, install_app, support_app: Application):
-        app = install_app(Application, support_app)
-        await app.start_async(activity=".MainActivity")
+    async def test_go_home(self, device: Device, install_app_async, support_app: Application):
+        app = await install_app_async(AsyncApplication, support_app)
+        await app.start(activity=".MainActivity")
         assert device.foreground_activity() == app.package_name
-        device_nav = DeviceInteractionAsync(device)
+        device_nav = AsyncDeviceInteraction(device)
         await device_nav.return_home()
         assert device_nav.home_screen_active()
