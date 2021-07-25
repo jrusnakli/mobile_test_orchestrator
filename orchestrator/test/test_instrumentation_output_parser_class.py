@@ -1,15 +1,36 @@
-from typing import Mapping, Any
+from typing import Any, Optional
 
-import os
-
-from mobiletestorchestrator.device import Device
-from mobiletestorchestrator.devicelog import DeviceLog
 from mobiletestorchestrator.parsing import InstrumentationOutputParser
-from mobiletestorchestrator.reporting import TestRunListener
-from mobiletestorchestrator.timing import StopWatch
+from mobiletestorchestrator.reporting import TestExecutionListener
 
 
 class TestInstrumentationOutputParser(object):
+    class EmptyListener(TestExecutionListener):
+
+        def test_suite_started(self, test_run_name: str, count: int = 0) -> None:
+            pass
+
+        def test_suite_ended(self, test_run_name: str, duration: float = -1.0, **kwargs: Optional[Any]) -> None:
+            pass
+
+        def test_suite_failed(self, test_run_name: str, error_message: str) -> None:
+            pass
+
+        def test_failed(self, test_run_name: str, class_name: str, test_name: str, stack_trace: str) -> None:
+            pass
+
+        def test_ignored(self, test_run_name: str, class_name: str, test_name: str) -> None:
+            pass
+
+        def test_assumption_failure(self, test_run_name: str, class_name: str, test_name: str,
+                                    stack_trace: str) -> None:
+            pass
+
+        def test_started(self, test_run_name: str, class_name: str, test_name: str) -> None:
+            pass
+
+        def test_ended(self, test_run_name: str, class_name: str, test_name: str, **kwargs: Optional[Any]) -> None:
+            pass
 
     example_output = """
 INSTRUMENTATION_STATUS: numtests=3
@@ -159,73 +180,90 @@ at android.support.test.internal.runner.TestExecutor.execute(TestExecutor.java:5
 at android.support.test.runner.AndroidJUnitRunner.onStart(AndroidJUnitRunner.java:240)
 at android.app.Instrumentation$InstrumentationThread.run(Instrumentation.java:1741)""".strip()
 
-    def test_parse_lines(self, device: Device, mp_tmp_dir):
-        mp_tmp_dir = str(mp_tmp_dir)
-        with DeviceLog(device).capture_to_file(os.path.join(mp_tmp_dir, "test_output.log")) as logcat_marker:
+    def test_parse_lines(self):
+        got_test_passed = False
+        got_test_ignored = False
+        got_test_failed = False
+        got_test_assumption_failure = False
 
-            got_test_ignored = False
-            got_test_failed = False
-            got_test_assumption_failure = False
+        class Listener(self.EmptyListener):
 
-            class ExecutionListener(StopWatch):
+            def test_assumption_failure(self, test_run_name: str, class_name: str, test_name: str, stack_trace: str):
+                nonlocal got_test_assumption_failure
+                got_test_assumption_failure = True
 
-                def mark_start(self, name: str) -> None:
-                    assert name in ['com.test.TestSkipped', 'com.test.Test2', 'com.test.TestFailure']
-                    self._name = name
+            def test_ended(self, test_run_name: str, class_name: str, test_name: str, **kwargs: Optional[Any]):
+                nonlocal got_test_passed
+                got_test_passed = True
+                if not got_test_failed and not got_test_ignored and not got_test_assumption_failure:
+                    assert test_name == "transcode1080pAvc"
+                    assert class_name == "com.test.Test2"
 
-                def mark_end(self, name: str) -> None:
-                    assert name == self._name
+            def test_ignored(self, test_run_name: str, class_name: str, test_name: str):
+                nonlocal got_test_ignored
+                got_test_ignored = True
+                assert test_name == "transcode1440pAvc"
+                assert class_name == "com.test.TestSkipped"
 
-            class Listener(TestRunListener):
+            def test_failed(self, test_run_name: str, class_name: str, test_name: str, stack_trace: str):
+                nonlocal got_test_failed
+                got_test_failed = True
+                assert test_name == "transcode2160pAvc"
+                assert class_name == "com.test.TestFailure"
+                assert stack_trace.strip() == TestInstrumentationOutputParser.EXPECTED_STACK_TRACE
 
-                def test_run_failed(self, error_message: str):
-                    pass
+        parser = InstrumentationOutputParser("test_run")
+        parser.add_execution_listener(Listener())
 
-                def test_assumption_failure(self, class_name: str, test_name: str, stack_trace: str):
-                    nonlocal got_test_assumption_failure
-                    got_test_assumption_failure = True
+        for line in self.example_output.splitlines():
+            parser.parse_line(line)
 
-                def test_run_started(self, test_run_name: str):
-                    assert test_run_name in ['com.test.TestSkipped', 'com.test.Test2', 'com.test.TestFailure']
+        assert got_test_passed is True
+        assert got_test_assumption_failure is True
+        assert got_test_failed is True
+        assert got_test_ignored is False
 
-                def test_run_ended(self, duration: float, **kwargs):
-                    pass
+    def test__process_test_code(self):
+        got_test_assumption_failure = False
+        got_test_error = False
 
-                def test_started(self, class_name: str, test_name: str):
-                    assert class_name in ['com.test.TestSkipped', 'com.test.Test2', 'com.test.TestFailure']
+        class Listener(self.EmptyListener):
 
-                def test_ended(self, class_name: str, test_name: str, **kwargs: Mapping[Any, Any]):
-                    assert test_name in ["transcode1080pAvc", "transcode1440pAvc", "transcode2160pAvc"]
-                    assert class_name in ["com.test.Test2", "com.test.TestSkipped", "com.test.TestFailure"]
+            def test_assumption_failure(self, test_run_name: str, class_name: str, test_name: str, stack_trace: str):
+                nonlocal got_test_assumption_failure
+                got_test_assumption_failure = True
+                assert test_run_name == "test_run"
+                assert test_name == "some_test"
+                assert class_name == "TestClass"
 
-                def test_ignored(self, class_name: str, test_name: str):
-                    nonlocal got_test_ignored
-                    got_test_ignored = True
-                    assert test_name == "transcode1440pAvc"
-                    assert class_name == "com.test.TestSkipped"
+            def test_failed(self, test_run_name: str, class_name: str, test_name: str, *args, **kargs):
+                nonlocal got_test_error
+                got_test_error = True
+                assert test_run_name == "test_run"
+                assert test_name == "some_test2"
+                assert class_name == "TestClass2"
 
-                def test_failed(self, class_name: str, test_name: str, stack_trace: str):
-                    nonlocal got_test_failed
-                    got_test_failed = True
-                    assert test_name == "transcode2160pAvc"
-                    assert class_name == "com.test.TestFailure"
-                    assert stack_trace.strip() == TestInstrumentationOutputParser.EXPECTED_STACK_TRACE
+        parser = InstrumentationOutputParser("test_run", Listener())
+        parser._current_test = InstrumentationOutputParser.TestParsingResult()
+        parser._current_test.test_name = "some_test"
+        parser._current_test.test_class = "TestClass"
+        parser._parse_status_code(str(parser.CODE_ASSUMPTION_VIOLATION))
+        assert got_test_assumption_failure, "Failed to report skipped test"
+        assert not got_test_error, "Got unexpected test error"
+        parser._current_test = InstrumentationOutputParser.TestParsingResult()
+        parser._current_test.test_name = "some_test2"
+        parser._current_test.test_class = "TestClass2"
+        parser._parse_status_code("42")  # unknown code raises exception
+        assert got_test_error, "Failed to detect test failure/error"
 
-            parser = InstrumentationOutputParser(test_run_listener=Listener())
-            parser.add_test_execution_listener(ExecutionListener())
-            parser.add_test_execution_listener(logcat_marker)
-            for line in self.example_output.splitlines():
-                parser.parse_line(line)
-
-            assert got_test_assumption_failure is True
-            assert got_test_failed is True
-            assert got_test_ignored is False
-            assert parser.total_test_count == 3
-            assert parser.num_tests_expected == 3
-            assert abs(parser.execution_time - 9.387) < 0.0001
+    def test_add_test_listeners(self):
+        parser = InstrumentationOutputParser("test_run")
+        listeners = [self.EmptyListener(), self.EmptyListener()]
+        parser.add_execution_listeners(listeners)
+        assert parser._execution_listeners == listeners
 
     def test_non_int_status_code(self):
-        parser = InstrumentationOutputParser()
+        parser = InstrumentationOutputParser("test_run")
         test = parser._get_current_test()
         parser._parse_status_code("not_an_int")
         assert test.code == parser.CODE_ERROR

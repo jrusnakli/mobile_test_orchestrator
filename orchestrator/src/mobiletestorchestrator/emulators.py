@@ -4,18 +4,22 @@ import time
 from contextlib import suppress
 
 import asyncio
+import logging
 import os
 import subprocess
 
 from dataclasses import dataclass
 from multiprocessing import Queue, Process
 from pathlib import Path
-from typing import Optional, List, Dict, Any, Set, Union, Coroutine
+from typing import Optional, List, Dict, Any, Set, Union, Coroutine, Tuple, Mapping
 
 from mobiletestorchestrator.device import Device
 
 
 __all__ = ["EmulatorBundleConfiguration", "Emulator"]
+
+
+log = logging.getLogger(str(Path(__file__).stem))
 
 
 @dataclass
@@ -38,10 +42,30 @@ class EmulatorBundleConfiguration:
     def adb_path(self) -> Path:
         return self.sdk.joinpath("platform-tools").joinpath("adb")
 
+    def launch_cmd(self, avd: str, port: int, args: Optional[List[str]] = None) -> List[str]:
+        emulator_cmd = self.sdk.joinpath("emulator").joinpath("emulator")
+        if not emulator_cmd.is_file():
+            raise Exception(f"Could not find emulator cmd to launch emulator @ {emulator_cmd}")
+        if not self.adb_path().is_file():
+            raise Exception(f"Could not find adb cmd @ {self.adb_path()}")
+        cmd = [str(emulator_cmd), "-avd", avd, "-port", str(port), "-read-only"]
+        if sys.platform.lower() == 'win32':
+            cmd[0] += ".bat"
+        if self.system_img:
+            cmd += ["-system", str(self.system_img)]
+        if self.kernel:
+            cmd += ["-kernel", str(self.kernel)]
+        if self.ramdisk:
+            cmd += ["-ramdisk", str(self.ramdisk)]
+        if args:
+            cmd += args
+        return cmd
+
 
 class Emulator(Device):
 
     PORTS = list(range(5554, 5585, 2))
+    _launches: Dict[str, Tuple[str, int, EmulatorBundleConfiguration, List[str], Mapping[str, str]]] = {}
 
     class FailedBootError(Exception):
 
@@ -53,51 +77,47 @@ class Emulator(Device):
         def port(self) -> int:
             return self._port
 
-    def __init__(self, device_id: str,
-                 config: EmulatorBundleConfiguration,
-                 launch_cmd: List[str],
-                 env: Dict[str, str]):
-        """
-        Launch an emulator and create this Device instance
-        """
-        super().__init__(device_id, str(config.adb_path()))
-        self._launch_cmd = launch_cmd
-        self._env = env
-        self._config = config
-
     def is_alive(self) -> bool:
-        return self.get_state() == 'device'
+        return self.get_state(False) == Device.State.ONLINE
 
     async def restart(self) -> None:
         """
         Restart this emulator and make it available for use again
         """
+        if self._device_id not in Emulator._launches:
+            raise ValueError(f"Given device {self._device_id} was launched externally; "
+                             "only emulators launched through 'Emulator.launch' can be relaunched ")
+        avd, port, config,  args, env = Emulator._launches[self._device_id]
+
         async def wait_for_boot() -> None:
-            subprocess.Popen(self._launch_cmd,
+            subprocess.Popen(config.launch_cmd(port=port, avd=avd, args=args),
                              stderr=subprocess.STDOUT,
                              stdout=subprocess.PIPE,
-                             env=self._env)
+                             env=env)
             booted = False
-            while self.get_state().strip() != 'device':
+            while await self.get_state(False) != Device.State.ONLINE:
                 await asyncio.sleep(1)
 
             while not booted:
                 booted = self.get_system_property("sys.boot_completed") == "1"
                 await asyncio.sleep(1)
 
-        await asyncio.wait_for(wait_for_boot(), self._config.boot_timeout)
+        await asyncio.wait_for(wait_for_boot(), config.boot_timeout)
 
     @classmethod
     async def launch(cls, port: int, avd: str, config: EmulatorBundleConfiguration, *args: str) -> "Emulator":
         """
         Launch an emulator on the given port, with named avd and configuration
 
+        :param port: which port to launch on
+        :param avd: name of emulator AVD
+        :param config: configuration of emulator
         :param args:  add'l arguments to pass to emulator command
         """
         if port not in cls.PORTS:
             raise ValueError(f"Port must be one of {cls.PORTS}")
         device_id = f"emulator-{port}"
-        device = Device(device_id, str(config.adb_path()))
+        device = Device(device_id)
         with suppress(Exception):
             device.execute_remote_cmd("emu", "kill")  # attempt to kill any existing emulator at this port
             await asyncio.sleep(2)
@@ -106,16 +126,7 @@ class Emulator(Device):
             raise Exception(f"Could not find emulator cmd to launch emulator @ {emulator_cmd}")
         if not config.adb_path().is_file():
             raise Exception(f"Could not find adb cmd @ {config.adb_path()}")
-        cmd = [str(emulator_cmd), "-avd", avd, "-port", str(port), "-read-only"]
-        if sys.platform.lower() == 'win32':
-            cmd[0] += ".bat"
-        if config.system_img:
-            cmd += ["-system", str(config.system_img)]
-        if config.kernel:
-            cmd += ["-kernel", str(config.kernel)]
-        if config.ramdisk:
-            cmd += ["-ramdisk", str(config.ramdisk)]
-        cmd += args
+        cmd = config.launch_cmd(avd=avd, port=port, args=list(args))
         environ = dict(os.environ)
         environ["ANDROID_AVD_HOME"] = str(config.avd_dir)
         environ["ANDROID_SDK_HOME"] = str(config.sdk)
@@ -131,7 +142,7 @@ class Emulator(Device):
                 nonlocal proc
                 nonlocal device_id
 
-                while device.get_state().strip() != 'device':
+                while await device.get_state_async(False) != Device.State.ONLINE:
                     await asyncio.sleep(1)
                 if proc.poll() is not None:
                     stdout, _ = proc.communicate()
@@ -141,10 +152,11 @@ class Emulator(Device):
                     booted = device.get_system_property("sys.boot_completed", ) == "1"
                     await asyncio.sleep(1)
                     duration = time.time() - start
-                    print(f">>> {device.device_id} [{duration}] Booted?: {booted}")
+                    log.debug(f">>> {device.device_id} [{duration}] Booted?: {booted}")
 
             await asyncio.wait_for(wait_for_boot(), config.boot_timeout)
-            return Emulator(device_id, config=config, launch_cmd=cmd, env=environ)
+            Emulator._launches[device_id] = (avd, port, config, list(args), environ)
+            return Emulator(device_id)
         except Exception as e:
             raise Emulator.FailedBootError(port, str(e)) from e
         finally:
@@ -156,7 +168,7 @@ class Emulator(Device):
         """
         Kill this emulator (underlying Process)
         """
-        print(f">>>>> Killing emulator {self.device_id}")
+        log.debug(f">>>>> Killing emulator {self.device_id}")
         self.execute_remote_cmd("emu", "kill")
 
 
@@ -224,7 +236,7 @@ class EmulatorQueue:
             emulator.kill()
         self._q.close()
         self._restart_q.close()
-        print(">>>> Exiting emulator queue task")
+        log.debug(">>>> Exiting emulator queue task")
 
     def __enter__(self) -> "EmulatorQueue":
         return self

@@ -32,11 +32,12 @@ class UpgradeTestRunner(object):
     Class initialization -> setup() -> execute() -> teardown()
     """
 
-    def __init__(self, device: Device, apk_under_test: str, upgrade_apks: List[str], test_listener: TestRunResult):
+    def __init__(self, device: Device, apk_under_test: str, upgrade_apks: List[str], test_listener: TestExecutionListener):
         self._device = device
         self._upgrade_reporter = test_listener
         self._upgrade_apks = upgrade_apks
         self._upgrade_test = UpgradeTest(device, apk_under_test)
+        self._test_run_name = "UpgradeTest"
 
     def setup(self) -> None:
         """
@@ -48,22 +49,27 @@ class UpgradeTestRunner(object):
             return attrs.get('package'), attrs.get('versionName')
 
         seen_apks: DefaultDict[Any, List[Any]] = defaultdict(list)
-        for apk in self._upgrade_apks:
-            package, version = apk_info(apk)
-            if not package:
-                e = UpgradeTestException("APK package was unable to be parsed")
-                self._upgrade_reporter.test_assumption_failure("UpgradeTestRunner", "Upgrade setup", str(e))
-                raise e
-            if not version:
-                e = UpgradeTestException("APK version was unable to be parsed")
-                self._upgrade_reporter.test_assumption_failure("UpgradeTestRunner", "Upgrade setup", str(e))
-                raise e
-            if package in seen_apks and version in seen_apks[package]:
-                e = UpgradeTestException(f"APK with package: {package} with version: {version} already found in "
-                                         f"upgrade apk list.")
-                self._upgrade_reporter.test_assumption_failure("UpgradeTestRunner", "Upgrade setup", str(e))
-                raise e
-            seen_apks[package].append(version)
+        test_run_name = self._test_run_name + "-setup"
+        self._upgrade_reporter.test_suite_started(test_run_name)
+        try:
+            for apk in self._upgrade_apks:
+                package, version = apk_info(apk)
+                if not package:
+                    e = UpgradeTestException("APK package was unable to be parsed")
+                    self._upgrade_reporter.test_assumption_failure(test_run_name, "UpgradeTestRunner", "Upgrade setup", str(e))
+                    raise e
+                if not version:
+                    e = UpgradeTestException("APK version was unable to be parsed")
+                    self._upgrade_reporter.test_assumption_failure(test_run_name, "UpgradeTestRunner", "Upgrade setup", str(e))
+                    raise e
+                if package in seen_apks and version in seen_apks[package]:
+                    e = UpgradeTestException(f"APK with package: {package} with version: {version} already found in "
+                                             f"upgrade apk list.")
+                    self._upgrade_reporter.test_assumption_failure(test_run_name, "UpgradeTestRunner", "Upgrade setup", str(e))
+                    raise e
+                seen_apks[package].append(version)
+        finally:
+            self._upgrade_reporter.test_suite_ended(test_run_name)
 
     def execute(self) -> None:
         """
@@ -75,24 +81,26 @@ class UpgradeTestRunner(object):
                                                 self._upgrade_test.test_upgrade_to_target,
                                                 self._upgrade_test.test_uninstall_upgrade,
                                                 self._upgrade_test.test_uninstall_base]
-        self._upgrade_reporter.test_run_started(test_run_name="UpgradeTest")
+        test_name = "UpgradeTest"
+        self._upgrade_reporter.test_suite_started(test_run_name=test_name)
         for upgrade_apk in self._upgrade_apks:
             for i, test in enumerate(test_suite):
-                self._upgrade_reporter.test_started(class_name=test.__class__.__name__, test_name=test.__name__)
+                self._upgrade_reporter.test_started(test_run_name=self._test_run_name, class_name=test.__class__.__name__, test_name=test.__name__)
                 try:
                     if "upgrade_apk" in inspect.signature(test).parameters.keys():
                         test(upgrade_apk)
                     else:
                         test()
                 except UpgradeTestException as e:
-                    self._upgrade_reporter.test_run_failed(str(e))
+                    self._upgrade_reporter.test_run_failed(self._test_run_name, str(e))
                 finally:
                     # TODO: Look into removing requirement for duration, or add default value to interface
-                    # since TestRunResult class explicitly keeps track of this elsewhere
-                    self._upgrade_reporter.test_ended(class_name=test.__class__.__name__,
+                    # since TestPlanExecutionResult class explicitly keeps track of this elsewhere
+                    self._upgrade_reporter.test_ended(test_run_name=self._test_run_name,
+                                                      class_name=test.__class__.__name__,
                                                       test_name=test.__name__)
         # TODO: What is the test_count useful for here? Need to look into this more
-        self._upgrade_reporter.test_run_ended()
+        self._upgrade_reporter.test_suite_ended(test_run_name=test_name)
 
     def teardown(self) -> None:
         """

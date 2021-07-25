@@ -11,10 +11,12 @@ from pathlib import Path
 import pytest
 
 from mobiletestorchestrator.application import Application, TestApplication
-from mobiletestorchestrator.device import Device, DeviceInteraction
-from mobiletestorchestrator.devicestorage import DeviceStorage
+from mobiletestorchestrator.device import Device
+from mobiletestorchestrator.device_interactions import DeviceInteraction
+from mobiletestorchestrator.device_storage import DeviceStorage
 from . import support
 from .conftest import TAG_MTO_DEVICE_ID
+from .support import uninstall_apk
 
 RESOURCE_DIR = os.path.join(os.path.dirname(__file__), "resources")
 
@@ -31,7 +33,7 @@ else:
     # a true test flow, but this is only run under specific user-based conditions
     android_sdk = support.find_sdk()
     adb_path = os.path.join(android_sdk, "platform-tools", support.add_ext("adb"))
-    device = Device(os.environ[TAG_MTO_DEVICE_ID], adb_path=adb_path)
+    device = Device(os.environ[TAG_MTO_DEVICE_ID])
     expected_device_info = {
         "model": device.get_system_property("ro.product.model"),
         "manufacturer": device.get_system_property("ro.product.manufacturer"),
@@ -54,29 +56,33 @@ class TestAndroidDevice:
         with pytest.raises(FileExistsError):
             device.take_screenshot(os.path.join(str(mp_tmp_dir), path))
 
-    def test_device_name(self, device: Device):  # noqa
+    @pytest.mark.asyncio
+    async def test_device_name(self, device: Device):  # noqa
         name = device.device_name
         assert name and name.lower() != "unknown"
 
-    def test_get_set_device_setting(self, device: Device):
+    @pytest.mark.asyncio
+    async def test_get_set_device_setting(self, device: Device):
         now = device.get_device_setting("system", "dim_screen")
         new = {"1": "0", "0": "1"}[now]
         device.set_device_setting("system", "dim_screen", new)
         assert device.get_device_setting("system", "dim_screen") == new
 
-    def test_get_invalid_device_setting(self, device: Device):
+    @pytest.mark.asyncio
+    async def test_get_invalid_device_setting(self, device: Device):
         try:
             if int(device.get_system_property("ro.product.first_api_level")) < 26:
                 assert device.get_device_setting("invalid", "nosuchkey") is ''
             else:
                 assert device.get_device_setting("invalid", "nosuchkey") is None
-        except:
+        except Exception:
             assert device.get_device_setting("invalid", "nosuchkey") is None
 
-    def test_set_invalid_system_property(self, device: Device):
+    @pytest.mark.asyncio
+    async def test_set_invalid_system_property(self, device: Device):
         try:
             api_is_old =int(device.get_system_property("ro.build.version.sdk")) < 26
-        except:
+        except Exception:
             api_is_old = False
         if api_is_old:
             device.set_system_property("nosuchkey", "value")
@@ -86,26 +92,44 @@ class TestAndroidDevice:
                 device.set_system_property("nosuchkey", "value")
             assert f"setprop nosuchkey value' on device {device.device_id}" in str(exc_info.value)
 
-    def test_get_set_system_property(self, device: Device):
+    @pytest.mark.asyncio
+    async def test_get_set_system_property(self, device: Device):
         device.set_system_property("debug.mock2", "5555")
         assert device.get_system_property("debug.mock2") == "5555"
         device.set_system_property("debug.mock2", "\"\"\"\"")
 
-    def test_list_packages(self, install_app, device: Device, support_app: str):
+    @pytest.mark.asyncio
+    async def test_install_uninstall_app(self, device: Device, support_app: str):
+        uninstall_apk(support_app, device)
+        app = Application.from_apk(support_app, device)
+        app.uninstall()
+        assert app.package_name not in device.list_installed_packages()
+
+        app = Application.from_apk(support_app, device)
+        assert app.package_name in device.list_installed_packages()
+        app.uninstall()
+        assert app.package_name not in device.list_installed_packages()
+
+    @pytest.mark.asyncio
+    async def test_list_packages(self, install_app, device: Device, support_app: str):
         app = install_app(Application, support_app)
         pkgs = device.list_installed_packages()
         assert app.package_name in pkgs
 
-    def test_external_storage_location(self, device: Device):
+    @pytest.mark.asyncio
+    async def test_external_storage_location(self, device: Device):
         assert DeviceStorage(device).external_storage_location.startswith("/")
 
-    def test_brand(self, device: Device):
+    @pytest.mark.asyncio
+    async def test_brand(self, device: Device):
         assert device.brand == expected_device_info["brand"]
 
-    def test_model(self, device: Device):
+    @pytest.mark.asyncio
+    async def test_model(self, device: Device):
         assert device.model in expected_device_info["model"]
 
-    def test_manufacturer(self, device: Device):
+    @pytest.mark.asyncio
+    async def test_manufacturer(self, device: Device):
         # the emulator used in test has no manufacturer
         """
         The emulator used in test has following properties
@@ -117,7 +141,8 @@ class TestAndroidDevice:
         """
         assert device.manufacturer == expected_device_info["manufacturer"]
 
-    def test_get_device_datetime(self, device: Device):
+    @pytest.mark.asyncio
+    async def test_get_device_datetime(self, device: Device):
         import time
         import datetime
         host_datetime = datetime.datetime.utcnow()
@@ -128,6 +153,14 @@ class TestAndroidDevice:
         timediff = device.get_device_datetime() - dtime
         assert timediff.total_seconds() >= 0.99
         assert host_datetime_delta - host_delta < 0.05
+
+    @pytest.mark.asyncio
+    async def test_invalid_cmd_execution(self, device: Device):
+        async with device.monitor_remote_cmd("some", "bad", "command") as proc:
+            async for _ in proc.output(unresponsive_timeout=10):
+                pass
+        assert proc.returncode is not None
+        assert proc.returncode != 0
 
     def test_grant_permissions(self, install_app, support_test_app: str):
         test_app = install_app(TestApplication, support_test_app)
@@ -140,32 +173,29 @@ class TestAndroidDevice:
         app.clear_data()
         app.stop()
 
-    def test_invalid_cmd_execution(self, device: Device):
-        async def execute():
-            async with device.monitor_remote_cmd("some", "bad", "command") as proc:
-                async for _ in proc.output(unresponsive_timeout=10):
-                    pass
-            assert proc.returncode is not None
-            assert proc.returncode != 0
-        asyncio.get_event_loop().run_until_complete(execute())
-
-    def test_get_locale(self, device: Device):
+    @pytest.mark.asyncio
+    async def test_get_locale(self, device: Device):
         locale = device.get_locale()
         assert locale == "en_US"
 
-    def test_get_device_properties(self, device: Device):
+    @pytest.mark.asyncio
+    async def test_get_device_properties(self, device: Device):
         device_properties = device.get_device_properties()
         assert device_properties.get("ro.build.product", None) is not None
         assert device_properties.get("ro.build.user", None) is not None
         assert device_properties.get("ro.build.version.sdk", None) is not None
 
-    def test_foreground_and_activity_detection(self, install_app, device: Device, support_app: str):
+    @pytest.mark.asyncio
+    async def test_foreground_and_activity_detection(self, install_app, device: Device, support_app: str):
         app = install_app(Application, support_app)
+        nav = DeviceInteraction(device)
         device_nav = DeviceInteraction(device)
         # By default, emulators should always start into the home screen
+        assert nav.home_screen_active()
         assert device_nav.home_screen_active()
         # Start up an app and test home screen is no longer active, and foreground app is correct
         app.start(activity=".MainActivity")
+        assert not nav.home_screen_active()
         assert not device_nav.home_screen_active()
         assert device.foreground_activity() == app.package_name
 
@@ -175,16 +205,35 @@ class TestAndroidDevice:
         assert "Failed to verify installation of app 'com.linkedin.fake.app'" in str(excinfo.value)
         assert (in_tmp_dir / "test_screenshots" / "install_failure-com.linkedin.fake.app.png").is_file()
 
+    @pytest.mark.asyncio
     async def test_execute_remote_cmd_async(self, device: Device):
-        rc, stdout, stderr = await device.execute_remote_cmd_async("shell", "echo", "'TEST",
-                                                                           stdout=asyncio.subprocess.PIPE)
+        rc, stdout, stderr = await device.execute_remote_cmd_async("shell", "echo", "'TEST'",
+                                                                   stdout=asyncio.subprocess.PIPE)
         assert rc == 0
-        assert stdout == 'TEST'
+        assert stdout.strip() == 'TEST'
 
+    @pytest.mark.asyncio
     async def test_execute_streamed_cmd(self, device: Device):
-        with device.execute_remote_cmd_stream("shell", "ls", "/") as proc:
+        async with device.monitor_remote_cmd("shell", "ls", "-d", "/*", include_stderr=True) as proc:
             lines = []
             async for line in proc.output(unresponsive_timeout=2.0):
-                lines.append(line)
+                lines.append(line.strip())
             assert len(lines) > 3
-            assert "data" in lines
+            assert "/bin" in lines
+
+    @pytest.mark.asyncio
+    async def test_none_return_on_no_device_datetime(self, device: Device, monkeypatch):
+        def mock_execute_cmd(*args, **kargs):
+            return ""
+
+        monkeypatch.setattr("mobiletestorchestrator.device.Device.execute_remote_cmd", mock_execute_cmd)
+        device._device_server_datetime_offset = None
+        assert device.device_server_datetime_offset.total_seconds() == 0
+
+    @pytest.mark.asyncio
+    async def test_invalid_cmd_execution_unresponsive(self, device: Device, support_app: str):
+        with pytest.raises(asyncio.TimeoutError):
+            async with device.monitor_remote_cmd("install", support_app) as proc:
+                async for _ in proc.output(unresponsive_timeout=0.01):
+                    pass
+

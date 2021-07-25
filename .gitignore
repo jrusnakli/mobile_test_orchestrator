@@ -14,3 +14,6 @@ orchestrator/venv/
 *.iml
 .mypy_cache/
 testsupportapps/local.properties
+dist/
+*.log
+screenshots/q

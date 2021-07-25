@@ -4,14 +4,16 @@ import time
 
 import pytest
 
+import mobiletestorchestrator
 from mobiletestorchestrator.application import ServiceApplication
 from mobiletestorchestrator.device import Device
-from mobiletestorchestrator.devicelog import DeviceLog
+from mobiletestorchestrator.device_log import DeviceLog
 
 
 class TestDeviceLog:
 
-    def test_set_get_logcat_buffer_size(self, device: Device):
+    @pytest.mark.asyncio
+    async def test_set_get_logcat_buffer_size(self, device: Device):
         log = DeviceLog(device)
         log.set_logcat_buffer_size("20M")
         assert log.logcat_buffer_size.upper() in ['20', '20MB']
@@ -79,28 +81,16 @@ class TestDeviceLog:
             assert "old_line" not in line
             assert "new_line" in line
 
-    def test_capture_mark_start_stop(self, device: Device, mp_tmp_dir):
-        device_log = DeviceLog(device)
-        output_path = os.path.join(str(mp_tmp_dir), "logcat.txt")
-        with device_log.capture_to_file(output_path) as log_capture:
-            time.sleep(2)
-            log_capture.mark_start("test1")
-            time.sleep(5)
-            log_capture.mark_end("test1")
-            time.sleep(2)
-            assert "test1.start" in log_capture.markers
-            assert "test1.end" in log_capture.markers
-            assert log_capture.markers["test1.start"] < log_capture.markers["test1.end"]
-
     def test_invalid_output_path(self, fake_sdk, mp_tmp_dir):
-        device = Device("fakeid", os.path.join(fake_sdk, "platform-tools", "adb"))
-        tmpfile = os.path.join(str(mp_tmp_dir), "somefile")
-        with open(tmpfile, 'w'):
-            pass
-        with pytest.raises(Exception) as exc_info:
-            DeviceLog.LogCapture(device, tmpfile)
-        assert "Path %s already exists; will not overwrite" % tmpfile in str(exc_info.value)
-
-        with pytest.raises(Exception):
-            logcap = DeviceLog.LogCapture(device, os.path.join(mp_tmp_dir, "newfile"))
-            logcap.mark_end("proc_not_started_so_throw_exception")
+        orig_adb_path = mobiletestorchestrator.ADB_PATH
+        try:
+            mobiletestorchestrator.ADB_PATH = os.path.join(fake_sdk, "platform-tools", "adb")
+            device = Device("fakeid")
+            tmpfile = os.path.join(str(mp_tmp_dir), "somefile")
+            with open(tmpfile, 'w'):
+                pass
+            with pytest.raises(Exception) as exc_info:
+                DeviceLog.LogCapture(device, tmpfile)
+            assert "Path %s already exists; will not overwrite" % tmpfile in str(exc_info.value)
+        finally:
+            mobiletestorchestrator.ADB_PATH = orig_adb_path
