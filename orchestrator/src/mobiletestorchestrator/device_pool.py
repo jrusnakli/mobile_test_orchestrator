@@ -229,6 +229,7 @@ class AsyncEmulatorPool(AsyncDevicePool):
         super().__init__(queue)
         self._max_lease_time = max_lease_time
         self._closed = False
+        self._queue = queue
 
     @classmethod
     @asynccontextmanager
@@ -284,11 +285,11 @@ class AsyncEmulatorPool(AsyncDevicePool):
             await queue.put(leased_emulator)  # type: ignore
 
         futures = [asyncio.create_task(launch_one(index, avd, config, *args)) for index in range(count)]
-        if wait_for_startup:
-            for future in futures:
-                queue.put(await future)
         try:
             emulator_q = cls(queue, max_lease_time=max_lease_time)
+            emulator_q._futures = futures
+            if wait_for_startup:
+                await emulator_q.wait_for_startup()
             yield emulator_q
         finally:
             if not wait_for_startup:
@@ -299,6 +300,12 @@ class AsyncEmulatorPool(AsyncDevicePool):
             for em in emulators:
                 with suppress(Exception):
                     em.kill()
+
+    async def wait_for_startup(self):
+        for future in self._futures:
+            device = await future
+            if device is not None:
+                await self._queue.put(device)
 
     @staticmethod
     async def discover_emulators(max_lease_time: Optional[int] = None) -> "AsyncEmulatorPool":

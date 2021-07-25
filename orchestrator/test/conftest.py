@@ -1,18 +1,22 @@
-import multiprocessing
-
 import asyncio
+
 import getpass
 import os
+import queue
+import threading
+import shutil
+import tempfile
 from pathlib import Path
-from queue import Queue
 
 import pytest
-from pytest_mproc.plugin import TmpDirFactory
+
 from typing import Optional
 
 from mobiletestorchestrator.application import Application, TestApplication, ServiceApplication
 from mobiletestorchestrator.device import Device
+from mobiletestorchestrator.device_pool import AsyncQueueAdapter, AsyncEmulatorPool
 from mobiletestorchestrator.emulators import EmulatorBundleConfiguration, Emulator
+from mobiletestorchestrator.tooling.sdkmanager import SdkManager
 from . import support
 from .support import uninstall_apk, find_sdk
 
@@ -21,6 +25,8 @@ IS_CIRCLECI = getpass.getuser() == 'circleci' or "CIRCLECI" in os.environ
 Device.TIMEOUT_LONG_ADB_CMD = 10*60  # circleci may need more time
 
 if IS_CIRCLECI:
+    Device.TIMEOUT_ADB_CMD *= 10  # slow machine
+    Device.TIMEOUT_LONG_ADB_CMD = 10*60  # circleci may need more time
     print(">>>> Running in Circleci environment.  Not using parallelized testing")
 else:
     print(">>>> Parallelized testing is enabled for this run.")
@@ -31,104 +37,244 @@ else:
 # (hence once a test needs that fixture, it would block until the dependent task(s) are complete, but only then)
 
 
-class TestAppManager:
-    _app_queue, _test_app_queue = support.compile_all()
-    # place to cache the app and test app once they are gotten from the Queue
-    _app: Optional[str] = None
-    _test_app: Optional[str] = None
+class DeviceManager:
 
-    @classmethod
-    def test_app(cls):
-        if cls._test_app is None:
-            cls._test_app = cls._test_app_queue.get()
-        return cls._test_app
-
-    @classmethod
-    def app(cls):
-        if cls._app is None:
-            cls._app = cls._app_queue.get()
-        return cls._app
-
-
-@pytest.fixture(scope='node')
-def device_queue():
-    AVD = "MTO_emulator"
+    AVD = "MTO_test_emulator"
+    TMP_DIR = str(tempfile.mkdtemp(suffix="-ANDROID"))
+    TMP_SDK_DIR = os.path.join(TMP_DIR, "SDK")
+    os.mkdir(TMP_SDK_DIR)
+    TMP_AVD_DIR = os.path.join(TMP_DIR, "AVD")
+    os.mkdir(TMP_AVD_DIR)
+    AVD_PATH = os.environ.get("ANDROID_AVD_HOME", TMP_AVD_DIR)
+    SDK_PATH = os.environ.get("ANDROID_SDK_ROOT", TMP_SDK_DIR)
     CONFIG = EmulatorBundleConfiguration(
-        sdk=Path(support.find_sdk()),
+        sdk=Path(SDK_PATH),
+        avd_dir=Path(AVD_PATH),
         boot_timeout=10 * 60  # seconds
     )
     ARGS = [
         "-no-window",
         "-no-audio",
-        "-wipe-data",
+        # "-wipe-data",
         "-gpu", "off",
         "-no-boot-anim",
         "-skin", "320x640",
-        "-partition-size", "1024",
+        "-partition-size", "1024"
     ]
-    support.ensure_avd(str(CONFIG.sdk), AVD)
-    if TAG_MTO_DEVICE_ID in os.environ:
-        queue = m.Queue(1)
-        queue.put(Device(TAG_MTO_DEVICE_ID, adb_path=find_sdk()))
-    else:
-        count = 1
-        if IS_CIRCLECI:
+
+    @staticmethod
+    def count():
+        """
+        :return: a max number of emulators that can be launched on the platform.  Users can set this via the
+           MTO_MAX_EMULATORS environment variable, and must if their platform cannot support 4 simultaneous emulators
+        """
+        if IS_CIRCLECI or TAG_MTO_DEVICE_ID in os.environ:
             Device.TIMEOUT_ADB_CMD *= 10  # slow machine
-            # ARGS.append("-no-accel")
-            # on circleci, do build first to not take up too much
-            # memory if emulator were started first
             count = 1
-        elif "MTO_EMULATOR_COUNT" in os.environ:
-            max_count = min(multiprocessing.cpu_count(), 6)
-            count = int(os.environ.get("MTO_EMULATOR_COUNT", f"{max_count}"))
+        else:
+            count = 1  # min(multiprocessing.cpu_count(), int(os.environ.get("MTO_MAX_EMULATORS", "4")))
+        return count
 
-        queue = Queue(count)
 
-        # launch emulators in parallel and wait for all to boot:
-        async def launch(index: int):
-            if index:
-                await asyncio.sleep(index*2)  # stabilizes the launches spacing them out (otherwise, intermittent fail to boot)
-            return await Emulator.launch(Emulator.PORTS[index], AVD, CONFIG,*ARGS)
-
-        ems = asyncio.get_event_loop().run_until_complete(
-            asyncio.gather(*[launch(index) for index in range(count)]))
-        for em in ems:
-            queue.put(em)
+@pytest.fixture(scope='session')
+def device_pool_q():
     try:
-        yield queue
+        sdk_manager = SdkManager(DeviceManager.CONFIG.sdk, bootstrap=bool(IS_CIRCLECI))
+        if IS_CIRCLECI:
+            print(">>> Bootstrapping Android SDK platform tools...")
+            sdk_manager.bootstrap_platform_tools()
+        os.environ["ANDROID_SDK_ROOT"] = str(DeviceManager.CONFIG.sdk)
+        os.environ["ANDROID_HOME"] = str(DeviceManager.CONFIG.sdk)
+        os.environ["ANDROID_AVD_HOME"] = str(DeviceManager.CONFIG.avd_dir)
+        if IS_CIRCLECI:
+            AppManager.singleton()  # force build to happen fist, in serial
+        print(">>> Creating Android emulator AVD...")
+        if IS_CIRCLECI:
+            print(">>> Bootstrapping Android SDK emulator...")
+            sdk_manager.bootstrap_emulator()
+        image = "android-28;default;x86_64"
+        sdk_manager.create_avd(DeviceManager.CONFIG.avd_dir, DeviceManager.AVD, image,
+                               "pixel_xl", "--force")
+        assert os.path.exists(DeviceManager.CONFIG.avd_dir.joinpath(DeviceManager.AVD).with_suffix(".ini"))
+        assert os.path.exists(DeviceManager.CONFIG.avd_dir.joinpath(DeviceManager.AVD).with_suffix(".avd"))
+        q = queue.Queue(DeviceManager.count())
+        return q
     finally:
-        for em in ems:
-            em.kill()
+        shutil.rmtree(DeviceManager.TMP_DIR)
+
+
+pool_of_pools_q = queue.Queue()
+pool_sem = threading.Semaphore(0)
+
+
+class Thread(threading.Thread):
+
+    def __init__(self, q):
+        super().__init__()
+        self._q = q
+
+    def run(self):
+        asyncio.new_event_loop().run_until_complete(pool_helper(self._q))
+
+
+@pytest.fixture(scope='session')
+def device_pool(device_pool_q):
+    try:
+        Thread(device_pool_q).start()
+        yield pool_of_pools_q.get()
+    finally:
+        pool_sem.release()
+
+
+async def pool_helper(device_pool_q):
+    config = DeviceManager.CONFIG
+    config_args = DeviceManager.ARGS
+    queue = AsyncQueueAdapter(device_pool_q)
+    if IS_CIRCLECI:
+        config_args = list(config_args) + ["-no-accel"]
+    os.environ["ANDROID_SDK_ROOT"] = str(config.sdk)
+    os.environ["ANDROID_HOME"] = str(config.sdk)
+    os.environ["ANDROID_AVD_HOME"] = str(config.avd_dir)
+    async with AsyncEmulatorPool.create(DeviceManager.count(),
+                                        DeviceManager.AVD,
+                                        config,
+                                        *config_args,
+                                        external_queue=queue,
+                                        wait_for_startup=False) as pool:
+        pool_of_pools_q.put(pool)
+        await pool.wait_for_startup()
+        while not pool_sem.acquire(blocking=False):
+            await asyncio.sleep(1)
+
+
+@pytest.fixture(scope='session')
+def emulator_config() -> EmulatorBundleConfiguration:
+    return DeviceManager.CONFIG
 
 
 @pytest.fixture()
-def device(device_queue: multiprocessing.Queue) -> Device:
-    emulator = device_queue.get(timeout=10*60)
-    try:
-        yield emulator
-    finally:
-        device_queue.put(emulator)
+async def devices(device_pool: AsyncEmulatorPool, app_manager: "AppManager"):
+    # convert queue to an async queue.  We specifially want to test with AsyncEmulatorPool,
+    # so will not ust the AsynQueueAdapter class.
+    count = min(DeviceManager.count(), 2)
+    async with device_pool.reserve_many(count, timeout=100) as devs:
+        for dev in devs:
+            uninstall_apk(app_manager.app(), dev)
+            uninstall_apk(app_manager.test_app(), dev)
+            uninstall_apk(app_manager.service_app(), dev)
+        yield devs
+
+
+@pytest.fixture()
+async def device(device_pool: AsyncEmulatorPool, app_manager):
+    """
+    return a single reserved device
+    """
+    async with device_pool.reserve(timeout=100) as device:
+        uninstall_apk(app_manager.app(), device)
+        uninstall_apk(app_manager.test_app(), device)
+        uninstall_apk(app_manager.service_app(), device)
+        yield device
+
+
+
+#################
+# App-related fixtures;  TODO: logic could be cleaned up overall here
+#################
+
+
+class AppManager:
+    """
+    For managing compilation of apps used as test resources and providing them through fixtures
+    """
+
+
+    def __init__(self):
+        self._support_apk, self._support_test_apk, self._support_service_apk = support.compile_all()
+
+    def test_app(self) -> str:
+        """
+        :return: the string path to the test apk that was compiled
+        """
+        return self._support_test_apk
+
+    def service_app(self):
+        """
+        :return: the string path to the service apk that was compiled
+        """
+        return self._support_service_apk
+
+    def app(self):
+        """
+        :return: the string path to the target apk that was compiled
+        """
+        return self._support_apk
+
+    _singleton: Optional["AppManager"] = None
+
+    @staticmethod
+    def singleton():
+        if AppManager._singleton is None:
+            AppManager._singleton = AppManager()
+        return AppManager._singleton
 
 
 # noinspection PyShadowingNames
 @pytest.fixture()
-def android_test_app(device,
-                     support_app: str,
-                     support_test_app: str):
+async def android_app(device: Device, support_app: str):
+    """
+    :return: installed app
+    """
+    uninstall_apk(support_app, device)
+    app = Application.from_apk(support_app, device)
+    yield app
+    """
+    Leave the campground as clean as you found it:
+    """
+    app.uninstall()
+
+
+# noinspection PyShadowingNames
+@pytest.fixture()
+async def android_test_app(device,
+                           support_app: str,
+                           support_test_app: str,
+                           ):
+    """
+    :return: installed test app
+    """
     uninstall_apk(support_app, device)
     uninstall_apk(support_test_app, device)
     app_for_test = TestApplication.from_apk(support_test_app, device)
     support_app = Application.from_apk(support_app, device)
-    try:
-        yield app_for_test
-    finally:
-        app_for_test.uninstall()
-        support_app.uninstall()
+    yield app_for_test
+    """
+    Leave the campground as clean as you found it:
+    """
+    app_for_test.uninstall()
+    support_app.uninstall()
+
+
+# noinspection PyShadowingNames
+@pytest.fixture()
+async def android_test_app2(device2,
+                            support_app: str,
+                            support_test_app: str,
+                            ):
+    uninstall_apk(support_app, device2)
+    uninstall_apk(support_test_app, device2)
+    app_for_test = TestApplication.from_apk(support_test_app, device2)
+    support_app = Application.from_apk(support_app, device2)
+    yield app_for_test
+    """
+    Leave the campground as clean as you found it:
+    """
+    app_for_test.uninstall()
+    support_app.uninstall()
 
 
 @pytest.fixture()
-def android_service_app(device,
-                        support_app: str):
+async def android_service_app(device, support_app: str):
     # the support app is created to act as a service app as well
     uninstall_apk(support_app, device)
     service_app = ServiceApplication.from_apk(support_app, device)
@@ -139,26 +285,28 @@ def android_service_app(device,
 
 
 @pytest.fixture(scope='session')
-def support_test_app():
-    test_app = TestAppManager.test_app()
-    if test_app is None:
-        raise Exception("Failed to build test app")
-    return test_app
+def app_manager():
+    yield AppManager.singleton()
 
 
 @pytest.fixture(scope='session')
-def support_app():
-    support_app = TestAppManager.app()
-    if isinstance(support_app, Exception) or support_app is None:
-        raise Exception("Failed to build support app")
-    return support_app
+def support_app(app_manager: AppManager):
+    return app_manager.app()
+
 
 @pytest.fixture(scope='session')
-    return TestAppManager.service_app()
+def support_test_app(app_manager: AppManager):
+    return app_manager.test_app()
+
+
+@pytest.fixture(scope='session')
+def support_service_app(app_manager: AppManager):
+    return app_manager.service_app()
+
 
 @pytest.fixture
-def fake_sdk(mp_tmp_dir_factory: TmpDirFactory):
-    tmpdir = mp_tmp_dir_factory.create_tmp_dir("sdk")
+def fake_sdk(tmpdir_factory):
+    tmpdir = tmpdir_factory.mktemp("sdk")
     os.makedirs(os.path.join(str(tmpdir), "platform-tools"))
     with open(os.path.join(str(tmpdir), "platform-tools", "adb"), 'w'):
         pass  # create a dummy file so that test of its existence as file passes
@@ -166,10 +314,10 @@ def fake_sdk(mp_tmp_dir_factory: TmpDirFactory):
 
 
 @pytest.fixture
-def in_tmp_dir(mp_tmp_dir) -> Path:
+def in_tmp_dir(tmp_path: Path) -> Path:
     cwd = os.getcwd()
-    os.chdir(str(mp_tmp_dir))
-    yield Path(str(mp_tmp_dir))
+    os.chdir(str(tmp_path))
+    yield tmp_path
     os.chdir(cwd)
 
 

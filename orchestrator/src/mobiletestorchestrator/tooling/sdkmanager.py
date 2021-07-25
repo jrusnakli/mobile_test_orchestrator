@@ -20,7 +20,6 @@ except:
 import pytest_mproc
 
 
-@pytest_mproc.group("SDK_MANAGER")
 class SdkManager:
     """
     SDK Manager interface for installing components of the Android SDK

@@ -1,9 +1,21 @@
 import os
+import shutil
+import tempfile
+from pathlib import Path
+
 import pytest
 
 from mobiletestorchestrator.device import Device
 from mobiletestorchestrator.device_storage import DeviceStorage
 from mobiletestorchestrator.testprep import EspressoTestSetup
+
+@pytest.fixture(scope='session')
+def mp_tmp_dir():
+    d = tempfile.mkdtemp(suffix="-MTO")
+    try:
+        yield Path(d)
+    finally:
+        shutil.rmtree(d)
 
 
 class TestEspressoTestPreparation:
@@ -50,17 +62,17 @@ class TestEspressoTestPreparation:
 
     @pytest.mark.asyncio
     async def test_foreign_apk_install(self, device: Device, support_app: str, support_test_app: str,
-                                       android_service_app: str):
+                                       support_service_app: str):
         device.set_system_property("debug.mock2", "\"\"\"\"")
         now = device.get_device_setting("system", "dim_screen")
         new = {"1": "0", "0": "1"}[now]
         prep = EspressoTestSetup.Builder(path_to_test_apk=support_test_app, path_to_apk=support_app).\
-            add_foreign_apks([android_service_app]).\
+            add_foreign_apks([support_service_app]).\
             configure_settings(settings={'system:dim_screen': new},
                                properties={"debug.mock2": "5555"}).resolve()
 
         async with prep.apply(device) as test_app:
-            test_app.uninstall()
+            await test_app.uninstall()
             assert test_app.package_name not in device.list_installed_packages()
             assert test_app.target_application.package_name in device.list_installed_packages()
             assert device.get_system_property("debug.mock2") == "5555"
