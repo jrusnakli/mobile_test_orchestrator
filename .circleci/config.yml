@@ -34,8 +34,8 @@ jobs:
             sudo apt-get -y purge openjdk-11-jre openjdk-11-jre-headless openjdk-11-jdk openjdk-11-jdk-headless
             sudo ln -s /usr/lib/jvm/java-8-openjdk-amd64 /usr/lib/jvm/java-11-openjdk-amd64
             sudo rm -rf /opt/android/sdk
-            mkdir /opt/android/sdk
-            chmod gou+rwx /opt/android/sdk
+            sudo mkdir /opt/android/sdk
+            sudo chmod gou+rwx /opt/android/sdk
       - run:
           name: build androidtestorchestrator
           command: |
