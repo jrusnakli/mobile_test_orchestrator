@@ -19,9 +19,8 @@ jobs:
       - run:
           name: Java 9 installation
           command: |
-            sudo apt-get purge openjdk-\*
             echo "INSTALLING..."
-            sudo apt -y ca-certificates-java
+            sudo apt remove openjdk-8-jre-headless
             sudo apt -y install openjdk-8-jre-headless
       - run:
           name: Create avd
