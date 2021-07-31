@@ -3,8 +3,6 @@ version: 2.1
 jobs:
   build:
     machine:
-      java:
-        version: oraclejdk8
       image: android:202102-01
     working_directory: ~/code
     environment:
@@ -14,6 +12,7 @@ jobs:
       CIRCLECI: 1
       LD_LIBRARY_PATH: "/opt/android/sdk/build-tools/28.0.3/lib:/opt/android/sdk/build-tools/28.0.3/lib64"
       ANDROID_HOME: /opt/android/sdk
+      JAVA_HOME: /usr/lib/jvm/java-8-openjdk-amd64
     steps:
       - checkout
       - restore_cache:
