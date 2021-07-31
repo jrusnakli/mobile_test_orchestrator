@@ -23,7 +23,6 @@ jobs:
             echo "INSTALLING..."
             sudo apt -y ca-certificates-java
             sudo apt -y install openjdk-8-jre-headless
-            sudo apt -y install openjdk-8-jre
       - run:
           name: Create avd
           command: |
