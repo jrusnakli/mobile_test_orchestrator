@@ -52,12 +52,17 @@ class SdkManager:
                                                                                 "bootstrap.zip"))
             print(f"Unzipping {bootstrap_zip}")
             assert Path(bootstrap_zip).is_file()
-            with zipfile.ZipFile(bootstrap_zip) as zfile:
-                zfile.extractall(path=self._sdk_dir)
-                if self._sdk_dir.joinpath("android_sdk_bootstrap").exists():
-                    for file in glob.glob(str(self._sdk_dir.joinpath("android_sdk_bootstrap", "*"))):
-                        basename = os.path.basename(file)
-                        shutil.move(file, str(self._sdk_dir.joinpath(basename)))
+            try:
+                with zipfile.ZipFile(bootstrap_zip) as zfile:
+                    zfile.extractall(path=self._sdk_dir)
+            except zipfile.BadZipFile:
+                completed = subprocess.run(["unzip", bootstrap_zip], cwd=self._sdk_dir)
+                if completed.returncode != 0:
+                    raise Exception(f"Failed to run 'unzip {bootstrap_zip}'")
+            if self._sdk_dir.joinpath("android_sdk_bootstrap").exists():
+                for file in glob.glob(str(self._sdk_dir.joinpath("android_sdk_bootstrap", "*"))):
+                    basename = os.path.basename(file)
+                    shutil.move(file, str(self._sdk_dir.joinpath(basename)))
         if not self._sdk_manager_path.exists():
             raise FileNotFoundError(f"Did not locate sdkmanager tool at expected location {self._sdk_manager_path}")
         if not self._avd_manager_path.exists():
