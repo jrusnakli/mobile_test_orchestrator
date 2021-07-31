@@ -346,7 +346,7 @@ async def install_app_async(device: Device):
         await app.uninstall()
 
 if IS_CIRCLECI:
-    DeviceManager.CONFIG.sdk = Path("/tmp/android-sdk")
+    DeviceManager.CONFIG.sdk = Path("/opt/android/sdk")
 sdk_manager = SdkManager(DeviceManager.CONFIG.sdk, bootstrap=bool(IS_CIRCLECI))
 if IS_CIRCLECI:
     print(">>> Bootstrapping Android SDK platform tools...")
