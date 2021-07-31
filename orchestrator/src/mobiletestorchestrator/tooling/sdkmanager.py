@@ -51,7 +51,7 @@ class SdkManager:
             bootstrap_zip = files(mobiletestorchestrator).joinpath(os.path.join("resources", "sdkmanager",
                                                                                 "bootstrap.zip"))
             print(f"Unzipping {bootstrap_zip}")
-            assert Path(bootstrap_zip).exists()
+            assert Path(bootstrap_zip).is_file()
             with zipfile.ZipFile(bootstrap_zip) as zfile:
                 zfile.extractall(path=self._sdk_dir)
                 if self._sdk_dir.joinpath("android_sdk_bootstrap").exists():
