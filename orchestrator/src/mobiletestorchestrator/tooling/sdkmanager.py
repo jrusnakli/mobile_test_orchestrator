@@ -85,7 +85,8 @@ class SdkManager:
         if not os.path.exists(self._sdk_manager_path):
             raise SystemError("Failed to properly install sdk manager for bootstrapping")
         log.debug(f"Downloading to {self._sdk_dir}\n  {self._sdk_manager_path} {application}")
-        completed = subprocess.Popen([self._sdk_manager_path, application], stdout=subprocess.DEVNULL, bufsize=0,
+        completed = subprocess.Popen([self._sdk_manager_path, application], bufsize=0,
+                                     stdout=subprocess.PIPE,
                                      stderr=subprocess.PIPE, stdin=subprocess.PIPE,
                                      shell=self._shell)
         assert completed.stdin is not None  # make mypy happy
