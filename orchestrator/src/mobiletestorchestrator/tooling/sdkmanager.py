@@ -52,6 +52,7 @@ class SdkManager:
                                                                                 "bootstrap.zip"))
             print(f"Unzipping {bootstrap_zip}")
             assert Path(bootstrap_zip).is_file()
+            os.makedirs(self._sdk_dir, exist_ok=True)
             try:
                 with zipfile.ZipFile(bootstrap_zip) as zfile:
                     zfile.extractall(path=self._sdk_dir)
