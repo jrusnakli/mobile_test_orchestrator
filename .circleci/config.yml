@@ -17,14 +17,6 @@ jobs:
       - restore_cache:
           key: image2-{{ .Branch }}-{{ checksum "requirements.txt" }}
       - run:
-          name: Create avd
-          command: |
-            which sdkmanager
-            java --version
-            SYSTEM_IMAGES="system-images;android-29;default;x86"
-            sdkmanager "$SYSTEM_IMAGES"
-            echo "no" | avdmanager --verbose create avd -n MTO_emulator -k "$SYSTEM_IMAGES"
-      - run:
           name: setup python venv
           command: |
             python3.9 -m venv venv
