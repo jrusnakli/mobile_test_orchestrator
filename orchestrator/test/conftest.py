@@ -84,6 +84,7 @@ def device_pool_q():
             print(">>> Bootstrapping Android SDK platform tools...")
             sdk_manager.bootstrap_platform_tools()
             sdk_manager.bootstrap_build_tools("28.0.3")
+            assert os.path.exists("/opt/android/sdk/build-tools/28.0.3/aidl")
         os.environ["ANDROID_SDK_ROOT"] = str(DeviceManager.CONFIG.sdk)
         os.environ["ANDROID_HOME"] = str(DeviceManager.CONFIG.sdk)
         os.environ["ANDROID_AVD_HOME"] = str(DeviceManager.CONFIG.avd_dir)
