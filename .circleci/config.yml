@@ -10,6 +10,7 @@ jobs:
       EMULATOR_OPTS: "-no-window -no-audio -no-accel"
       PYTHONASYNCIODEBUG: 1
       CIRCLECI: 1
+      LD_LIBRARY_PATH: "/opt/android/sdk/build-tools/28.0.3/lib:/opt/android/sdk/build-tools/28.0.3/lib64"
     steps:
       - checkout
       - restore_cache:
