@@ -93,6 +93,7 @@ class SdkManager:
             completed.stdin.write(b'y\n')
         stdout, stderr = completed.communicate()
         if completed.returncode != 0:
+            print(f"ERROR:\n\n {stdout} \n\n {stderr}")
             raise Exception(
                 f"Failed to download/update {application}: {stderr.decode('utf-8')}")
 
