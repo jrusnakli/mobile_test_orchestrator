@@ -7,7 +7,7 @@ jobs:
     working_directory: ~/code
     environment:
       JVM_OPTS: -Xmx3200m
-      JAVA_OPTS: -XX:+IgnoreUnrecognizedVMOptions --add-modules java.se.ee
+      JAVA_OPTS: -XX:+IgnoreUnrecognizedVMOptions --add-modules java.xml.bind
       EMULATOR_OPTS: "-no-window -no-audio -no-accel"
       PYTHONASYNCIODEBUG: 1
       CIRCLECI: 1
