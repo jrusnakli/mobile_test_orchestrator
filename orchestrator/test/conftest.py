@@ -182,8 +182,6 @@ class AppManager:
     """
     For managing compilation of apps used as test resources and providing them through fixtures
     """
-
-
     def __init__(self):
         self._support_apk, self._support_test_apk, self._support_service_apk = support.compile_all()
 
@@ -348,7 +346,7 @@ async def install_app_async(device: Device):
         await app.uninstall()
 
 if IS_CIRCLECI:
-    DeviceManager.CONFIG.sdk = Path("/opt/android/sdk")
+    DeviceManager.CONFIG.sdk = Path("/tmp/android-sdk")
 sdk_manager = SdkManager(DeviceManager.CONFIG.sdk, bootstrap=bool(IS_CIRCLECI))
 if IS_CIRCLECI:
     print(">>> Bootstrapping Android SDK platform tools...")

@@ -32,7 +32,7 @@ def _adb_path() -> Path:
         sdk_path = Path(sdk_root)
         adb_path = sdk_path / "platform-tools" / adb_cmd
         if not adb_path.exists():
-            raise SystemError("Invalid or incomplete Android SDK location in ANDROID_SDK_RROT env var; "
+            print("WARNING: Invalid or incomplete Android SDK location in ANDROID_SDK_RROT env var; "
                               f"{str(adb_path)} does not exist")
         return adb_path
     elif shutil.which(adb_cmd):
