@@ -19,6 +19,8 @@ jobs:
       - run:
           name: setup python venv
           command: |
+            git lfs install
+            pwd
             python3.9 -m venv venv
             . venv/bin/activate
             pip install --upgrade -r requirements.txt
