@@ -32,6 +32,7 @@ jobs:
             echo 'export ANDROID_SDK_ROOT="$ANDROID_HOME"' >> $BASH_ENV
             sudo apt-get install libpulse0
             sudo apt-get -y purge openjdk-11-jre openjdk-11-jre-headless openjdk-11-jdk openjdk-11-jdk-headless
+            sudo ln -s /usr/lib/jvm/java-8-openjdk-amd64 /usr/lib/jvm/java-11-openjdk-amd64
       - run:
           name: build androidtestorchestrator
           command: |
