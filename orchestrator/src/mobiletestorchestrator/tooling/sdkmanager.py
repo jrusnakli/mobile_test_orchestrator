@@ -57,7 +57,7 @@ class SdkManager:
                 with zipfile.ZipFile(bootstrap_zip) as zfile:
                     zfile.extractall(path=self._sdk_dir)
             except zipfile.BadZipFile:
-                completed = subprocess.run(["unzip", bootstrap_zip], cwd=self._sdk_dir, stdout=subprocess.PIPE,
+                completed = subprocess.run(["7z", "e", bootstrap_zip], cwd=self._sdk_dir, stdout=subprocess.PIPE,
                                            stderr=subprocess.STDOUT)
                 if completed.returncode != 0:
                     raise Exception(f"Failed to run 'unzip {bootstrap_zip}' from {self._sdk_dir}:\n {completed.stdout}")
