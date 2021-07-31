@@ -99,6 +99,12 @@ class SdkManager:
         """
         self.bootstrap("build-tools", version)
 
+    def bootstrap_cmdline_tools(self, version: str) -> None:
+        """
+        download/update platform tools within the sdk
+        """
+        self.bootstrap("cmdline-tools", version)
+
     def bootstrap_emulator(self) -> None:
         """
         download/update emulator within the sdk
