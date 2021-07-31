@@ -11,6 +11,7 @@ jobs:
       PYTHONASYNCIODEBUG: 1
       CIRCLECI: 1
       LD_LIBRARY_PATH: "/opt/android/sdk/build-tools/28.0.3/lib:/opt/android/sdk/build-tools/28.0.3/lib64"
+      ANDROID_HOME: /opt/android/sdk
     steps:
       - checkout
       - restore_cache:
@@ -19,6 +20,7 @@ jobs:
           name: Create avd
           command: |
             which sdkmanager
+            java --version
             SYSTEM_IMAGES="system-images;android-29;default;x86"
             sdkmanager "$SYSTEM_IMAGES"
             echo "no" | avdmanager --verbose create avd -n MTO_emulator -k "$SYSTEM_IMAGES"
