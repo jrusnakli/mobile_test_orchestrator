@@ -52,7 +52,6 @@ jobs:
       - run:
           name: Running tests
           command: |
-            ls /opt/android/sdk
             . venv/bin/activate
             cd orchestrator/test
             mkdir -p test-reports/tmp
