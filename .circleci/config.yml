@@ -3,6 +3,8 @@ version: 2.1
 jobs:
   build:
     machine:
+      java:
+        version: oraclejdk8
       image: android:202102-01
     working_directory: ~/code
     environment:
