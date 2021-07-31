@@ -15,10 +15,10 @@ from typing import Optional
 from mobiletestorchestrator.application import Application, TestApplication, ServiceApplication, AsyncApplication
 from mobiletestorchestrator.device import Device
 from mobiletestorchestrator.device_pool import AsyncQueueAdapter, AsyncEmulatorPool
-from mobiletestorchestrator.emulators import EmulatorBundleConfiguration, Emulator
+from mobiletestorchestrator.emulators import EmulatorBundleConfiguration
 from mobiletestorchestrator.tooling.sdkmanager import SdkManager
 from . import support
-from .support import uninstall_apk, find_sdk
+from .support import uninstall_apk
 
 TAG_MTO_DEVICE_ID = "MTO_DEVICE_ID"
 IS_CIRCLECI = getpass.getuser() == 'circleci' or "CIRCLECI" in os.environ
@@ -35,7 +35,6 @@ else:
 # This allows tests to potentially run in parallel (if not dependent on output of these tasks), parallelizes
 # these dependent tasks. The tasks populate results out to Queue's that test fixtures then use as needed
 # (hence once a test needs that fixture, it would block until the dependent task(s) are complete, but only then)
-
 
 class DeviceManager:
 
@@ -79,12 +78,6 @@ class DeviceManager:
 @pytest.fixture(scope='session')
 def device_pool_q():
     try:
-        sdk_manager = SdkManager(DeviceManager.CONFIG.sdk, bootstrap=bool(IS_CIRCLECI))
-        if IS_CIRCLECI:
-            print(">>> Bootstrapping Android SDK platform tools...")
-            sdk_manager.bootstrap_platform_tools()
-            sdk_manager.bootstrap_build_tools("28.0.3")
-            assert os.path.exists("/opt/android/sdk/build-tools/28.0.3/aidl")
         os.environ["ANDROID_SDK_ROOT"] = str(DeviceManager.CONFIG.sdk)
         os.environ["ANDROID_HOME"] = str(DeviceManager.CONFIG.sdk)
         os.environ["ANDROID_AVD_HOME"] = str(DeviceManager.CONFIG.avd_dir)
@@ -353,3 +346,11 @@ async def install_app_async(device: Device):
 
     for app in apps:
         await app.uninstall()
+
+sdk_manager = SdkManager(DeviceManager.CONFIG.sdk, bootstrap=bool(IS_CIRCLECI))
+if IS_CIRCLECI:
+    print(">>> Bootstrapping Android SDK platform tools...")
+    sdk_manager.bootstrap_platform_tools()
+    sdk_manager.bootstrap_build_tools("28.0.3")
+    assert os.path.exists("/opt/android/sdk/build-tools/28.0.3/aidl")
+
