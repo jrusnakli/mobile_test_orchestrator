@@ -57,9 +57,10 @@ class SdkManager:
                 with zipfile.ZipFile(bootstrap_zip) as zfile:
                     zfile.extractall(path=self._sdk_dir)
             except zipfile.BadZipFile:
-                completed = subprocess.run(["unzip", bootstrap_zip], cwd=self._sdk_dir)
+                completed = subprocess.run(["unzip", bootstrap_zip], cwd=self._sdk_dir, stdout=subprocess.PIPE,
+                                           stderr=subprocess.STDOUT)
                 if completed.returncode != 0:
-                    raise Exception(f"Failed to run 'unzip {bootstrap_zip}'")
+                    raise Exception(f"Failed to run 'unzip {bootstrap_zip}' from {self._sdk_dir}:\n {completed.stdout}")
             if self._sdk_dir.joinpath("android_sdk_bootstrap").exists():
                 for file in glob.glob(str(self._sdk_dir.joinpath("android_sdk_bootstrap", "*"))):
                     basename = os.path.basename(file)
