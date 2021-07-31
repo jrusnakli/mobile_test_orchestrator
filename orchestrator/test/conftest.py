@@ -355,5 +355,4 @@ if IS_CIRCLECI:
     sdk_manager.bootstrap_cmdline_tools("5.0")
     sdk_manager.bootstrap_build_tools("28.0.3")
     sdk_manager.bootstrap_platform_tools()
-    assert os.path.exists("/opt/android/sdk/build-tools/28.0.3/aidl")
 
