@@ -18,6 +18,7 @@ jobs:
       - run:
           name: Create avd
           command: |
+            which sdkmanager
             SYSTEM_IMAGES="system-images;android-29;default;x86"
             sdkmanager "$SYSTEM_IMAGES"
             echo "no" | avdmanager --verbose create avd -n MTO_emulator -k "$SYSTEM_IMAGES"
