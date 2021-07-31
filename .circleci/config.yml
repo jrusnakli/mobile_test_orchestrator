@@ -19,10 +19,11 @@ jobs:
       - run:
           name: setup python venv
           command: |
+            pwd
+            ls
             curl -s https://packagecloud.io/install/repositories/github/git-lfs/script.deb.sh | sudo bash
             sudo apt-get install git-lfs
             git lfs install
-            pwd
             pushd mobile_test_orchestrator
             git lfs pull origin orchestrator/src/mobiletestorchestrator/resources/sdkmanager/bootstrap.zip
             python3.9 -m venv venv
