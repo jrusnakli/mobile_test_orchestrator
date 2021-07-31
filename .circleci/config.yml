@@ -19,10 +19,8 @@ jobs:
       - run:
           name: Java 9 installation
           command: |
-            echo "oracle-java9-installer shared/accepted-oracle-license-v1-1 select true" | sudo debconf-set-selections
-            echo "oracle-java9-installer shared/accepted-oracle-license-v1-1 seen true" | sudo debconf-set-selections
-            sudo apt-get --allow-downgrades --allow-unauthenticated  install oracle-java9-installer
-            sudo apt-get install oracle-java9-set-default
+            sudo apt-get purge openjdk-\*
+            sudo apt install openjdk-9-jre
       - run:
           name: Create avd
           command: |
