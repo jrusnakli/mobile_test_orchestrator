@@ -60,7 +60,7 @@ def find_sdk():
     return android_sdk
 
 
-def gradle_build(targets_and_q: Dict[str, List[Tuple[str, str]]]):
+def gradle_build(targets_and_q: Dict[str, List[Tuple[str, str]]], serialize: bool):
     find_sdk()  # sets env vars
     processes = []
     for root_build_dir, target_and_q in targets_and_q.items():
@@ -73,12 +73,18 @@ def gradle_build(targets_and_q: Dict[str, List[Tuple[str, str]]]):
             cmd = [os.path.join(".", gradle_path)] + targets
             shell = False
         log.info(f"Launching: {cmd} from {root_build_dir}")
-        processes.append(subprocess.Popen(cmd,
-                         cwd=root_build_dir,
-                         env=os.environ.copy(),
-                         stdout=sys.stdout,
-                         stderr=sys.stderr,
-                         shell=shell))
+        proc = subprocess.Popen(cmd,
+                                cwd=root_build_dir,
+                                env=os.environ.copy(),
+                                stdout=sys.stdout,
+                                stderr=sys.stderr,
+                                shell=shell)
+        if serialize:
+            proc.wait()
+            if proc.returncode != 0:
+                raise Exception("Failed to build at least one app")
+        else:
+            processes.append(proc)
     for process in processes:
         process.wait()
         if process.returncode != 0:
@@ -86,7 +92,7 @@ def gradle_build(targets_and_q: Dict[str, List[Tuple[str, str]]]):
     log.info(f"Built apks")
 
 
-def compile_all() -> Tuple[str, str, str]:
+def compile_all(serialize: bool = False) -> Tuple[str, str, str]:
     """
     compile support app and test app in the background and return the queues where they will be placed
 
@@ -102,6 +108,7 @@ def compile_all() -> Tuple[str, str, str]:
                 ("assembleDebug",  "support_service_app")
             ],
             },
+        serialize=serialize
         )
     return os.path.join(TEST_SUPPORT_APP_DIR, "app", "build", "outputs", "apk", "debug", "app-debug.apk"), \
         os.path.join(TEST_SUPPORT_APP_DIR, "app", "build", "outputs", "apk", "androidTest", "debug",

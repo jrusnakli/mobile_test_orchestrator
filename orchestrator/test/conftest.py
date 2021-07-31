@@ -193,7 +193,7 @@ class AppManager:
     For managing compilation of apps used as test resources and providing them through fixtures
     """
     def __init__(self):
-        self._support_apk, self._support_test_apk, self._support_service_apk = support.compile_all()
+        self._support_apk, self._support_test_apk, self._support_service_apk = support.compile_all(serialize=IS_CIRCLECI)
 
     def test_app(self) -> str:
         """
