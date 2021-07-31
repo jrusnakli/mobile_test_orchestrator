@@ -36,6 +36,7 @@ else:
 # these dependent tasks. The tasks populate results out to Queue's that test fixtures then use as needed
 # (hence once a test needs that fixture, it would block until the dependent task(s) are complete, but only then)
 
+
 class DeviceManager:
 
     AVD = "MTO_test_emulator"
@@ -74,6 +75,15 @@ class DeviceManager:
             count = 2  # min(multiprocessing.cpu_count(), int(os.environ.get("MTO_MAX_EMULATORS", "4")))
         return count
 
+
+if IS_CIRCLECI:
+    DeviceManager.CONFIG.sdk = Path("/opt/android/sdk")
+sdk_manager = SdkManager(DeviceManager.CONFIG.sdk, bootstrap=bool(IS_CIRCLECI))
+if IS_CIRCLECI:
+    print(">>> Bootstrapping Android SDK platform tools...")
+    sdk_manager.bootstrap_cmdline_tools("5.0")
+    sdk_manager.bootstrap_build_tools("28.0.3")
+    sdk_manager.bootstrap_platform_tools()
 
 @pytest.fixture(scope='session')
 def device_pool_q():
@@ -345,12 +355,4 @@ async def install_app_async(device: Device):
     for app in apps:
         await app.uninstall()
 
-if IS_CIRCLECI:
-    DeviceManager.CONFIG.sdk = Path("/opt/android/sdk")
-sdk_manager = SdkManager(DeviceManager.CONFIG.sdk, bootstrap=bool(IS_CIRCLECI))
-if IS_CIRCLECI:
-    print(">>> Bootstrapping Android SDK platform tools...")
-    sdk_manager.bootstrap_cmdline_tools("5.0")
-    sdk_manager.bootstrap_build_tools("28.0.3")
-    sdk_manager.bootstrap_platform_tools()
 

@@ -109,7 +109,6 @@ def compile_all() -> Tuple[str, str, str]:
         os.path.join(TEST_SERVICE_APP_DIR, "app", "build", "outputs", "apk", "debug", "app-debug.apk")
 
 
-
 def uninstall_apk(apk, device):
     """
     A little of a misnomer, as we don't actually uninstall an apk, however we can get the name of the
