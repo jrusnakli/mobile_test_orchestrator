@@ -1,13 +1,12 @@
 import logging
-import multiprocessing
 import os
 # TODO: CAUTION: WE CANNOT USE asyncio.subprocess as we executein in a thread other than made and on unix-like systems, there
 # is bug in Python 3.7.
 import shutil
 import subprocess
 import sys
+import platform
 from contextlib import suppress
-from queue import Queue
 from typing import Tuple, Dict, List
 
 from apk_bitminer.parsing import AXMLParser
@@ -66,8 +65,8 @@ def gradle_build(targets_and_q: Dict[str, List[Tuple[str, str]]]):
     for root_build_dir, target_and_q in targets_and_q.items():
         targets = [t for t, _ in target_and_q]
         gradle_path = os.path.join("gradlew")
-        if sys.platform == 'win32':
-            cmd = [gradle_path+".bat"] + targets
+        if sys.platform in ['win32', 'windows']:
+            cmd = [gradle_path+".bat", "--stacktrace", "--no-daemon"] + targets
             shell = True
         else:
             cmd = [os.path.join(".", gradle_path)] + targets
@@ -79,9 +78,12 @@ def gradle_build(targets_and_q: Dict[str, List[Tuple[str, str]]]):
                          stdout=sys.stdout,
                          stderr=sys.stderr,
                          shell=shell))
+        if platform.system().lower() in ['win32', 'windows']:
+            log.error(f"Building '{cmd}' serially")
+            processes[-1].wait()
     for process in processes:
         process.wait()
-        if process.returncode != 0:
+        if process.returncode != 0 and platform.system().lower() not in ['win32', 'windows']:
             raise Exception("Failed to build at least one app")
     log.info(f"Built apks")
 

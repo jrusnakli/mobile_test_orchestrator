@@ -6,6 +6,7 @@ import queue
 import threading
 import shutil
 import tempfile
+from contextlib import suppress
 from pathlib import Path
 
 import pytest
@@ -21,7 +22,11 @@ from . import support
 from .support import uninstall_apk, find_sdk
 
 TAG_MTO_DEVICE_ID = "MTO_DEVICE_ID"
-IS_CIRCLECI = getpass.getuser() == 'circleci' or "CIRCLECI" in os.environ
+try:
+    IS_CIRCLECI = getpass.getuser() == 'circleci' or "CIRCLECI" in os.environ
+except ModuleNotFoundError:
+    # on windows, pwd seems missing
+    IS_CIRCLECI = False
 Device.TIMEOUT_LONG_ADB_CMD = 10*60  # circleci may need more time
 
 if IS_CIRCLECI:
@@ -42,9 +47,11 @@ class DeviceManager:
     AVD = "MTO_test_emulator"
     TMP_DIR = str(tempfile.mkdtemp(suffix="-ANDROID"))
     TMP_SDK_DIR = os.path.join(TMP_DIR, "SDK")
-    os.mkdir(TMP_SDK_DIR)
+    with suppress(FileExistsError):
+        os.mkdir(TMP_SDK_DIR)
     TMP_AVD_DIR = os.path.join(TMP_DIR, "AVD")
-    os.mkdir(TMP_AVD_DIR)
+    with suppress(FileExistsError):
+        os.mkdir(TMP_AVD_DIR)
     AVD_PATH = os.environ.get("ANDROID_AVD_HOME", TMP_AVD_DIR)
     SDK_PATH = os.environ.get("ANDROID_SDK_ROOT", TMP_SDK_DIR)
     CONFIG = EmulatorBundleConfiguration(
@@ -85,7 +92,7 @@ def device_pool_q():
             sdk_manager.bootstrap_platform_tools()
         os.environ["ANDROID_SDK_ROOT"] = str(DeviceManager.CONFIG.sdk)
         os.environ["ANDROID_HOME"] = str(DeviceManager.CONFIG.sdk)
-        os.environ["ANDROID_AVD_HOME"] = str(DeviceManager.CONFIG.avd_dir)
+        #os.environ["ANDROID_AVD_HOME"] = str(DeviceManager.CONFIG.avd_dir)
         if IS_CIRCLECI:
             AppManager.singleton()  # force build to happen fist, in serial
         print(">>> Creating Android emulator AVD...")
@@ -93,14 +100,16 @@ def device_pool_q():
             print(">>> Bootstrapping Android SDK emulator...")
             sdk_manager.bootstrap_emulator()
         image = "android-28;default;x86_64"
-        sdk_manager.create_avd(DeviceManager.CONFIG.avd_dir, DeviceManager.AVD, image,
-                               "pixel_xl", "--force")
+        if not Path(DeviceManager.CONFIG.avd_dir / "MTO_test_emulator.ini").exists():
+            sdk_manager.create_avd(DeviceManager.CONFIG.avd_dir, DeviceManager.AVD, image,
+                                   "pixel_xl", "--force")
         assert os.path.exists(DeviceManager.CONFIG.avd_dir.joinpath(DeviceManager.AVD).with_suffix(".ini"))
         assert os.path.exists(DeviceManager.CONFIG.avd_dir.joinpath(DeviceManager.AVD).with_suffix(".avd"))
         q = queue.Queue(DeviceManager.count())
-        return q
+        yield q
     finally:
-        shutil.rmtree(DeviceManager.TMP_DIR)
+        with suppress(Exception):
+            shutil.rmtree(DeviceManager.TMP_DIR)
 
 
 pool_of_pools_q = queue.Queue()

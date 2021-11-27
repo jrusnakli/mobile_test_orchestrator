@@ -40,17 +40,21 @@ class EmulatorBundleConfiguration:
     boot_timeout: int = 5*60
 
     def adb_path(self) -> Path:
-        return self.sdk.joinpath("platform-tools").joinpath("adb")
+        if sys.platform == 'win32':
+            return self.sdk.joinpath("platform-tools").joinpath("adb.exe")
+        else:
+            return self.sdk.joinpath("platform-tools").joinpath("adb")
 
     def launch_cmd(self, avd: str, port: int, args: Optional[List[str]] = None) -> List[str]:
-        emulator_cmd = self.sdk.joinpath("emulator").joinpath("emulator")
+        if sys.platform == 'win32':
+            emulator_cmd = self.sdk.joinpath("emulator").joinpath("emulator.exe")
+        else:
+            emulator_cmd = self.sdk.joinpath("emulator").joinpath("emulator")
         if not emulator_cmd.is_file():
             raise Exception(f"Could not find emulator cmd to launch emulator @ {emulator_cmd}")
         if not self.adb_path().is_file():
             raise Exception(f"Could not find adb cmd @ {self.adb_path()}")
         cmd = [str(emulator_cmd), "-avd", avd, "-port", str(port), "-read-only"]
-        if sys.platform.lower() == 'win32':
-            cmd[0] += ".bat"
         if self.system_img:
             cmd += ["-system", str(self.system_img)]
         if self.kernel:
@@ -121,7 +125,10 @@ class Emulator(Device):
         with suppress(Exception):
             device.execute_remote_cmd("emu", "kill")  # attempt to kill any existing emulator at this port
             await asyncio.sleep(2)
-        emulator_cmd = config.sdk.joinpath("emulator").joinpath("emulator")
+        if sys.platform == 'win32':
+            emulator_cmd = config.sdk.joinpath("emulator").joinpath("emulator.exe")
+        else:
+            emulator_cmd = config.sdk.joinpath("emulator").joinpath("emulator")
         if not emulator_cmd.is_file():
             raise Exception(f"Could not find emulator cmd to launch emulator @ {emulator_cmd}")
         if not config.adb_path().is_file():
@@ -130,19 +137,27 @@ class Emulator(Device):
         environ = dict(os.environ)
         environ["ANDROID_AVD_HOME"] = str(config.avd_dir)
         environ["ANDROID_SDK_HOME"] = str(config.sdk)
+        if sys.platform.lower() == 'win32':
+            environ["USERNAME"] = os.getlogin()
+            environ["USERPROFILE"] = f"C:\\Users\\{environ['USERNAME']}"
         booted = False
-        proc = subprocess.Popen(cmd,
-                                stderr=subprocess.STDOUT,
-                                stdout=subprocess.PIPE,
-                                env=environ)
+        proc = subprocess.Popen(
+            cmd,
+            stderr=subprocess.STDOUT,
+            stdout=subprocess.PIPE,
+            env=environ
+        )
         try:
 
             async def wait_for_boot() -> None:
                 nonlocal booted
                 nonlocal proc
                 nonlocal device_id
-
+                if proc.poll() is not None:
+                    raise Exception(proc.stdout.read())
                 while await device.get_state_async(False) != Device.State.ONLINE:
+                    if proc.poll() is not None:
+                        raise Exception(proc.stdout.read())
                     await asyncio.sleep(1)
                 if proc.poll() is not None:
                     stdout, _ = proc.communicate()

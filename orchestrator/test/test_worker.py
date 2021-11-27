@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 
 from mobiletestorchestrator.testprep import EspressoTestSetup
@@ -50,7 +52,9 @@ class TestWorker:
             assert test_run_name in self.expected_test_class.keys()
 
     @pytest.mark.asyncio
-    async def test_run(self, device, support_app, support_test_app, mp_tmp_dir):
+    async def test_run(self, device, support_app, support_test_app, tmp_path: Path):
+        tmp_dir = tmp_path / "run"
+        tmp_dir.mkdir(exist_ok=True) 
         tests = {
             'test_suite1': "com.linkedin.mtotestapp.InstrumentedTestAllSuccess",
             'test_suite2': "com.linkedin.mtotestapp.InstrumentedTestAllSuccess",
@@ -61,6 +65,6 @@ class TestWorker:
         test_setup = EspressoTestSetup.Builder(path_to_apk=support_app,
                                                path_to_test_apk=support_test_app).resolve()
         worker = Worker(device, _async_iter_adapter(iter(test_suites)),
-        test_setup, artifact_dir=mp_tmp_dir, listeners=[expectations])
+        test_setup, artifact_dir=tmp_dir, listeners=[expectations])
         await worker.run(test_timeout=20)
         assert expectations.test_count == 6

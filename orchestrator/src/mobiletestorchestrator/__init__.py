@@ -25,8 +25,9 @@ def _adb_path() -> Path:
         "linux": home_dir / "Android" / "Sdk",
         "darwin": home_dir / "Library" / "Android"/ "sdk",
         "win32": home_dir / "Android" / "Sdk",
+        "windoiws": home_dir / "AppData" / "Local" / "Android" / "Sdk",
     }.get(platform.system().lower())
-    adb_cmd = "adb.exe" if platform.system().lower == 'win32' else "adb"
+    adb_cmd = "adb.exe" if platform.system().lower() in ['win32', 'windows'] else "adb"
     sdk_root = os.environ.get("ANDROID_SDK_ROOT")
     if sdk_root:
         sdk_path = Path(sdk_root)

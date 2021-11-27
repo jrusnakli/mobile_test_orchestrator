@@ -81,12 +81,14 @@ class TestDeviceLog:
             assert "old_line" not in line
             assert "new_line" in line
 
-    def test_invalid_output_path(self, fake_sdk, mp_tmp_dir):
+    def test_invalid_output_path(self, fake_sdk, tmp_path):
+        tmp_dir = tmp_path / "invalid"
+        tmp_dir.mkdir(exist_ok=True)
         orig_adb_path = mobiletestorchestrator.ADB_PATH
         try:
             mobiletestorchestrator.ADB_PATH = os.path.join(fake_sdk, "platform-tools", "adb")
             device = Device("fakeid")
-            tmpfile = os.path.join(str(mp_tmp_dir), "somefile")
+            tmpfile = os.path.join(str(tmp_dir), "somefile")
             with open(tmpfile, 'w'):
                 pass
             with pytest.raises(Exception) as exc_info:

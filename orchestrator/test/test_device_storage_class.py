@@ -1,6 +1,7 @@
 import os
 import subprocess
 from contextlib import suppress
+from pathlib import Path
 
 import pytest
 
@@ -39,17 +40,21 @@ class TestDeviceStorage:
             storage.push(local_path=(os.path.abspath(__file__)),
                          remote_path=remote_location)
 
-    def test_pull(self, device: Device, mp_tmp_dir):
+    def test_pull(self, device: Device, tmp_path: Path):
+        tmp_dir = tmp_path / "pull"
+        tmp_dir.mkdir(exist_ok=True)
         storage = DeviceStorage(device)
-        local_path = os.path.join(mp_tmp_dir, "somefile")
+        local_path = os.path.join(tmp_dir, "somefile")
         remote_path = "/".join([storage.external_storage_location, "touchedfile"])
         device.execute_remote_cmd("shell", "touch", remote_path)
         storage.pull(remote_path=remote_path, local_path=local_path)
         assert os.path.exists(local_path)
 
-    def test_pull_invalid_remote_path(self, device: Device, mp_tmp_dir):
+    def test_pull_invalid_remote_path(self, device: Device, tmp_path: Path):
+        tmp_dir = tmp_path / "invalid_remote"
+        tmp_dir.mkdir(exist_ok=True)
         storage = DeviceStorage(device)
-        local = os.path.join(str(mp_tmp_dir), "nosuchfile")
+        local = os.path.join(str(tmp_dir), "nosuchfile")
         with pytest.raises(Exception):
             storage.pull(remote_path="/no/such/file", local_path=local)
         assert not os.path.exists(local)
@@ -109,17 +114,21 @@ class TestDeviceStorageAsync:
         assert not os.path.basename(remote_location) in output
 
     @pytest.mark.asyncio
-    async def test_pull_invalid_remote_path(self, device: Device, mp_tmp_dir):
+    async def test_pull_invalid_remote_path(self, device: Device, tmp_path: Path):
+        tmp_dir = tmp_path / "pull_invalid_remote"
+        tmp_dir.mkdir(exist_ok=True)
         storage = AsyncDeviceStorage(device)
-        local = os.path.join(str(mp_tmp_dir), "nosuchfile")
+        local = os.path.join(str(tmp_dir), "nosuchfile")
         with pytest.raises(Exception):
             await storage.pull(remote_path="/no/such/file", local_path=local)
         assert not os.path.exists(local)
 
     @pytest.mark.asyncio
-    async def test_pull(self, device: Device, mp_tmp_dir):
+    async def test_pull(self, device: Device, tmp_path: Path):
+        tmp_dir = tmp_path / "pull"
+        tmp_dir.mkdir(exist_ok=True)
         storage = AsyncDeviceStorage(device)
-        local_path = os.path.join(mp_tmp_dir, "somefile")
+        local_path = os.path.join(tmp_dir, "somefile")
         remote_path = "/".join([storage.external_storage_location, "touchedfile"])
         device.execute_remote_cmd("shell", "touch", remote_path)
         await storage.pull(remote_path=remote_path, local_path=local_path)

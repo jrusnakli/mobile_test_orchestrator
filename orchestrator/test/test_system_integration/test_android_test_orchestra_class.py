@@ -3,6 +3,7 @@ import os
 from typing import Any, Optional
 
 import pytest
+import sys
 
 from mobiletestorchestrator.device_pool import AsyncDevicePool
 from mobiletestorchestrator.main import AndroidTestOrchestrator, TestSuite
@@ -151,7 +152,8 @@ class TestAndroidTestOrchestrator(object):
         test_suite_count = 0
         expected_test_suite = None
 
-        gradle_cache_dir = os.environ.get("GRADLE_USER_HOME", os.path.join(os.path.expanduser('~'), '.gradle'))
+        userhome = os.path.expanduser('~') if sys.platform != 'win32' else f"C:\\Users\\{os.getlogin()}"
+        gradle_cache_dir = os.environ.get("GRADLE_USER_HOME", os.path.join(userhome, '.gradle'))
         gradle_apk_root_dir = os.path.join(gradle_cache_dir, 'caches', 'modules-2', 'files-2.1')
         test_services_root = os.path.join(gradle_apk_root_dir, 'com.android.support.test.services', 'test-services')
         orchestrator_root = os.path.join(gradle_apk_root_dir, 'com.android.support.test', 'orchestrator')
