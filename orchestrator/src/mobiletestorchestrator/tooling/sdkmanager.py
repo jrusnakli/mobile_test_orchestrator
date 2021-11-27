@@ -57,31 +57,42 @@ class SdkManager:
                         basename = os.path.basename(file)
                         shutil.move(file, str(self._sdk_dir.joinpath(basename)))
         if not self._sdk_manager_path.exists():
-            raise FileNotFoundError(f"Did not locate sdkmanager tool at expected location {self._sdk_manager_path}")
+                raise FileNotFoundError(f"Did not locate sdkmanager tool at expected location {self._sdk_manager_path}")
         if not self._avd_manager_path.exists():
             raise FileNotFoundError(f"Did not locate sdkmanager tool at expected location {self._avd_manager_path}")
         os.chmod(str(self._sdk_manager_path), stat.S_IRWXU)
         os.chmod(str(self._avd_manager_path), stat.S_IRWXU)
+        if sys.platform == 'win32':
+            self._env['USERNAME'] = os.getlogin()
+            self._env["USERPROFILE"] = f"\\Users\\{os.getlogin()}"
 
     @property
     def emulator_path(self) -> Path:
-        return self._sdk_dir.joinpath("emulator", "emulator")
+        return self._sdk_dir.joinpath("emulator", "emulator.exe") if sys.platform.lower() == 'win32' else \
+            self._sdk_dir.joinpath("emulator", "emulator")
 
     @property
     def adb_path(self) -> Path:
-        return self._sdk_dir.joinpath("platform-tools", "adb")
+        return self._sdk_dir.joinpath("platform-tools", "adb.exe") if sys.platform.lower() == 'win32' else \
+            self._sdk_dir.joinpath("platform-tools", "adb")
 
     def bootstrap(self, application: str, version: Optional[str] = None) -> None:
         application = f"{application};{version}" if version else f"{application}"
         if not os.path.exists(self._sdk_manager_path):
             raise SystemError("Failed to properly install sdk manager for bootstrapping")
         log.debug(f"Downloading to {self._sdk_dir}\n  {self._sdk_manager_path} {application}")
-        completed = subprocess.Popen([self._sdk_manager_path, application], stdout=subprocess.DEVNULL, bufsize=0,
+        completed = subprocess.Popen([self._sdk_manager_path, application], stdout=subprocess.PIPE, bufsize=0,
                                      stderr=subprocess.PIPE, stdin=subprocess.PIPE,
-                                     shell=self._shell)
+                                     shell=self._shell, env=self._env)
         assert completed.stdin is not None  # make mypy happy
         for _ in range(10):
-            completed.stdin.write(b'y\n')
+            try:
+                if sys.platform.lower() == 'win32':
+                    completed.stdin.write(b'y\r\n')
+                else:
+                    completed.stdin.write(b'y\n')
+            except Exception:
+                break
         stdout, stderr = completed.communicate()
         if completed.returncode != 0:
             raise Exception(

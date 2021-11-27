@@ -9,20 +9,14 @@ from mobiletestorchestrator.device import Device
 from mobiletestorchestrator.device_storage import DeviceStorage
 from mobiletestorchestrator.testprep import EspressoTestSetup
 
-@pytest.fixture(scope='session')
-def mp_tmp_dir():
-    d = tempfile.mkdtemp(suffix="-MTO")
-    try:
-        yield Path(d)
-    finally:
-        shutil.rmtree(d)
-
 
 class TestEspressoTestPreparation:
 
     @pytest.mark.asyncio
-    async def test_upload_test_vectors(self, device, support_app, support_test_app, mp_tmp_dir):
-        root = os.path.join(str(mp_tmp_dir), "data_files")
+    async def test_upload_test_vectors(self, device, support_app, support_test_app, tmp_path: Path):
+        tmp_dir = tmp_path / "test_vectors"
+        tmp_dir.mkdir(exist_ok=True)
+        root = os.path.join(str(tmp_dir), "data_files")
         os.makedirs(root)
         tv_dir = os.path.join(root, "test_vectors")
         os.makedirs(tv_dir)
@@ -38,14 +32,14 @@ class TestEspressoTestPreparation:
         async with bundle.apply(device) as test_app:
             assert test_app
             storage = DeviceStorage(device)
-            test_dir = os.path.join(str(mp_tmp_dir), "test_download")
+            test_dir = os.path.join(str(tmp_dir), "test_download")
             storage.pull(remote_path="/".join([storage.external_storage_location, "test_vectors"]),
                          local_path=os.path.join(test_dir))
             assert os.path.exists(os.path.join(test_dir, "tv-1.txt"))
             assert os.path.exists(os.path.join(test_dir, "tv-2.txt"))
 
         # cleanup occurred on exit of context manager, so...
-        test_dir2 = os.path.join(str(mp_tmp_dir), "no_tv_download")
+        test_dir2 = os.path.join(str(tmp_dir), "no_tv_download")
         os.makedirs(test_dir2)
         storage.pull(remote_path="/".join([storage.external_storage_location, "test_vectors"]),
                      local_path=os.path.join(test_dir2))

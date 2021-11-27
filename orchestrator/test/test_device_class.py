@@ -44,17 +44,21 @@ else:
 # noinspection PyShadowingNames
 class TestAndroidDevice:
 
-    def test_take_screenshot(self, device: Device, mp_tmp_dir):
-        path = os.path.join(str(mp_tmp_dir), "test_screenshot.png")
-        device.take_screenshot(os.path.join(str(mp_tmp_dir), path))
+    def test_take_screenshot(self, device: Device, tmp_path: Path):
+        tmp_dir = tmp_path / "screenshots"
+        tmp_dir.mkdir(exist_ok=True)
+        path = os.path.join(str(tmp_dir), "test_screenshot.png")
+        device.take_screenshot(os.path.join(str(tmp_dir), path))
         assert os.path.isfile(path)
         assert os.stat(path).st_size != 0
 
-    def test_take_screenshot_file_already_exists(self, device: Device, mp_tmp_dir):
-        path = os.path.join(str(mp_tmp_dir), "created_test_screenshot.png")
+    def test_take_screenshot_file_already_exists(self, device: Device, tmp_path: Path):
+        tmp_dir = tmp_path / "screenshots"
+        tmp_dir.mkdir(exist_ok=True)
+        path = os.path.join(str(tmp_dir), "created_test_screenshot.png")
         open(path, 'w+b')  # create the file
         with pytest.raises(FileExistsError):
-            device.take_screenshot(os.path.join(str(mp_tmp_dir), path))
+            device.take_screenshot(os.path.join(str(tmp_dir), path))
 
     @pytest.mark.asyncio
     async def test_device_name(self, device: Device):  # noqa
